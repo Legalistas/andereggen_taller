@@ -1,0 +1,604 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id              String         @id @default(uuid())
+  name            String?
+  email           String?        @unique
+  emailVerified   DateTime?
+  image           String?
+  password        String? // Para empleados creados manualmente
+  isActive        Boolean        @default(true)
+  roleId          String? // Relación uno-a-muchos con Role
+  role            Role?          @relation(fields: [roleId], references: [id])
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  accounts        Account[]
+  sessions        Session[]
+  leadsCreated    Lead[]         @relation("LeadCreatedBy")
+  budgetsCreated  Budget[]       @relation("BudgetCreatedBy")
+  partMovements   PartMovement[] @relation("PartMovementCreatedBy")
+  toolsAssigned   Tool[]         @relation("ToolAssignedTo")
+  paymentsCreated Payment[]      @relation("PaymentCreatedBy")
+}
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  users       User[] // Relación uno-a-muchos con User
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  customers   Customer[]
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime   @default(now())
+
+  @@id([roleId, permissionId])
+}
+
+model Country {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  code      String?    @unique // Código de país (AR, BR, etc.)
+  states    State[]
+  customers Customer[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model State {
+  id        String     @id @default(uuid())
+  name      String
+  countryId String
+  country   Country    @relation(fields: [countryId], references: [id])
+  customers Customer[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([name, countryId])
+}
+
+model Customer {
+  id        String  @id @default(uuid())
+  name      String // Apellido y Nombre
+  email     String  @unique
+  phone     String // Teléfono o WhatsApp
+  dni       String? // Número de documento
+  dniType   String? // Tipo de documento (DNI, CUIL, CUIT, etc.)
+  countryId String
+  stateId   String
+  city      String // Ciudad
+  cp        String // Código postal
+  address   String // Dirección
+  roleId    String? // Enlace con el sistema de roles
+
+  // Relaciones
+  country  Country           @relation(fields: [countryId], references: [id])
+  state    State             @relation(fields: [stateId], references: [id])
+  role     Role?             @relation(fields: [roleId], references: [id])
+  vehicles CustomerVehicle[]
+  leads    Lead[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([countryId])
+  @@index([stateId])
+  @@index([roleId])
+}
+
+model CustomerVehicle {
+  id               String @id @default(uuid())
+  customerId       String
+  brand            String // Marca
+  model            String // Modelo
+  year             String // Año
+  domain           String // Dominio o patente
+  secure           String // Seguro
+  thirdPartySecure String // Seguro terceros
+
+  // Relación
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  leads    Lead[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([domain])
+}
+
+// =====================================================
+// CRM — Leads (embudo de oportunidades)
+// =====================================================
+
+enum LeadStatus {
+  solicitud // Solicitud de presupuesto
+  control // Control de presupuesto
+  enviado // Presupuesto enviado
+  refuerzo // Refuerzo de venta
+  ganado
+  perdido
+}
+
+enum LeadLostReason {
+  precio
+  demora
+  no_respondio
+  competencia
+  otro
+}
+
+model Lead {
+  id          String          @id @default(uuid())
+  customerId  String
+  vehicleId   String?
+  status      LeadStatus      @default(solicitud)
+  notes       String?         @db.Text
+  lostReason  LeadLostReason?
+  lostNotes   String?         @db.Text
+  source      String? // web, whatsapp, manual, etc.
+  createdById String?
+
+  customer  Customer         @relation(fields: [customerId], references: [id])
+  vehicle   CustomerVehicle? @relation(fields: [vehicleId], references: [id])
+  createdBy User?            @relation("LeadCreatedBy", fields: [createdById], references: [id])
+  budgets   Budget[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([customerId])
+  @@index([vehicleId])
+  @@index([createdById])
+}
+
+// =====================================================
+// Presupuestos (Budget) — ligados a Lead, con revisiones
+// =====================================================
+
+enum BudgetStatus {
+  draft
+  sent
+  accepted
+  rejected
+  expired
+}
+
+model Budget {
+  id     String       @id @default(uuid())
+  leadId String
+  number Int          @unique // correlativo global incremental
+  status BudgetStatus @default(draft)
+
+  // Snapshot de cliente/vehículo al emitir (inmutable para PDF histórico)
+  customerName     String
+  customerEmail    String
+  customerPhone    String
+  customerDni      String?
+  customerAddress  String?
+  vehicleBrand     String
+  vehicleModel     String
+  vehicleYear      String
+  vehicleDomain    String
+  vehicleInsurance String?
+
+  // Totales (materializados; se recalculan al guardar)
+  laborSubtotal Decimal @default(0) @db.Decimal(14, 2)
+  ivaRate       Decimal @default(21.00) @db.Decimal(5, 2)
+  ivaAmount     Decimal @default(0) @db.Decimal(14, 2)
+  laborTotal    Decimal @default(0) @db.Decimal(14, 2)
+  partsSubtotal Decimal @default(0) @db.Decimal(14, 2)
+  grandTotal    Decimal @default(0) @db.Decimal(14, 2)
+
+  // Observaciones (editables, defaults según PDF 7)
+  validityDays     Int     @default(10)
+  deliveryDays     Int     @default(20)
+  paymentCondition String  @default("Contado contra entrega")
+  observations     String? @db.Text
+
+  sentAt     DateTime?
+  acceptedAt DateTime?
+  rejectedAt DateTime?
+
+  lead          Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  concepts      BudgetConcept[]
+  parts         BudgetPart[]
+  partMovements PartMovement[]
+  payments      Payment[]
+  createdById   String?
+  createdBy     User?           @relation("BudgetCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([status])
+  @@index([createdById])
+}
+
+enum ConceptType {
+  DESCRIPTIVO // multiselect de subdetalles + detalle adicional, sin importe
+  UNIDADES // unidades × valorUnitario
+  FIJO // importe fijo editable
+}
+
+enum ConceptCategory {
+  // Descriptivos
+  DESMONTAR
+  DESMONTAR_Y_REPARAR
+  DESMONTAR_Y_CAMBIAR
+  BANCADA_DE_ESTIRAMIENTO
+  DESABOLLAR
+  // Unidades
+  CHAPA
+  PINTURA
+  // Fijos
+  MECANICA
+  ALINEACION_BALANCEO
+  AIRE_ACONDICIONADO
+  AIRBAGS
+  COLOCACION_PARABRISAS
+  COLOCACION_LUNETA
+  PULIDO_COMPLETO
+  OTROS_ADICIONALES
+}
+
+model BudgetConcept {
+  id       String          @id @default(uuid())
+  budgetId String
+  type     ConceptType
+  category ConceptCategory
+  order    Int             @default(0)
+
+  // DESCRIPTIVO
+  subdetails       String[] // keys del catálogo TS
+  additionalDetail String?  @db.Text
+
+  // UNIDADES
+  units     Decimal? @db.Decimal(10, 2)
+  unitValue Decimal? @db.Decimal(14, 2)
+
+  // FIJO
+  fixedAmount      Decimal? @db.Decimal(14, 2)
+  fixedDescription String?  @db.Text // textarea para OTROS_ADICIONALES
+
+  // Subtotal materializado del concepto (0 para DESCRIPTIVO)
+  subtotal Decimal @default(0) @db.Decimal(14, 2)
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([budgetId])
+}
+
+model BudgetPart {
+  id          String  @id @default(uuid())
+  budgetId    String
+  partId      String? // opcional — si viene del catálogo
+  order       Int     @default(0)
+  quantity    Decimal @db.Decimal(10, 2)
+  description String
+  unitPrice   Decimal @db.Decimal(14, 2)
+  subtotal    Decimal @db.Decimal(14, 2)
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  part   Part?  @relation(fields: [partId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([budgetId])
+  @@index([partId])
+}
+
+// =====================================================
+// Inventario — Catálogo de repuestos + stock + movimientos
+// =====================================================
+
+enum PartCategory {
+  CARROCERIA
+  CRISTALERIA
+  MECANICA
+  ELECTRICO
+  PINTURA
+  FRENOS
+  SUSPENSION
+  FILTROS
+  ILUMINACION
+  INTERIOR
+  OTROS
+}
+
+model Part {
+  id          String       @id @default(uuid())
+  sku         String?      @unique // código interno (opcional)
+  name        String
+  description String?      @db.Text
+  brand       String? // marca del repuesto (p/ej OEM, Bosch)
+  appliesTo   String? // modelos/marcas de vehículo a los que aplica (texto libre)
+  category    PartCategory @default(OTROS)
+  costPrice   Decimal      @default(0) @db.Decimal(14, 2)
+  salePrice   Decimal      @default(0) @db.Decimal(14, 2)
+  stockQty    Decimal      @default(0) @db.Decimal(12, 2) // cantidad actual
+  stockMin    Decimal      @default(0) @db.Decimal(12, 2) // umbral de alerta
+  isActive    Boolean      @default(true)
+
+  budgetParts BudgetPart[]
+  movements   PartMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([isActive])
+  @@index([name])
+}
+
+enum PartMovementType {
+  IN // entrada (compra, devolución del taller)
+  OUT // salida (consumo en reparación)
+  ADJUST // ajuste manual (correcciones de inventario)
+}
+
+model PartMovement {
+  id          String           @id @default(uuid())
+  partId      String
+  type        PartMovementType
+  qty         Decimal          @db.Decimal(12, 2) // siempre positiva; el signo lo define el type
+  reason      String // motivo libre
+  note        String?          @db.Text
+  budgetId    String? // si el movimiento surgió de un presupuesto
+  createdById String?
+
+  part      Part    @relation(fields: [partId], references: [id], onDelete: Cascade)
+  budget    Budget? @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  createdBy User?   @relation("PartMovementCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([partId])
+  @@index([type])
+  @@index([budgetId])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+// =====================================================
+// Herramientas (activos físicos del taller) — se asignan a usuarios
+// =====================================================
+
+enum ToolCategory {
+  NEUMATICA
+  HIDRAULICA
+  ELECTRICA
+  MANUAL
+  ELEVACION
+  SOLDADURA
+  PINTURA
+  DIAGNOSTICO
+  OTROS
+}
+
+enum ToolStatus {
+  AVAILABLE // disponible en depósito
+  IN_USE // asignada a un usuario
+  MAINTENANCE // en reparación/calibración
+  RETIRED // dada de baja
+}
+
+model Tool {
+  id           String       @id @default(uuid())
+  code         String?      @unique // código interno / patrimonial
+  name         String
+  description  String?      @db.Text
+  brand        String?
+  category     ToolCategory @default(OTROS)
+  status       ToolStatus   @default(AVAILABLE)
+  assignedToId String? // FK a User (si IN_USE)
+  location     String? // depósito, box 1, etc.
+  cost         Decimal      @default(0) @db.Decimal(14, 2)
+  acquiredAt   DateTime? // fecha de compra / incorporación
+  notes        String?      @db.Text
+  isActive     Boolean      @default(true)
+
+  assignedTo User? @relation("ToolAssignedTo", fields: [assignedToId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([assignedToId])
+  @@index([isActive])
+}
+
+// =====================================================
+// Configuración general del sistema
+// =====================================================
+
+/**
+ * Singleton — id fijo "app". Se lee/actualiza siempre la misma fila.
+ * Agrupa todos los settings globales para evitar múltiples tablas chicas.
+ */
+model AppSettings {
+  id String @id @default("app")
+
+  // Empresa (aparece en PDFs, emails, header del dashboard)
+  companyName    String  @default("Andereggen Taller Automotor")
+  companyAddress String  @default("Aconcagua 663 — Rafaela, Santa Fe")
+  companyCuit    String?
+  companyPhone   String?
+  companyEmail   String?
+  companyWebsite String?
+  companyLogoUrl String? @db.Text
+
+  // Defaults de presupuesto
+  defaultIvaRate          Decimal @default(21.00) @db.Decimal(5, 2)
+  defaultValidityDays     Int     @default(10)
+  defaultDeliveryDays     Int     @default(20)
+  defaultPaymentCondition String  @default("Contado contra entrega")
+
+  // Notificaciones automáticas
+  notifyOnLeadCreated    Boolean @default(true)
+  notifyOnBudgetSent     Boolean @default(true)
+  notifyOnBudgetReminder Boolean @default(true)
+  notifyOnStageChange    Boolean @default(true)
+  reminderDaysAfterSent  Int     @default(5)
+
+  // Apariencia / localización
+  locale   String @default("es-AR")
+  currency String @default("ARS")
+  timezone String @default("America/Argentina/Buenos_Aires")
+
+  // Integraciones (feature flags + placeholders)
+  whatsappEnabled Boolean @default(false)
+  whatsappNumber  String?
+  whatsappApiKey  String?
+  mpEnabled       Boolean @default(false)
+  mpAccessToken   String?
+  afipEnabled     Boolean @default(false)
+  afipCuit        String?
+  afipCertNote    String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * Aseguradoras con las que trabaja el taller.
+ * Usado como autocomplete en VehicleForm (seguro/seguroTerceros).
+ */
+model InsuranceCompany {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  phone       String?
+  email       String?
+  contactName String?
+  notes       String? @db.Text
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+/**
+ * Fuentes de lead (web, whatsapp, manual, referido, etc.).
+ * Hoy Lead.source es String libre; esta tabla da un catálogo consistente.
+ */
+model LeadSource {
+  id       String  @id @default(uuid())
+  key      String  @unique // slug estable, ej: "web"
+  label    String // display, ej: "Web"
+  isActive Boolean @default(true)
+  order    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+// =====================================================
+// Cobros / Pagos sobre presupuestos aceptados
+// =====================================================
+
+enum PaymentMethod {
+  EFECTIVO
+  TRANSFERENCIA
+  CHEQUE
+  TARJETA
+  MERCADOPAGO
+  OTRO
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  budgetId    String
+  amount      Decimal       @db.Decimal(14, 2)
+  paidAt      DateTime      @default(now())
+  method      PaymentMethod @default(EFECTIVO)
+  reference   String? // número de transferencia, cheque, ticket MP, etc.
+  notes       String?       @db.Text
+  createdById String?
+
+  budget    Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([budgetId])
+  @@index([paidAt])
+  @@index([method])
+  @@index([createdById])
+}
