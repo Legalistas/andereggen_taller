@@ -1,19 +1,23 @@
 import type React from "react"
-import Header from "@/components/layout/header"
-import Navigation from "@/components/layout/navigation"
+import { DashboardShell } from "@/components/layout/dashboard-shell"
+import { protectRoute } from "@/lib/auth-utils"
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
     children,
 }: {
     children: React.ReactNode
 }) {
+    const session = await protectRoute(["admin", "internal"])
+
     return (
-        <div className="min-h-screen bg-background">
-            <Header />
-            <Navigation />
-            <main className="container mx-auto p-4 md:p-6 lg:p-8">
-                {children}
-            </main>
-        </div>
+        <DashboardShell
+            user={{
+                name: session.user.name ?? null,
+                email: session.user.email ?? null,
+                role: session.user.role?.name ?? null,
+            }}
+        >
+            {children}
+        </DashboardShell>
     )
 }

@@ -1,0 +1,147 @@
+"use client"
+
+import { Button } from "@/components/ui/button"
+import { SIDEBAR_GROUPS } from "./sidebar-config"
+import { Logo } from "./logo"
+import { SidebarUserMenu, type SidebarUser } from "./sidebar-user-menu"
+import { ChevronLeft, ChevronRight, Wrench } from "lucide-react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+
+type Props = {
+    user: SidebarUser
+    collapsed: boolean
+    onToggle: () => void
+    /**
+     * Cuando el Sidebar se renderiza dentro del drawer mobile queremos que el
+     * click en un item lo cierre automáticamente.
+     */
+    onNavigate?: () => void
+}
+
+export function Sidebar({ user, collapsed, onToggle, onNavigate }: Props) {
+    const pathname = usePathname()
+
+    // El pathname más largo que matchea tiene prioridad (ej: /produccion/lista
+    // gana sobre /produccion). Elegimos 1 item activo por render para evitar
+    // highlights múltiples cuando una ruta es prefijo de otra.
+    const activeHref = pickActiveHref(pathname)
+
+    return (
+        <aside
+            className={`h-screen bg-card border-r border-border flex flex-col transition-[width] duration-200 ease-out ${
+                collapsed ? "w-[72px]" : "w-64"
+            }`}
+        >
+            {/* Header: logo + toggle */}
+            <div
+                className={`border-b border-border flex items-center ${
+                    collapsed ? "justify-center p-3" : "justify-between px-4 py-3"
+                }`}
+            >
+                <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+                    {collapsed ? (
+                        <div className="h-8 w-8 rounded-md bg-[#003b73] flex items-center justify-center shrink-0">
+                            <Wrench className="h-4 w-4 text-white" />
+                        </div>
+                    ) : (
+                        <Logo className="h-8 w-auto" />
+                    )}
+                </Link>
+                {!collapsed && (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 shrink-0"
+                        onClick={onToggle}
+                        aria-label="Colapsar sidebar"
+                    >
+                        <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                )}
+            </div>
+
+            {/* Toggle visible también cuando está colapsada (abajo del logo) */}
+            {collapsed && (
+                <div className="px-3 py-2 border-b">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-full p-0"
+                        onClick={onToggle}
+                        aria-label="Expandir sidebar"
+                    >
+                        <ChevronRight className="h-4 w-4" />
+                    </Button>
+                </div>
+            )}
+
+            {/* Scroll zone: grupos */}
+            <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3">
+                {SIDEBAR_GROUPS.map((group) => (
+                    <div key={group.label} className="mb-4">
+                        {!collapsed && (
+                            <div className="px-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                                {group.label}
+                            </div>
+                        )}
+                        {collapsed && <div className="mx-3 border-t border-border mb-2" />}
+
+                        <ul className="space-y-0.5 px-2">
+                            {group.items.map((item) => {
+                                const Icon = item.icon
+                                const isActive = item.href === activeHref
+                                return (
+                                    <li key={item.href}>
+                                        <Link
+                                            href={item.href}
+                                            onClick={onNavigate}
+                                            title={collapsed ? item.label : undefined}
+                                            className={`flex items-center gap-2.5 rounded-md text-sm transition-colors ${
+                                                collapsed ? "justify-center py-2" : "px-3 py-2"
+                                            } ${
+                                                isActive
+                                                    ? "bg-primary/10 text-primary font-medium"
+                                                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                                            }`}
+                                        >
+                                            <Icon className="h-4 w-4 shrink-0" />
+                                            {!collapsed && <span className="truncate">{item.label}</span>}
+                                        </Link>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    </div>
+                ))}
+            </nav>
+
+            {/* Footer: user menu */}
+            <div className="border-t border-border p-2 shrink-0">
+                <SidebarUserMenu user={user} collapsed={collapsed} />
+            </div>
+        </aside>
+    )
+}
+
+/**
+ * Elige el item activo usando longest-prefix match para soportar rutas anidadas.
+ * `/produccion/lista` gana sobre `/produccion` aunque ambos matchean.
+ */
+function pickActiveHref(pathname: string): string | null {
+    let best: string | null = null
+    for (const group of SIDEBAR_GROUPS) {
+        for (const item of group.items) {
+            const matches =
+                item.href === pathname ||
+                pathname.startsWith(item.href + "/") ||
+                (item.href !== "/dashboard" && pathname.startsWith(item.href))
+            if (matches && (best === null || item.href.length > best.length)) {
+                best = item.href
+            }
+        }
+    }
+    return best
+}
