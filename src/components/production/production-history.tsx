@@ -99,9 +99,6 @@ export default function ProductionHistory() {
           ]}
         />
         <h1 className="text-3xl font-bold">Histórico de reparaciones</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Reparaciones archivadas — vehículos entregados y cerrados.
-        </p>
       </div>
 
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-4">

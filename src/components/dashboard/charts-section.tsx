@@ -1,5 +1,7 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -21,78 +23,85 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const revenueData = [
-  { month: "Ene", ingresos: 38000, gastos: 22000 },
-  { month: "Feb", ingresos: 42000, gastos: 25000 },
-  { month: "Mar", ingresos: 35000, gastos: 21000 },
-  { month: "Abr", ingresos: 48000, gastos: 28000 },
-  { month: "May", ingresos: 52000, gastos: 30000 },
-  { month: "Jun", ingresos: 45000, gastos: 26000 },
-];
+type ChartsData = {
+  revenue: Array<{ month: string; ingresos: number }>;
+  services: Array<{ servicio: string; cantidad: number }>;
+  vehicles: Array<{ dia: string; vehiculos: number }>;
+};
 
-const servicesData = [
-  { servicio: "Cambio de aceite", cantidad: 45 },
-  { servicio: "Frenos", cantidad: 32 },
-  { servicio: "Alineación", cantidad: 28 },
-  { servicio: "Neumáticos", cantidad: 24 },
-  { servicio: "Revisión general", cantidad: 18 },
-];
-
-const vehiclesData = [
-  { dia: "Lun", vehiculos: 22 },
-  { dia: "Mar", vehiculos: 28 },
-  { dia: "Mié", vehiculos: 25 },
-  { dia: "Jue", vehiculos: 31 },
-  { dia: "Vie", vehiculos: 35 },
-  { dia: "Sáb", vehiculos: 18 },
-];
+const ARS = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  maximumFractionDigits: 0,
+});
 
 export default function ChartsSection() {
+  const [data, setData] = useState<ChartsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch("/api/dashboard/charts", { signal: ac.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()) as ChartsData;
+      })
+      .then(setData)
+      .catch((e) => {
+        if ((e as Error).name !== "AbortError") {
+          setError(e instanceof Error ? e.message : "Error");
+        }
+      });
+    return () => ac.abort();
+  }, []);
+
+  if (error) {
+    return (
+      <Card className="p-4 border-rose-200 bg-rose-50 text-sm text-rose-700">
+        No se pudieron cargar los gráficos: {error}
+      </Card>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+        {[4, 3, 7].map((span) => (
+          <Card
+            key={span}
+            className={`lg:col-span-${span} p-8 flex items-center justify-center min-h-75 text-slate-400`}
+          >
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
       <Card className="lg:col-span-4 hover:shadow-md transition-shadow">
         <CardHeader>
-          <CardTitle>Ingresos y Gastos</CardTitle>
-          <CardDescription>Comparación mensual del año actual</CardDescription>
+          <CardTitle>Ingresos</CardTitle>
+          <CardDescription>Cobros por mes (últimos 6 meses)</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-75 min-h-75 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueData}>
+              <AreaChart data={data.revenue}>
                 <defs>
-                  <linearGradient
-                    id="colorIngresos"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
+                  <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#003b73" stopOpacity={0.3} />
                     <stop offset="95%" stopColor="#003b73" stopOpacity={0} />
                   </linearGradient>
-                  <linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
-                    <stop
-                      offset="5%"
-                      stopColor="hsl(var(--accent))"
-                      stopOpacity={0.3}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="hsl(var(--accent))"
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
                 </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="hsl(var(--border))"
-                />
-                <XAxis
-                  dataKey="month"
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <YAxis
                   stroke="hsl(var(--muted-foreground))"
                   fontSize={12}
+                  tickFormatter={(v: number) => (v >= 1000 ? `$${Math.round(v / 1000)}k` : `$${v}`)}
                 />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "hsl(var(--card))",
@@ -100,19 +109,13 @@ export default function ChartsSection() {
                     borderRadius: "6px",
                   }}
                   labelStyle={{ color: "hsl(var(--foreground))" }}
+                  formatter={(v) => ARS.format(Number(v ?? 0))}
                 />
                 <Area
                   type="monotone"
                   dataKey="ingresos"
                   stroke="#003b73"
                   fill="url(#colorIngresos)"
-                  strokeWidth={2}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="gastos"
-                  stroke="hsl(var(--accent))"
-                  fill="url(#colorGastos)"
                   strokeWidth={2}
                 />
               </AreaChart>
@@ -124,39 +127,38 @@ export default function ChartsSection() {
       <Card className="lg:col-span-3 hover:shadow-md transition-shadow">
         <CardHeader>
           <CardTitle>Servicios Más Solicitados</CardTitle>
-          <CardDescription>Últimos 30 días</CardDescription>
+          <CardDescription>Top 5 conceptos en presupuestos</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-75 min-h-75 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={servicesData} layout="vertical">
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="hsl(var(--border))"
-                />
-                <XAxis
-                  type="number"
-                  stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
-                />
-                <YAxis
-                  dataKey="servicio"
-                  type="category"
-                  stroke="hsl(var(--muted-foreground))"
-                  width={120}
-                  fontSize={12}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "6px",
-                  }}
-                  labelStyle={{ color: "hsl(var(--foreground))" }}
-                />
-                <Bar dataKey="cantidad" fill="#003b73" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {data.services.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-sm text-slate-400 italic">
+                Aún no hay conceptos cargados
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.services} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                  <YAxis
+                    dataKey="servicio"
+                    type="category"
+                    stroke="hsl(var(--muted-foreground))"
+                    width={140}
+                    fontSize={11}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "6px",
+                    }}
+                    labelStyle={{ color: "hsl(var(--foreground))" }}
+                  />
+                  <Bar dataKey="cantidad" fill="#003b73" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -164,24 +166,15 @@ export default function ChartsSection() {
       <Card className="lg:col-span-7 hover:shadow-md transition-shadow">
         <CardHeader>
           <CardTitle>Flujo de Vehículos</CardTitle>
-          <CardDescription>
-            Vehículos atendidos por día esta semana
-          </CardDescription>
+          <CardDescription>Vehículos ingresados por día (últimos 7 días)</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-50 min-h-50 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={vehiclesData}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="hsl(var(--border))"
-                />
-                <XAxis
-                  dataKey="dia"
-                  stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
-                />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+              <LineChart data={data.vehicles}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="dia" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "hsl(var(--card))",

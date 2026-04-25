@@ -71,8 +71,8 @@ type RepairStatusLite =
   | "chapa"
   | "pintura"
   | "calidad"
-  | "experiencia_cliente"
   | "pendientes_cobro"
+  | "experiencia_cliente"
   | "archivado";
 
 type RepairOnLead = {
@@ -142,8 +142,26 @@ export default function LeadsSection() {
   const [vehicleThirdPartyInsurance, setVehicleThirdPartyInsurance] =
     useState("");
   const [leadNotes, setLeadNotes] = useState("");
+  const [leadSourceKey, setLeadSourceKey] = useState<string>("manual");
   const [creatingLead, setCreatingLead] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Fuentes de lead disponibles (catálogo LeadSource del seed/configuración)
+  const [leadSources, setLeadSources] = useState<
+    Array<{ key: string; label: string }>
+  >([]);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch("/api/lead-sources", { signal: ac.signal })
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d?.sources)) {
+          setLeadSources(d.sources as Array<{ key: string; label: string }>);
+        }
+      })
+      .catch(() => {});
+    return () => ac.abort();
+  }, []);
 
   // Estado del BudgetModal por fila
   const [budgetFor, setBudgetFor] = useState<string | null>(null);
@@ -253,6 +271,7 @@ export default function LeadsSection() {
     setVehicleInsurance("");
     setVehicleThirdPartyInsurance("");
     setLeadNotes("");
+    setLeadSourceKey("manual");
     setCreateError(null);
   };
 
@@ -319,7 +338,7 @@ export default function LeadsSection() {
 
     const payload: Record<string, unknown> = {
       notes: leadNotes || null,
-      source: "manual",
+      source: leadSourceKey || "manual",
     };
 
     // Rama 1: cliente existente
@@ -399,9 +418,6 @@ export default function LeadsSection() {
         <div>
           <Breadcrumbs items={[{ label: "Cotizaciones" }]} />
           <h1 className="text-3xl font-bold text-foreground">Cotizaciones</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Gestioná el embudo de cotizaciones en curso
-          </p>
         </div>
         <Dialog
           open={showNewLeadDialog}
@@ -584,6 +600,28 @@ export default function LeadsSection() {
                     <Info className="h-4 w-4 text-primary" />
                   </div>
                   <h3 className="font-semibold">Información Adicional</h3>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="leadSource">¿Cómo llegó el cliente?</Label>
+                  <Select
+                    value={leadSourceKey}
+                    onValueChange={(v) => setLeadSourceKey(v)}
+                  >
+                    <SelectTrigger id="leadSource">
+                      <SelectValue placeholder="Seleccionar fuente…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {leadSources.length > 0 ? (
+                        leadSources.map((s) => (
+                          <SelectItem key={s.key} value={s.key}>
+                            {s.label}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="manual">Manual</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="notes">Notas adicionales</Label>

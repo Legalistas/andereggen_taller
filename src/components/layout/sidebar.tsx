@@ -26,7 +26,7 @@ export function Sidebar({ user, collapsed, onToggle, onNavigate }: Props) {
   return (
     <aside
       className={`h-screen bg-card border-r border-border flex flex-col transition-[width] duration-200 ease-out ${
-        collapsed ? "w-18" : "w-40"
+        collapsed ? "w-18" : "w-50"
       }`}
     >
       {/* Header: logo + toggle */}
@@ -41,7 +41,7 @@ export function Sidebar({ user, collapsed, onToggle, onNavigate }: Props) {
               <Wrench className="h-4 w-4 text-white" />
             </div>
           ) : (
-            <Logo className="h-8 w-auto" />
+            <Logo className="h-12 w-auto" />
           )}
         </Link>
         {!collapsed && (

@@ -110,10 +110,6 @@ export default function SettingsSection() {
       <div>
         <Breadcrumbs items={[{ label: "Configuración" }]} />
         <h1 className="text-3xl font-bold">Configuración</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Ajustá los parámetros globales del sistema — empresa, presupuestos,
-          notificaciones, catálogos e integraciones.
-        </p>
       </div>
 
       {loading ? (

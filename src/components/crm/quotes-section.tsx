@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   Copy,
+  Download,
   Eye,
   FileText,
   Loader2,
@@ -413,10 +414,6 @@ export default function QuotesSection() {
             items={[{ label: "Cotizaciones" }, { label: "Presupuestos" }]}
           />
           <h1 className="text-3xl font-bold">Presupuestos</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Vista global de todos los presupuestos emitidos. Creá un presupuesto
-            aparte sin entrar a la cotización.
-          </p>
         </div>
         <Button
           className="gap-2"
@@ -1029,6 +1026,22 @@ export default function QuotesSection() {
             <Button variant="outline" onClick={() => setDetailId(null)}>
               Cerrar
             </Button>
+            {detail && (
+              <Button
+                variant="outline"
+                asChild
+                className="gap-2"
+                title="Descargar PDF del presupuesto"
+              >
+                <a
+                  href={`/api/budgets/${detail.id}/pdf`}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  <Download className="h-4 w-4" /> Descargar PDF
+                </a>
+              </Button>
+            )}
             {detail && ALLOWED_TRANSITIONS[detail.status].length > 0 && (
               <>
                 {ALLOWED_TRANSITIONS[detail.status].includes("sent") && (

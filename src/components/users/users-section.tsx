@@ -159,6 +159,80 @@ export default function UsersSection({ currentUserId }: Props) {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // ── Form Crear Usuario ────────────────────────────────────────────────
+  const [createForm, setCreateForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    roleName: "",
+    password: "",
+    confirmPassword: "",
+    isActive: true,
+  });
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const resetCreateForm = useCallback(() => {
+    setCreateForm({
+      name: "",
+      email: "",
+      phone: "",
+      roleName: "",
+      password: "",
+      confirmPassword: "",
+      isActive: true,
+    });
+    setCreateError(null);
+  }, []);
+
+  const handleCreateUser = async () => {
+    setCreateError(null);
+
+    if (!createForm.name.trim() || !createForm.email.trim()) {
+      setCreateError("Nombre y email son requeridos.");
+      return;
+    }
+    if (!createForm.roleName) {
+      setCreateError("Seleccioná un rol para el usuario.");
+      return;
+    }
+    if (createForm.password) {
+      if (createForm.password.length < 8) {
+        setCreateError("La contraseña debe tener al menos 8 caracteres.");
+        return;
+      }
+      if (createForm.password !== createForm.confirmPassword) {
+        setCreateError("Las contraseñas no coinciden.");
+        return;
+      }
+    }
+
+    setCreateBusy(true);
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: createForm.name.trim(),
+          email: createForm.email.trim(),
+          phone: createForm.phone.trim() || undefined,
+          roleName: createForm.roleName,
+          password: createForm.password || undefined,
+          isActive: createForm.isActive,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      resetCreateForm();
+      setIsDialogOpen(false);
+      await fetchUsers();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : "Error al crear usuario");
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
   const fetchUsers = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setLoadError(null);
@@ -429,11 +503,14 @@ export default function UsersSection({ currentUserId }: Props) {
           <h1 className="text-3xl font-bold text-foreground">
             Gestión de usuarios
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Administrar usuarios, roles y permisos del sistema
-          </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog
+          open={isDialogOpen}
+          onOpenChange={(v) => {
+            setIsDialogOpen(v);
+            if (!v) resetCreateForm();
+          }}
+        >
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
@@ -450,7 +527,14 @@ export default function UsersSection({ currentUserId }: Props) {
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="userName">Nombre completo *</Label>
-                <Input id="userName" placeholder="Ej: Juan Pérez" />
+                <Input
+                  id="userName"
+                  placeholder="Ej: Juan Pérez"
+                  value={createForm.name}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -460,17 +544,33 @@ export default function UsersSection({ currentUserId }: Props) {
                     id="userEmail"
                     type="email"
                     placeholder="usuario@taller.com"
+                    value={createForm.email}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({ ...f, email: e.target.value }))
+                    }
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="userPhone">Teléfono *</Label>
-                  <Input id="userPhone" placeholder="+54 9 11 1234-5678" />
+                  <Label htmlFor="userPhone">Teléfono</Label>
+                  <Input
+                    id="userPhone"
+                    placeholder="+54 9 11 1234-5678"
+                    value={createForm.phone}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({ ...f, phone: e.target.value }))
+                    }
+                  />
                 </div>
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="userRole">Rol *</Label>
-                <Select>
+                <Select
+                  value={createForm.roleName}
+                  onValueChange={(v) =>
+                    setCreateForm((f) => ({ ...f, roleName: v }))
+                  }
+                >
                   <SelectTrigger id="userRole">
                     <SelectValue placeholder="Seleccionar rol" />
                   </SelectTrigger>
@@ -491,42 +591,39 @@ export default function UsersSection({ currentUserId }: Props) {
                 </Select>
               </div>
 
-              <div className="border rounded-lg p-4 bg-muted/30">
-                <h4 className="font-semibold text-sm mb-3">Permisos del Rol</h4>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p className="font-medium text-foreground">
-                    Seleccione un rol para ver los permisos
-                  </p>
-                  <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li>
-                      Los permisos se asignan automáticamente según el rol
-                    </li>
-                    <li>
-                      Los administradores tienen acceso completo al sistema
-                    </li>
-                    <li>Los gerentes pueden gestionar producción y reportes</li>
-                    <li>Los mecánicos solo acceden a sus trabajos asignados</li>
-                  </ul>
-                </div>
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="password">Contraseña temporal *</Label>
+                  <Label htmlFor="password">Contraseña</Label>
                   <Input
                     id="password"
                     type="password"
-                    placeholder="Mínimo 8 caracteres"
+                    placeholder="Mínimo 8 caracteres (opcional)"
+                    value={createForm.password}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({
+                        ...f,
+                        password: e.target.value,
+                      }))
+                    }
                   />
+                  <p className="text-[11px] text-muted-foreground">
+                    Solo si va a iniciar sesión. Para inspectores/productores
+                    externos podés dejarla vacía.
+                  </p>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="confirmPassword">
-                    Confirmar contraseña *
-                  </Label>
+                  <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
                   <Input
                     id="confirmPassword"
                     type="password"
                     placeholder="Repetir contraseña"
+                    value={createForm.confirmPassword}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({
+                        ...f,
+                        confirmPassword: e.target.value,
+                      }))
+                    }
                   />
                 </div>
               </div>
@@ -540,15 +637,44 @@ export default function UsersSection({ currentUserId }: Props) {
                     El usuario podrá acceder al sistema inmediatamente
                   </p>
                 </div>
-                <Switch id="activeUser" defaultChecked />
+                <Switch
+                  id="activeUser"
+                  checked={createForm.isActive}
+                  onCheckedChange={(v) =>
+                    setCreateForm((f) => ({ ...f, isActive: v }))
+                  }
+                />
               </div>
+
+              {createError && (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>{createError}</span>
+                </div>
+              )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsDialogOpen(false)}
+                disabled={createBusy}
+              >
                 Cancelar
               </Button>
-              <Button onClick={() => setIsDialogOpen(false)}>
-                Crear Usuario
+              <Button
+                onClick={handleCreateUser}
+                disabled={createBusy}
+                className="gap-2"
+              >
+                {createBusy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Creando…
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" /> Crear Usuario
+                  </>
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -725,21 +725,35 @@ model VehicleModel {
 // =====================================================
 
 /**
- * Estados del Kanban de Producción. Orden exacto:
- * 1. turno_asignado, 2. ingresado, 3. pendientes_repuestos, 4. chapa,
- * 5. pintura, 6. calidad, 7. experiencia_cliente, 8. pendientes_cobro,
- * 9. archivado
+ * Estados del Kanban de Producción. Orden visual exacto (definido en
+ * src/components/production/production-kanban.tsx COLUMNS):
+ * 1. turno_asignado, 2. pendientes_repuestos, 3. chapa, 4. pintura,
+ * 5. calidad, 6. pendientes_cobro, 7. experiencia_cliente, 8. archivado
+ *
+ * Cuando se carga la fecha de ingreso del vehículo (desde el form de la
+ * card), el status pasa automáticamente de turno_asignado a chapa y se
+ * dispara la notificación "vehicle_entered" al cliente.
  *
  * "pendientes_repuestos" representa el paso intermedio entre el ingreso
  * del vehículo y el comienzo de la chapa: el vehículo está en taller
  * esperando que lleguen los repuestos pedidos.
  *
- * "pendientes_cobro" es la etapa entre experiencia_cliente y archivado:
- * el trabajo está terminado y entregado, falta cobrar para archivar.
+ * "pendientes_cobro" es la etapa después de calidad: el trabajo está
+ * terminado y falta cobrar para que el cliente pueda retirar el vehículo.
+ *
+ * "experiencia_cliente" es la última etapa antes del archivo: una vez
+ * cobrado y entregado, se le pide al cliente que califique el servicio.
+ *
+ * NOTA: el orden de los valores en el enum NO coincide con el orden
+ * visual — Postgres mantiene el orden histórico en el que se agregaron.
+ * "ingresado" se mantiene aquí como deprecated (no se usa más en el
+ * flujo nuevo, pero Postgres no permite remover valores de enum sin
+ * recrear el tipo). Se migró todo a "chapa" en
+ * 20260425180000_remove_ingresado_column_from_kanban.
  */
 enum RepairStatus {
   turno_asignado
-  ingresado
+  ingresado // @deprecated — removido del Kanban; data migrada a chapa
   pendientes_repuestos
   chapa
   pintura

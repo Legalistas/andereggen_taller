@@ -12,7 +12,6 @@ import {
   Paintbrush,
   Smile,
   Star,
-  User,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
@@ -33,8 +32,8 @@ export type RepairStatus =
   | "chapa"
   | "pintura"
   | "calidad"
-  | "experiencia_cliente"
   | "pendientes_cobro"
+  | "experiencia_cliente"
   | "archivado";
 
 export type KanbanRepair = {
@@ -88,13 +87,6 @@ const COLUMNS: Array<{
     ringClass: "ring-slate-400",
   },
   {
-    id: "ingresado",
-    label: "Ingresado",
-    icon: ClipboardCheck,
-    headerClass: "bg-blue-50 text-blue-700 border-blue-200",
-    ringClass: "ring-blue-400",
-  },
-  {
     id: "pendientes_repuestos",
     label: "Pendientes de Repuestos",
     icon: Package,
@@ -123,18 +115,18 @@ const COLUMNS: Array<{
     ringClass: "ring-cyan-400",
   },
   {
-    id: "experiencia_cliente",
-    label: "Experiencia del Cliente",
-    icon: Smile,
-    headerClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    ringClass: "ring-emerald-400",
-  },
-  {
     id: "pendientes_cobro",
     label: "Pendientes de Cobro",
     icon: DollarSign,
     headerClass: "bg-amber-50 text-amber-800 border-amber-200",
     ringClass: "ring-amber-400",
+  },
+  {
+    id: "experiencia_cliente",
+    label: "Experiencia del Cliente",
+    icon: Smile,
+    headerClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    ringClass: "ring-emerald-400",
   },
   {
     id: "archivado",
@@ -316,7 +308,7 @@ function RepairCard({
   onDelete?: (repairId: string) => void;
   onMove: (repairId: string, next: RepairStatus) => Promise<void>;
 }) {
-  const daysInStage = daysFrom(repair.updatedAt);
+  const delivery = deliveryStatus(repair);
   const hasBudget = !!repair.budget;
 
   return (
@@ -465,29 +457,11 @@ function RepairCard({
         </div>
       )}
 
-      <div
-        className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2"
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-1.5 min-w-0">
-          {repair.assignedMechanic ? (
-            <>
-              <div className="h-5 w-5 rounded-full bg-[#003b73] text-white flex items-center justify-center text-[9px] font-semibold shrink-0">
-                {initials(repair.assignedMechanic.name)}
-              </div>
-              <span className="text-[11px] text-slate-700 truncate">
-                {repair.assignedMechanic.name ?? "—"}
-              </span>
-            </>
-          ) : (
-            <div className="flex items-center gap-1 text-[11px] text-slate-400 italic">
-              <User className="h-3 w-3" />
-              Sin mecánico
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1 shrink-0">
+      {(repair.directCreation || delivery) && (
+        <div
+          className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-end gap-1"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           {repair.directCreation && (
             <Badge
               variant="outline"
@@ -496,15 +470,20 @@ function RepairCard({
               Directa
             </Badge>
           )}
-          <span className="text-[10px] text-slate-400 tabular-nums">
-            {daysInStage}d
-          </span>
+          {delivery && (
+            <span
+              className={`text-[10px] tabular-nums font-medium ${delivery.toneClass}`}
+              title={delivery.tooltip}
+            >
+              {delivery.label}
+            </span>
+          )}
         </div>
-      </div>
+      )}
 
-      {/* Botón rápido para cards en "Ingresado":
+      {/* Botón rápido para cards en "Turno Asignado":
           mueve directo a "Pendientes de Repuestos" sin tener que drag'n'drop. */}
-      {repair.status === "ingresado" && (
+      {repair.status === "turno_asignado" && (
         <button
           type="button"
           onClick={(e) => {
@@ -531,22 +510,72 @@ function RepairCard({
   );
 }
 
-function initials(name: string | null | undefined): string {
-  const s = (name ?? "").trim();
-  if (!s) return "?";
-  return (
-    s
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() ?? "")
-      .join("") || "?"
-  );
-}
+/**
+ * Indicador de "fecha de entrega" para la card del Kanban.
+ *
+ * Se calcula desde Repair.estimatedDeliveryAt y muestra:
+ *   - "Hoy"           cuando la entrega cae el día actual
+ *   - "X d"           cuando faltan X días (verde si ≥ 3 / amber si 1-2)
+ *   - "X d atraso"    cuando ya está atrasada (rojo)
+ *   - "Entregada"     cuando ya tiene deliveredAt o está archivada
+ *   - null            cuando no hay fecha de entrega cargada
+ */
+function deliveryStatus(repair: KanbanRepair): {
+  label: string;
+  toneClass: string;
+  tooltip: string;
+} | null {
+  // Ya entregada / archivada → no mostramos contador
+  if (repair.archivedAt || repair.status === "archivado") {
+    return {
+      label: "Entregada",
+      toneClass: "text-slate-400",
+      tooltip: "Reparación archivada",
+    };
+  }
 
-function daysFrom(iso: string): number {
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  return Math.max(0, Math.floor((now - then) / 86_400_000));
+  if (!repair.estimatedDeliveryAt) return null;
+
+  const target = new Date(repair.estimatedDeliveryAt);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+  const diffDays = Math.round(
+    (startOfTarget.getTime() - startOfToday.getTime()) / 86_400_000,
+  );
+
+  const formatted = target.toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+
+  if (diffDays < 0) {
+    const lateBy = Math.abs(diffDays);
+    return {
+      label: `${lateBy}d atraso`,
+      toneClass: "text-rose-600",
+      tooltip: `Entrega prevista ${formatted} — ${lateBy} día${lateBy === 1 ? "" : "s"} de atraso`,
+    };
+  }
+  if (diffDays === 0) {
+    return {
+      label: "Hoy",
+      toneClass: "text-amber-600",
+      tooltip: `Entrega prevista hoy (${formatted})`,
+    };
+  }
+  if (diffDays <= 2) {
+    return {
+      label: `${diffDays}d`,
+      toneClass: "text-amber-600",
+      tooltip: `Faltan ${diffDays} día${diffDays === 1 ? "" : "s"} — entrega ${formatted}`,
+    };
+  }
+  return {
+    label: `${diffDays}d`,
+    toneClass: "text-emerald-600",
+    tooltip: `Faltan ${diffDays} días — entrega ${formatted}`,
+  };
 }
 
 function formatShortDate(iso: string): string {

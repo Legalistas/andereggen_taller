@@ -215,10 +215,6 @@ export default function CustomersSection() {
         <div>
           <Breadcrumbs items={[{ label: "Clientes" }]} />
           <h1 className="text-3xl font-bold text-foreground">Clientes</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Listado de clientes registrados. También se crean automáticamente
-            desde Cotizaciones y Producción.
-          </p>
         </div>
         <Dialog
           open={showNewDialog}

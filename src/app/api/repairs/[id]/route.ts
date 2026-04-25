@@ -1,8 +1,19 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
+import {
+  buildRepairContext,
+  sendRepairEventNotification,
+} from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+/**
+ * Estados desde los que el sistema puede auto-avanzar a "chapa" cuando se
+ * carga la fecha de ingreso por primera vez. Solo turno_asignado: si la card
+ * ya está más adelante en el flujo, no la pisamos.
+ */
+const AUTO_ADVANCE_FROM = new Set(["turno_asignado"]);
 
 export async function GET(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
@@ -90,6 +101,21 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     }
   }
 
+  // Detectar transición: enteredAt pasa de null a un valor + status auto-avanzable.
+  // Cuando el taller carga la fecha de ingreso del vehículo, asumimos que ya
+  // empezó el trabajo de chapa, así que movemos la card automáticamente.
+  const newEnteredAt =
+    enteredAt !== undefined
+      ? enteredAt
+        ? new Date(enteredAt as string)
+        : null
+      : undefined;
+  const willTriggerEntry =
+    newEnteredAt !== undefined &&
+    newEnteredAt !== null &&
+    !existing.enteredAt &&
+    AUTO_ADVANCE_FROM.has(existing.status);
+
   const updated = await prisma.repair.update({
     where: { id },
     data: {
@@ -100,7 +126,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
         scheduledAt: scheduledAt ? new Date(scheduledAt as string) : null,
       }),
       ...(enteredAt !== undefined && {
-        enteredAt: enteredAt ? new Date(enteredAt as string) : null,
+        enteredAt: newEnteredAt,
       }),
       ...(partsReceivedAt !== undefined && {
         partsReceivedAt: partsReceivedAt
@@ -119,6 +145,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       ...(reason !== undefined && {
         reason: (reason as string | null) || null,
       }),
+      ...(willTriggerEntry && { status: "chapa" as const }),
     },
     include: {
       assignedMechanic: {
@@ -127,6 +154,19 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       budget: { select: { id: true, number: true, grandTotal: true } },
     },
   });
+
+  // Si recién cargamos la fecha de ingreso, disparamos el email "vehículo en
+  // taller" al cliente (y otros actores definidos en EVENT_RECIPIENTS). Lo
+  // hacemos en background para no bloquear la respuesta.
+  if (willTriggerEntry) {
+    buildRepairContext(updated.id)
+      .then((ctx) => {
+        if (ctx) return sendRepairEventNotification("vehicle_entered", ctx);
+      })
+      .catch((e) =>
+        console.error("[notif:vehicle_entered] error en envío:", e),
+      );
+  }
 
   return NextResponse.json({ repair: updated });
 }

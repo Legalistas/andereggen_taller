@@ -13,9 +13,6 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold text-slate-900">
           {firstName ? `Hola, ${firstName}` : "Hola"}
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Este es el estado actual del taller.
-        </p>
       </div>
 
       <DashboardKpis />

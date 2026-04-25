@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import type React from "react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { protectRoute } from "@/lib/auth-utils";
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+};
 
 export default async function DashboardLayout({
   children,

@@ -1,140 +1,117 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
+import type { RepairStatus } from "../../../../../generated/prisma/client";
 
 /**
  * GET /api/dashboard/stats
  *
- * KPIs principales del módulo de Estadísticas (Dashboard). Spec:
- *  1. Vehículos en reparación actualmente (total + desglose por sub-estado de pago)
- *  2. Cotizaciones en curso (draft + sent)
- *  3. Reparaciones completadas en el mes
- *  4. Tiempo promedio de reparación
- *  5. Tasa de conversión (cotizaciones ganadas / total decididas)
+ * KPIs principales del dashboard:
+ *   1. Vehículos en reparación (basado en Repair, excluyendo archivado)
+ *   2. Cotizaciones en curso (Budget draft + sent)
+ *   3. Reparaciones completadas en el mes (Repair archivado con archivedAt este mes)
+ *   4. Tiempo promedio de reparación (entre enteredAt y archivedAt, repairs archivados)
+ *   5. Tasa de conversión (Lead ganados / (ganados + perdidos))
  *
- * Como el dominio actual no tiene un modelo "Repair" separado, tratamos a los
- * Budgets con status=accepted como reparaciones en curso, y derivamos el
- * sub-estado y la "finalización" desde los Payments asociados:
- *   - sin pagos                       → Sin iniciar
- *   - pagos parciales (< grandTotal)  → En proceso
- *   - pagos ≥ grandTotal              → Lista / completada
+ * Mapeo de RepairStatus a etapas:
+ *   not_started: turno_asignado, pendientes_repuestos
+ *   in_progress: chapa, pintura, calidad
+ *   ready:       pendientes_cobro, experiencia_cliente
+ *   archivado:   excluido del total "en reparación"
+ *
+ * NOTA: 'ingresado' fue removido del flujo del Kanban. El enum value sigue
+ * existiendo pero no debería haber nuevas Repairs con ese status.
  */
+
+const NOT_STARTED: RepairStatus[] = ["turno_asignado", "pendientes_repuestos"];
+const IN_PROGRESS: RepairStatus[] = ["chapa", "pintura", "calidad"];
+const READY: RepairStatus[] = ["pendientes_cobro", "experiencia_cliente"];
+
 export async function GET(request: Request) {
   const authError = await verifyAuth(request);
   if (authError) return authError;
 
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  // ── 1+3+4: todos los budgets accepted con sus pagos ─────────────
-  // Traemos solo los campos necesarios para calcular local (evita N+1).
-  const acceptedBudgets = await prisma.budget.findMany({
-    where: { status: "accepted" },
-    select: {
-      id: true,
-      grandTotal: true,
-      acceptedAt: true,
-      updatedAt: true,
-      payments: { select: { amount: true, paidAt: true } },
-    },
-  });
-
-  type RepairState = "not_started" | "in_progress" | "ready";
-  const classify = (b: (typeof acceptedBudgets)[number]): RepairState => {
-    const total = Number(b.grandTotal);
-    const paid = b.payments.reduce((a, p) => a + Number(p.amount), 0);
-    if (paid <= 0) return "not_started";
-    if (paid < total) return "in_progress";
-    return "ready";
-  };
-
-  const vehiclesBreakdown = { not_started: 0, in_progress: 0, ready: 0 };
-  const completedThisMonth: typeof acceptedBudgets = [];
-  const repairDurations: number[] = [];
-
-  for (const b of acceptedBudgets) {
-    const state = classify(b);
-    vehiclesBreakdown[state] += 1;
-
-    if (state === "ready") {
-      // Fecha de "completado" = último pago que llevó el total ≥ grandTotal.
-      const lastPaidAt = b.payments.reduce<Date | null>((acc, p) => {
-        const d = p.paidAt;
-        return !acc || d > acc ? d : acc;
-      }, null);
-
-      // Tiempo de reparación — solo si tenemos acceptedAt y último pago válido.
-      if (b.acceptedAt && lastPaidAt && lastPaidAt >= b.acceptedAt) {
-        const days =
-          (lastPaidAt.getTime() - b.acceptedAt.getTime()) /
-          (1000 * 60 * 60 * 24);
-        repairDurations.push(days);
-      }
-
-      if (lastPaidAt && lastPaidAt >= startOfMonth && lastPaidAt < endOfMonth) {
-        completedThisMonth.push(b);
-      }
-    }
-  }
-
-  const vehiclesInRepair = {
-    total:
-      vehiclesBreakdown.not_started +
-      vehiclesBreakdown.in_progress +
-      vehiclesBreakdown.ready,
-    breakdown: vehiclesBreakdown,
-  };
-
-  const completedThisMonthAmount = completedThisMonth.reduce(
-    (a, b) => a + Number(b.grandTotal),
-    0,
-  );
-
-  const avgRepairDays =
-    repairDurations.length === 0
-      ? null
-      : repairDurations.reduce((a, n) => a + n, 0) / repairDurations.length;
-
-  // ── 2: cotizaciones en curso ────────────────────────────────────
-  const [draftCount, sentCount] = await Promise.all([
+  const [
+    repairCounts,
+    draftCount,
+    sentCount,
+    completedMonthCount,
+    paymentsMonth,
+    avgDaysAgg,
+    leadCounts,
+  ] = await Promise.all([
+    prisma.repair.groupBy({ by: ["status"], _count: true }),
     prisma.budget.count({ where: { status: "draft" } }),
     prisma.budget.count({ where: { status: "sent" } }),
+    prisma.repair.count({
+      where: { status: "archivado", archivedAt: { gte: startOfMonth } },
+    }),
+    prisma.payment.aggregate({
+      where: { paidAt: { gte: startOfMonth } },
+      _sum: { amount: true },
+    }),
+    // Promedio de días entre enteredAt y archivedAt (Repairs archivados con
+    // ambas fechas válidas). Postgres-only — usamos $queryRaw.
+    prisma.$queryRaw<Array<{ avg_days: number | null }>>`
+      SELECT AVG(EXTRACT(EPOCH FROM ("archivedAt" - "enteredAt")) / 86400) AS avg_days
+      FROM "Repair"
+      WHERE status = 'archivado'
+        AND "enteredAt" IS NOT NULL
+        AND "archivedAt" IS NOT NULL
+        AND "archivedAt" > "enteredAt"
+    `,
+    prisma.lead.groupBy({ by: ["status"], _count: true }),
   ]);
 
-  // ── 5: tasa de conversión ───────────────────────────────────────
-  // Denominador: cotizaciones que ya fueron decididas (no sumamos drafts).
-  const [acceptedTotal, rejectedTotal, expiredTotal, sentTotalForRate] =
-    await Promise.all([
-      prisma.budget.count({ where: { status: "accepted" } }),
-      prisma.budget.count({ where: { status: "rejected" } }),
-      prisma.budget.count({ where: { status: "expired" } }),
-      prisma.budget.count({ where: { status: "sent" } }),
-    ]);
+  // ── KPI 1: Vehículos en reparación
+  const repairByStatus = new Map<RepairStatus, number>();
+  for (const r of repairCounts) repairByStatus.set(r.status, r._count);
+  const sum = (statuses: RepairStatus[]) =>
+    statuses.reduce((acc, s) => acc + (repairByStatus.get(s) ?? 0), 0);
 
-  const conversionDenom =
-    acceptedTotal + rejectedTotal + expiredTotal + sentTotalForRate;
-  const conversionRate =
-    conversionDenom === 0
-      ? 0
-      : Math.round((acceptedTotal / conversionDenom) * 100);
+  const notStarted = sum(NOT_STARTED);
+  const inProgress = sum(IN_PROGRESS);
+  const ready = sum(READY);
+
+  // ── KPI 2: Cotizaciones en curso
+  const totalBudgets = draftCount + sentCount;
+
+  // ── KPI 3: Completadas este mes (count + monto cobrado)
+  const completedAmount = Number(paymentsMonth._sum.amount ?? 0);
+
+  // ── KPI 4: Tiempo promedio
+  const avgDaysRaw = avgDaysAgg?.[0]?.avg_days;
+  const avgRepairDays =
+    avgDaysRaw !== null && avgDaysRaw !== undefined && Number.isFinite(Number(avgDaysRaw))
+      ? Number(avgDaysRaw)
+      : null;
+
+  // ── KPI 5: Tasa de conversión
+  const leadByStatus = new Map<string, number>();
+  for (const l of leadCounts) leadByStatus.set(l.status, l._count);
+  const won = leadByStatus.get("ganado") ?? 0;
+  const lost = leadByStatus.get("perdido") ?? 0;
+  const closedTotal = won + lost;
+  const rate = closedTotal > 0 ? Math.round((won / closedTotal) * 100) : 0;
 
   return NextResponse.json({
-    vehiclesInRepair,
+    vehiclesInRepair: {
+      total: notStarted + inProgress + ready,
+      breakdown: { not_started: notStarted, in_progress: inProgress, ready },
+    },
     budgetsInProgress: {
-      total: draftCount + sentCount,
+      total: totalBudgets,
       drafts: draftCount,
       pendingApproval: sentCount,
     },
     completedThisMonth: {
-      count: completedThisMonth.length,
-      amount: completedThisMonthAmount,
+      count: completedMonthCount,
+      amount: completedAmount,
     },
     avgRepairDays,
-    conversionRate: {
-      rate: conversionRate,
-      won: acceptedTotal,
-      total: conversionDenom,
-    },
+    conversionRate: { rate, won, total: closedTotal },
   });
 }

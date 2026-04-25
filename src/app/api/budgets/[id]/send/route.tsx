@@ -4,6 +4,7 @@ import { getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { sendEmail } from "@/lib/email/send";
 import { BudgetSentEmail } from "@/lib/email/templates/budget-sent";
 import { BudgetPdf, type BudgetPdfData } from "@/lib/pdf/budget-pdf";
+import { resolvePdfLogo } from "@/lib/pdf/logo";
 import { prisma } from "@/lib/prisma";
 import { getAppSettings } from "@/lib/settings";
 
@@ -132,6 +133,7 @@ export async function POST(request: Request, ctx: RouteContext) {
       phone: settings.companyPhone ?? "—",
       email: settings.companyEmail ?? "",
       cuit: settings.companyCuit,
+      logoUrl: await resolvePdfLogo(settings.companyLogoUrl),
     },
   };
 

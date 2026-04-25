@@ -230,10 +230,6 @@ export default function CustomersReportSection() {
       <div>
         <Breadcrumbs items={[{ label: "Reportes" }, { label: "Clientes" }]} />
         <h1 className="text-3xl font-bold">Reportes — Clientes</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Ranking, segmentación y valor de cada cliente (CLV). Detectá morosos,
-          frecuentes y clientes en riesgo de no volver.
-        </p>
       </div>
 
       {/* Filtros */}

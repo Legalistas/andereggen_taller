@@ -350,10 +350,6 @@ export default function ToolsSection() {
             items={[{ label: "Inventario" }, { label: "Herramientas" }]}
           />
           <h1 className="text-3xl font-bold">Herramientas</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Activos físicos del taller. Asigná herramientas a mecánicos y
-            controlá su estado.
-          </p>
         </div>
         <Button className="gap-2" onClick={openCreate}>
           <Plus className="h-4 w-4" />

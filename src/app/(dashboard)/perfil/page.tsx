@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { protectRoute } from "@/lib/auth-utils";
 import { roleLabel } from "@/lib/auth-edge";
+import { protectRoute } from "@/lib/auth-utils";
+
+export const metadata: Metadata = { title: "Mi perfil" };
 
 export default async function PerfilPage() {
   const session = await protectRoute();

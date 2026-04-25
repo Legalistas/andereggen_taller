@@ -56,8 +56,8 @@ export type RepairStatusLite =
   | "chapa"
   | "pintura"
   | "calidad"
-  | "experiencia_cliente"
   | "pendientes_cobro"
+  | "experiencia_cliente"
   | "archivado";
 
 export type RepairOnLead = {
@@ -161,8 +161,8 @@ const REPAIR_KANBAN_LABEL: Record<RepairStatusLite, string> = {
   chapa: "Chapa",
   pintura: "Pintura",
   calidad: "Calidad",
-  experiencia_cliente: "Listo / encuesta",
   pendientes_cobro: "Pend. Cobro",
+  experiencia_cliente: "Listo / encuesta",
   archivado: "Archivado",
 };
 
@@ -173,8 +173,8 @@ const REPAIR_KANBAN_COLOR: Record<RepairStatusLite, string> = {
   chapa: "bg-orange-100 text-orange-700",
   pintura: "bg-purple-100 text-purple-700",
   calidad: "bg-cyan-100 text-cyan-700",
-  experiencia_cliente: "bg-emerald-100 text-emerald-700",
   pendientes_cobro: "bg-amber-100 text-amber-800",
+  experiencia_cliente: "bg-emerald-100 text-emerald-700",
   archivado: "bg-slate-200 text-slate-600",
 };
 

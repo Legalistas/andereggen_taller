@@ -201,10 +201,6 @@ export default function ServicesSection() {
       <div>
         <Breadcrumbs items={[{ label: "Reportes" }, { label: "Servicios" }]} />
         <h1 className="text-3xl font-bold">Reportes — Servicios</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Qué tipo de trabajos cotizaste y facturaste más. Ranking por
-          categoría, composición mano de obra vs repuestos.
-        </p>
       </div>
 
       {/* Filtros */}

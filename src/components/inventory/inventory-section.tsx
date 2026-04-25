@@ -399,10 +399,6 @@ export default function InventorySection() {
             items={[{ label: "Inventario" }, { label: "Repuestos" }]}
           />
           <h1 className="text-3xl font-bold">Inventario de repuestos</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Catálogo + stock + historial. Los presupuestos aceptados descuentan
-            automáticamente.
-          </p>
         </div>
         <Button className="gap-2" onClick={openCreate}>
           <Plus className="h-4 w-4" />

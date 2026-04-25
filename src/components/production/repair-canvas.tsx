@@ -6,6 +6,7 @@ import {
   Calendar,
   Car,
   Check,
+  ChevronDown,
   FileText,
   Hash,
   Loader2,
@@ -85,8 +86,8 @@ const STATUS_LABEL: Record<RepairStatus, string> = {
   chapa: "Chapa",
   pintura: "Pintura",
   calidad: "Calidad",
-  experiencia_cliente: "Experiencia del Cliente",
   pendientes_cobro: "Pendientes de Cobro",
+  experiencia_cliente: "Experiencia del Cliente",
   archivado: "Archivado",
 };
 
@@ -97,20 +98,19 @@ const STATUS_DOT: Record<RepairStatus, string> = {
   chapa: "bg-orange-500",
   pintura: "bg-purple-500",
   calidad: "bg-cyan-500",
-  experiencia_cliente: "bg-emerald-500",
   pendientes_cobro: "bg-amber-600",
+  experiencia_cliente: "bg-emerald-500",
   archivado: "bg-slate-400",
 };
 
 const ALL_STATUSES: RepairStatus[] = [
   "turno_asignado",
-  "ingresado",
   "pendientes_repuestos",
   "chapa",
   "pintura",
   "calidad",
-  "experiencia_cliente",
   "pendientes_cobro",
+  "experiencia_cliente",
   "archivado",
 ];
 
@@ -300,12 +300,7 @@ export function RepairCanvas({
               </div>
 
               <div className="mt-4 flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-sm px-2.5 py-1 text-[11px] font-medium">
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[repair.status]}`}
-                  />
-                  {STATUS_LABEL[repair.status]}
-                </span>
+                <StatusPicker status={repair.status} onChange={changeStatus} />
                 {repair.directCreation && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-indigo-400/30 px-2 py-0.5 text-[10px] font-medium">
                     Directa
@@ -316,8 +311,6 @@ export function RepairCanvas({
             </SheetHeader>
 
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-              <StatusSection status={repair.status} onChange={changeStatus} />
-
               <MechanicSection
                 current={repair.assignedMechanic}
                 onPick={(userId) => patchRepair({ assignedMechanicId: userId })}
@@ -384,45 +377,61 @@ function SectionCard({
   );
 }
 
-function StatusSection({
+/**
+ * Selector de status que vive en el header del canvas. Muestra el status
+ * actual como una pill clickeable; al click abre un Popover con todos los
+ * estados disponibles para cambiar.
+ */
+function StatusPicker({
   status,
   onChange,
 }: {
   status: RepairStatus;
   onChange: (s: RepairStatus) => Promise<void>;
 }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <SectionCard
-      icon={Wrench}
-      title="Estado"
-      iconTint="text-orange-600"
-      iconBg="bg-orange-50"
-    >
-      <div className="grid grid-cols-2 gap-1.5">
-        {ALL_STATUSES.map((s) => {
-          const active = status === s;
-          return (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onChange(s)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium border transition-colors ${
-                active
-                  ? "bg-[#003b73] text-white border-[#003b73]"
-                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-              }`}
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  active ? "bg-white" : STATUS_DOT[s]
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-sm px-2.5 py-1 text-[11px] font-medium hover:bg-white/25 transition-colors"
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
+          {STATUS_LABEL[status]}
+          <ChevronDown className="h-3 w-3 opacity-70" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1" align="start">
+        <div className="flex flex-col">
+          {ALL_STATUSES.map((s) => {
+            const active = status === s;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={async () => {
+                  setOpen(false);
+                  if (s !== status) await onChange(s);
+                }}
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-left transition-colors ${
+                  active
+                    ? "bg-slate-100 text-slate-900"
+                    : "text-slate-700 hover:bg-slate-50"
                 }`}
-              />
-              {STATUS_LABEL[s]}
-            </button>
-          );
-        })}
-      </div>
-    </SectionCard>
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full shrink-0 ${STATUS_DOT[s]}`}
+                />
+                <span className="flex-1">{STATUS_LABEL[s]}</span>
+                {active && <Check className="h-3.5 w-3.5 text-[#003b73]" />}
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -20,6 +20,8 @@ const steps: Array<{ label: string; file: string }> = [
   { label: "Insurance companies", file: "prisma/seed/insurance-companies.ts" },
   { label: "Lead sources", file: "prisma/seed/lead-sources.ts" },
   { label: "Vehicle catalog", file: "prisma/seed/vehicle-catalog.ts" },
+  { label: "Sample parts (catálogo)", file: "prisma/seed/sample-parts.ts" },
+  { label: "Sample tools (herramientas)", file: "prisma/seed/sample-tools.ts" },
 ];
 
 async function runAllSeeds() {

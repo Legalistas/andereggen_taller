@@ -217,10 +217,6 @@ export default function FollowupsSection() {
           items={[{ label: "Cotizaciones" }, { label: "Seguimiento" }]}
         />
         <h1 className="text-3xl font-bold">Seguimiento</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Bandeja de acciones pendientes sobre tus cotizaciones. Entrá acá para
-          saber qué hay que contactar, recordar o cerrar.
-        </p>
       </div>
 
       <Card className="p-4">

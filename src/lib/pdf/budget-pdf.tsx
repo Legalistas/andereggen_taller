@@ -3,7 +3,7 @@
  * Renderizado server-side: generar Buffer con `renderToBuffer(<BudgetPdf .../>)`.
  */
 
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import { CATEGORY_BY_KEY, subdetailLabel } from "@/lib/budget-catalog";
 
 // ─────────────────────────────────────────────────────────────
@@ -62,6 +62,8 @@ export type BudgetPdfData = {
     phone: string;
     email: string;
     cuit?: string | null;
+    /** URL absoluta del logo (PNG/JPG). Si está, se renderiza arriba del nombre. */
+    logoUrl?: string | null;
   };
 };
 
@@ -96,7 +98,9 @@ const s = StyleSheet.create({
     borderBottomColor: C.brand,
     marginBottom: 16,
   },
-  companyBlock: { flexDirection: "column", maxWidth: 320 },
+  companyBlock: { flexDirection: "column", maxWidth: 360 },
+  // Logo PNG real: 871×304 (ratio 2.86:1). Mantener proporción.
+  logo: { width: 138, height: 48, marginBottom: 8, objectFit: "contain" },
   companyName: {
     fontSize: 14,
     fontWeight: "bold",
@@ -277,7 +281,10 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
         {/* Header */}
         <View style={s.header}>
           <View style={s.companyBlock}>
-            <Text style={s.companyName}>{data.company.name}</Text>
+            {data.company.logoUrl ? (
+              <Image src={data.company.logoUrl} style={s.logo} />
+            ) : null}
+            {/* <Text style={s.companyName}>{data.company.name}</Text> */}
             <Text style={s.companyLine}>{data.company.address}</Text>
             <Text style={s.companyLine}>
               Tel: {data.company.phone} · {data.company.email}

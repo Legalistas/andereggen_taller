@@ -5,13 +5,12 @@ import type { RepairStatus } from "../../../../generated/prisma/client";
 
 const ALL_STATUSES: RepairStatus[] = [
   "turno_asignado",
-  "ingresado",
   "pendientes_repuestos",
   "chapa",
   "pintura",
   "calidad",
-  "experiencia_cliente",
   "pendientes_cobro",
+  "experiencia_cliente",
   "archivado",
 ];
 
@@ -61,7 +60,10 @@ export async function GET(request: Request) {
         select: { stars: true, respondedAt: true, token: true },
       },
     },
-    orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
+    // El Kanban agrupa por status según el array COLUMNS de production-kanban.tsx,
+    // así que el orden visual no depende del enum. Solo ordenamos por updatedAt
+    // para que las cards más recientes aparezcan primero dentro de cada columna.
+    orderBy: { updatedAt: "desc" },
   });
 
   return NextResponse.json({ repairs });

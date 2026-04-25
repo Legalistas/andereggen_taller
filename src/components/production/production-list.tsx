@@ -44,8 +44,8 @@ const STATUS_LABEL: Record<RepairStatus, string> = {
   chapa: "Chapa",
   pintura: "Pintura",
   calidad: "Calidad",
-  experiencia_cliente: "Experiencia Cliente",
   pendientes_cobro: "Pendientes de Cobro",
+  experiencia_cliente: "Experiencia Cliente",
   archivado: "Archivado",
 };
 
@@ -56,8 +56,8 @@ const STATUS_STYLE: Record<RepairStatus, string> = {
   chapa: "bg-orange-100 text-orange-700 border-orange-200",
   pintura: "bg-purple-100 text-purple-700 border-purple-200",
   calidad: "bg-cyan-100 text-cyan-700 border-cyan-200",
-  experiencia_cliente: "bg-emerald-100 text-emerald-700 border-emerald-200",
   pendientes_cobro: "bg-amber-100 text-amber-800 border-amber-200",
+  experiencia_cliente: "bg-emerald-100 text-emerald-700 border-emerald-200",
   archivado: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
@@ -65,13 +65,12 @@ type SortBy = "recent" | "oldest" | "name_asc";
 
 const ALL_STATUSES: RepairStatus[] = [
   "turno_asignado",
-  "ingresado",
   "pendientes_repuestos",
   "chapa",
   "pintura",
   "calidad",
-  "experiencia_cliente",
   "pendientes_cobro",
+  "experiencia_cliente",
 ];
 
 export default function ProductionList() {
@@ -167,10 +166,6 @@ export default function ProductionList() {
           items={[{ label: "Producción", href: "/produccion" }, { label: "Lista" }]}
         />
         <h1 className="text-3xl font-bold">Lista de reparaciones</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Reparaciones activas — vista tabular de todas las etapas excepto
-          archivadas.
-        </p>
       </div>
 
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-4">

@@ -346,10 +346,6 @@ export default function ProductionSection() {
         <div>
           <Breadcrumbs items={[{ label: "Producción" }]} />
           <h1 className="text-3xl font-bold text-foreground">Producción</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Kanban de reparaciones en curso — arrastrá los cards para cambiar de
-            etapa.
-          </p>
         </div>
 
         <Dialog

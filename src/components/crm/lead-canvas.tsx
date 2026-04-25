@@ -6,6 +6,7 @@ import {
   Briefcase,
   Car,
   Check,
+  ChevronDown,
   FileText,
   Hash,
   Loader2,
@@ -113,8 +114,8 @@ type RepairStatusLite =
   | "chapa"
   | "pintura"
   | "calidad"
-  | "experiencia_cliente"
   | "pendientes_cobro"
+  | "experiencia_cliente"
   | "archivado";
 
 type RepairLite = {
@@ -421,20 +422,32 @@ export function LeadCanvas({
               </div>
 
               <div className="mt-4 flex items-center gap-2 flex-wrap">
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-sm px-2.5 py-1 text-[11px] font-medium`}
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[lead.status]}`}
-                  />
-                  {STATUS_LABELS[lead.status]}
-                </span>
+                <StatusPicker
+                  status={lead.status}
+                  onChange={(status) => patchLead({ status })}
+                />
                 <SavingIndicator state={savingIndicator} />
               </div>
             </SheetHeader>
 
             {/* Body scrollable con secciones como cards */}
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+              <BudgetsSection
+                leadId={lead.id}
+                budgets={lead.budgets}
+                onOpenBudget={onOpenBudget}
+                onSendBudget={(b) => setSendingBudget(b)}
+              />
+
+              {lead.vehicle && (
+                <VehicleSection vehicle={lead.vehicle} onPatch={patchVehicle} />
+              )}
+
+              <CustomerSection
+                customer={lead.customer}
+                onPatch={patchCustomer}
+              />
+
               <ActorsSection
                 leadId={lead.id}
                 inspector={lead.inspector}
@@ -451,36 +464,19 @@ export function LeadCanvas({
                 }
               />
 
-              {lead.vehicle && (
-                <VehicleSection vehicle={lead.vehicle} onPatch={patchVehicle} />
-              )}
-
-              <CustomerSection
-                customer={lead.customer}
-                onPatch={patchCustomer}
-              />
-
               <NotesSection
                 value={lead.notes ?? ""}
                 onSave={(notes) => patchLead({ notes: notes || null })}
-              />
-
-              <BudgetsSection
-                leadId={lead.id}
-                budgets={lead.budgets}
-                onOpenBudget={onOpenBudget}
-                onSendBudget={(b) => setSendingBudget(b)}
               />
 
               {lead.repairs.length > 0 && (
                 <RepairSection repairs={lead.repairs} />
               )}
 
-              <StatusSection
+              <LostReasonSection
                 status={lead.status}
                 lostReason={lead.lostReason}
                 lostNotes={lead.lostNotes}
-                onChangeStatus={(status) => patchLead({ status })}
                 onChangeLostReason={(lostReason) => patchLead({ lostReason })}
                 onChangeLostNotes={(lostNotes) =>
                   patchLead({ lostNotes: lostNotes || null })
@@ -1546,8 +1542,8 @@ const REPAIR_STATUS_LABEL: Record<RepairStatusLite, string> = {
   chapa: "Chapa",
   pintura: "Pintura",
   calidad: "Calidad",
-  experiencia_cliente: "Experiencia del Cliente",
   pendientes_cobro: "Pendientes de Cobro",
+  experiencia_cliente: "Experiencia del Cliente",
   archivado: "Archivado",
 };
 
@@ -1558,8 +1554,8 @@ const REPAIR_STATUS_COLOR: Record<RepairStatusLite, string> = {
   chapa: "bg-orange-100 text-orange-700 border-orange-200",
   pintura: "bg-purple-100 text-purple-700 border-purple-200",
   calidad: "bg-cyan-100 text-cyan-700 border-cyan-200",
-  experiencia_cliente: "bg-emerald-100 text-emerald-700 border-emerald-200",
   pendientes_cobro: "bg-amber-100 text-amber-800 border-amber-200",
+  experiencia_cliente: "bg-emerald-100 text-emerald-700 border-emerald-200",
   archivado: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
@@ -1664,81 +1660,114 @@ function formatDateShort(iso: string): string {
   });
 }
 
-function StatusSection({
+/**
+ * Selector de status del Lead que vive en el header del canvas (pill blanca
+ * translúcida con ChevronDown). Click → Popover con lista vertical de los 7
+ * estados. El form adicional de "motivo de pérdida" sigue mostrándose en el
+ * cuerpo (LostReasonSection), solo cuando el status es "perdido".
+ */
+function StatusPicker({
+  status,
+  onChange,
+}: {
+  status: LeadStatus;
+  onChange: (s: LeadStatus) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-sm px-2.5 py-1 text-[11px] font-medium hover:bg-white/25 transition-colors"
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
+          {STATUS_LABELS[status]}
+          <ChevronDown className="h-3 w-3 opacity-70" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1" align="start">
+        <div className="flex flex-col">
+          {(Object.keys(STATUS_LABELS) as LeadStatus[]).map((k) => {
+            const active = status === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={async () => {
+                  setOpen(false);
+                  if (k !== status) await onChange(k);
+                }}
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-left transition-colors ${
+                  active
+                    ? "bg-slate-100 text-slate-900"
+                    : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${STATUS_DOT[k]}`} />
+                <span className="flex-1">{STATUS_LABELS[k]}</span>
+                {active && <Check className="h-3.5 w-3.5 text-[#003b73]" />}
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * Sección de motivo de pérdida — solo visible cuando el lead está en estado
+ * "perdido". Antes esto vivía dentro de `StatusSection` junto con los botones
+ * de status, pero ahora el selector de status está en el header del canvas.
+ */
+function LostReasonSection({
   status,
   lostReason,
   lostNotes,
-  onChangeStatus,
   onChangeLostReason,
   onChangeLostNotes,
 }: {
   status: LeadStatus;
   lostReason: LeadLostReason | null;
   lostNotes: string | null;
-  onChangeStatus: (s: LeadStatus) => Promise<void>;
   onChangeLostReason: (r: LeadLostReason) => Promise<void>;
   onChangeLostNotes: (n: string) => Promise<void>;
 }) {
+  if (status !== "perdido") return null;
   return (
     <SectionCard
       icon={FileText}
-      title="Estado"
-      iconTint="text-purple-600"
-      iconBg="bg-purple-50"
+      title="Motivo de pérdida"
+      iconTint="text-rose-600"
+      iconBg="bg-rose-50"
     >
-      <div className="grid grid-cols-3 gap-1.5">
-        {(Object.keys(STATUS_LABELS) as LeadStatus[]).map((k) => {
-          const active = status === k;
-          return (
-            <button
-              key={k}
-              type="button"
-              onClick={() => onChangeStatus(k)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium border transition-colors ${
-                active
-                  ? "bg-[#003b73] text-white border-[#003b73]"
-                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-              }`}
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  active ? "bg-white" : STATUS_DOT[k]
-                }`}
-              />
-              {STATUS_LABELS[k]}
-            </button>
-          );
-        })}
-      </div>
-
-      {status === "perdido" && (
-        <div className="mt-4 grid gap-3 rounded-lg border border-rose-200 bg-rose-50/40 p-3">
-          <div className="grid gap-1.5">
-            <Label className="text-[10px] font-medium uppercase tracking-wider text-rose-700">
-              Motivo de pérdida
-            </Label>
-            <Select
-              value={lostReason ?? ""}
-              onValueChange={(v) => onChangeLostReason(v as LeadLostReason)}
-            >
-              <SelectTrigger className="bg-white">
-                <SelectValue placeholder="Seleccionar motivo…" />
-              </SelectTrigger>
-              <SelectContent>
-                {LOST_REASONS.map((r) => (
-                  <SelectItem key={r.key} value={r.key}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <LostNotesField
-            value={lostNotes ?? ""}
-            onSave={(v) => onChangeLostNotes(v)}
-          />
+      <div className="grid gap-3">
+        <div className="grid gap-1.5">
+          <Label className="text-[10px] font-medium uppercase tracking-wider text-rose-700">
+            Motivo
+          </Label>
+          <Select
+            value={lostReason ?? ""}
+            onValueChange={(v) => onChangeLostReason(v as LeadLostReason)}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue placeholder="Seleccionar motivo…" />
+            </SelectTrigger>
+            <SelectContent>
+              {LOST_REASONS.map((r) => (
+                <SelectItem key={r.key} value={r.key}>
+                  {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      )}
+        <LostNotesField
+          value={lostNotes ?? ""}
+          onSave={(v) => onChangeLostNotes(v)}
+        />
+      </div>
     </SectionCard>
   );
 }

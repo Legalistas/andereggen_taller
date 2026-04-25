@@ -11,23 +11,26 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 const ALL_STATUSES: RepairStatus[] = [
   "turno_asignado",
-  "ingresado",
   "pendientes_repuestos",
   "chapa",
   "pintura",
   "calidad",
-  "experiencia_cliente",
   "pendientes_cobro",
+  "experiencia_cliente",
   "archivado",
 ];
 
 /**
  * PATCH /api/repairs/[id]/status
  * Mueve la reparación a una nueva columna del kanban y aplica side-effects:
- *  - ingresado            → setea enteredAt si era null
+ *  - chapa                → setea enteredAt si era null + dispara vehicle_entered
  *  - pendientes_repuestos → setea partsReceivedAt si era null
  *  - archivado            → setea archivedAt si era null
  *  - experiencia_cliente  → crea ServiceRating + dispara email
+ *
+ * NOTA: La columna "Ingresado" fue removida del flujo. Cuando el vehículo
+ * llega al taller, se setea la fecha de ingreso desde el form de la card y
+ * el status pasa directo a "chapa" (lo maneja PATCH /api/repairs/[id]).
  */
 export async function PATCH(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
@@ -51,7 +54,9 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   const now = new Date();
   const data: Record<string, unknown> = { status };
 
-  if (status === "ingresado" && !existing.enteredAt) {
+  // Si arrastran directo a "chapa" sin haber pasado por el form de ingreso,
+  // seteamos enteredAt automáticamente (mismo efecto que cargarlo a mano).
+  if (status === "chapa" && !existing.enteredAt) {
     data.enteredAt = now;
   }
   if (status === "pendientes_repuestos" && !existing.partsReceivedAt) {
@@ -108,7 +113,9 @@ export async function PATCH(request: Request, ctx: RouteContext) {
         | "customer_experience"
       >
     > = {
-      ingresado: "vehicle_entered",
+      // Drag&drop directo a "chapa" sin pasar por el form: equivale a "el
+      // vehículo entró al taller", así que dispara la misma notificación.
+      chapa: "vehicle_entered",
       pendientes_repuestos: "parts_received",
       calidad: "repair_completed", // listo para retirar (pasó QC)
       experiencia_cliente: "customer_experience",

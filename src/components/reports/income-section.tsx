@@ -313,10 +313,6 @@ export default function IncomeSection() {
       <div>
         <Breadcrumbs items={[{ label: "Reportes" }, { label: "Ingresos" }]} />
         <h1 className="text-3xl font-bold">Reportes — Ingresos</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Facturado, cobrado y por cobrar de los presupuestos aceptados.
-          Registrá pagos parciales desde el detalle.
-        </p>
       </div>
 
       {/* Filtros */}
