@@ -34,6 +34,7 @@ const ACTIVE_LEAD_STATUSES: LeadStatus[] = [
   "control",
   "enviado",
   "refuerzo",
+  "pendientes_cobro",
 ];
 
 export async function GET(request: Request) {
@@ -136,6 +137,7 @@ export async function GET(request: Request) {
     control: 0,
     enviado: 0,
     refuerzo: 0,
+    pendientes_cobro: 0,
     ganado: 0,
     perdido: 0,
   };

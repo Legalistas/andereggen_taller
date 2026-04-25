@@ -25,7 +25,9 @@ export async function GET(request: Request) {
     where: {
       status: "sent",
       sentAt: { lte: reminderCutoff },
-      lead: { status: { notIn: ["refuerzo", "ganado", "perdido"] } },
+      lead: {
+        status: { notIn: ["refuerzo", "pendientes_cobro", "ganado", "perdido"] },
+      },
     },
     orderBy: { sentAt: "asc" },
     take: 50,

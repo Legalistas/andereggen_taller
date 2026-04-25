@@ -8,6 +8,7 @@ const ACTIVE_STATUSES: LeadStatus[] = [
   "control",
   "enviado",
   "refuerzo",
+  "pendientes_cobro",
 ];
 const CLOSED_STATUSES: LeadStatus[] = ["ganado", "perdido"];
 const ALL_STATUSES: LeadStatus[] = [...ACTIVE_STATUSES, ...CLOSED_STATUSES];

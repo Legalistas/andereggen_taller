@@ -81,33 +81,36 @@ type RepairDetail = {
 const STATUS_LABEL: Record<RepairStatus, string> = {
   turno_asignado: "Turno Asignado",
   ingresado: "Ingresado",
-  repuestos_recibidos: "Repuestos Recibidos",
+  pendientes_repuestos: "Pendientes de Repuestos",
   chapa: "Chapa",
   pintura: "Pintura",
   calidad: "Calidad",
   experiencia_cliente: "Experiencia del Cliente",
+  pendientes_cobro: "Pendientes de Cobro",
   archivado: "Archivado",
 };
 
 const STATUS_DOT: Record<RepairStatus, string> = {
   turno_asignado: "bg-slate-500",
   ingresado: "bg-blue-500",
-  repuestos_recibidos: "bg-amber-500",
+  pendientes_repuestos: "bg-amber-500",
   chapa: "bg-orange-500",
   pintura: "bg-purple-500",
   calidad: "bg-cyan-500",
   experiencia_cliente: "bg-emerald-500",
+  pendientes_cobro: "bg-amber-600",
   archivado: "bg-slate-400",
 };
 
 const ALL_STATUSES: RepairStatus[] = [
   "turno_asignado",
   "ingresado",
-  "repuestos_recibidos",
+  "pendientes_repuestos",
   "chapa",
   "pintura",
   "calidad",
   "experiencia_cliente",
+  "pendientes_cobro",
   "archivado",
 ];
 

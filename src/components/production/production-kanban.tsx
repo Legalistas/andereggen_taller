@@ -5,6 +5,7 @@ import {
   Calendar,
   Car,
   ClipboardCheck,
+  DollarSign,
   Loader2,
   MoreVertical,
   Package,
@@ -28,11 +29,12 @@ import {
 export type RepairStatus =
   | "turno_asignado"
   | "ingresado"
-  | "repuestos_recibidos"
+  | "pendientes_repuestos"
   | "chapa"
   | "pintura"
   | "calidad"
   | "experiencia_cliente"
+  | "pendientes_cobro"
   | "archivado";
 
 export type KanbanRepair = {
@@ -93,8 +95,8 @@ const COLUMNS: Array<{
     ringClass: "ring-blue-400",
   },
   {
-    id: "repuestos_recibidos",
-    label: "Repuestos Recibidos",
+    id: "pendientes_repuestos",
+    label: "Pendientes de Repuestos",
     icon: Package,
     headerClass: "bg-amber-50 text-amber-700 border-amber-200",
     ringClass: "ring-amber-400",
@@ -126,6 +128,13 @@ const COLUMNS: Array<{
     icon: Smile,
     headerClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
     ringClass: "ring-emerald-400",
+  },
+  {
+    id: "pendientes_cobro",
+    label: "Pendientes de Cobro",
+    icon: DollarSign,
+    headerClass: "bg-amber-50 text-amber-800 border-amber-200",
+    ringClass: "ring-amber-400",
   },
   {
     id: "archivado",
@@ -401,18 +410,14 @@ function RepairCard({
         </div>
       </div>
 
-      {/* E2.A — Badge prominente para reparaciones con repuestos recibidos.
-          Según spec 5.3: "punto de dolor clave para las aseguradoras — hoy
-          no saben si el taller ya recibió todos los repuestos". */}
-      {repair.status === "repuestos_recibidos" && repair.partsReceivedAt && (
+      {/* Badge prominente para reparaciones en "Pendientes de Repuestos".
+          Punto de dolor clave para aseguradoras: visibilidad sobre el momento
+          en que el taller recibió todos los repuestos. */}
+      {repair.status === "pendientes_repuestos" && repair.partsReceivedAt && (
         <div className="mt-2 flex items-center gap-1.5 rounded-md bg-amber-100 border border-amber-300 text-amber-900 px-2 py-1 text-[10px] font-semibold">
           <Package className="h-3 w-3" />
-          <span className="flex-1">
-            Repuestos completos · listos para producción
-          </span>
-          <span className="font-normal opacity-75">
-            {formatShortDate(repair.partsReceivedAt)}
-          </span>
+          <span className="flex-1">Repuestos completos · listos para producción</span>
+          <span className="font-normal opacity-75">{formatShortDate(repair.partsReceivedAt)}</span>
         </div>
       )}
 
@@ -497,15 +502,15 @@ function RepairCard({
         </div>
       </div>
 
-      {/* E2.A — Botón rápido para cards en "Ingresado":
-          mueve directo a "Repuestos Recibidos" sin tener que drag'n'drop. */}
+      {/* Botón rápido para cards en "Ingresado":
+          mueve directo a "Pendientes de Repuestos" sin tener que drag'n'drop. */}
       {repair.status === "ingresado" && (
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             if (moving) return;
-            onMove(repair.id, "repuestos_recibidos");
+            onMove(repair.id, "pendientes_repuestos");
           }}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
@@ -513,7 +518,7 @@ function RepairCard({
           className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 px-2 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50"
         >
           <Package className="h-3 w-3" />
-          Marcar repuestos recibidos
+          Pasar a Pendientes de Repuestos
         </button>
       )}
 

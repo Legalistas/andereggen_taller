@@ -26,7 +26,7 @@ export function Sidebar({ user, collapsed, onToggle, onNavigate }: Props) {
   return (
     <aside
       className={`h-screen bg-card border-r border-border flex flex-col transition-[width] duration-200 ease-out ${
-        collapsed ? "w-18" : "w-64"
+        collapsed ? "w-18" : "w-40"
       }`}
     >
       {/* Header: logo + toggle */}

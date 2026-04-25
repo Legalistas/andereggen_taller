@@ -11,6 +11,7 @@ const ALL_STATUSES: LeadStatus[] = [
   "control",
   "enviado",
   "refuerzo",
+  "pendientes_cobro",
   "ganado",
   "perdido",
 ];

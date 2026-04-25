@@ -101,6 +101,7 @@ const LEAD_STATUS_LABELS: Record<string, string> = {
   control: "Control",
   enviado: "Enviado",
   refuerzo: "Refuerzo",
+  pendientes_cobro: "Pendientes de Cobro",
   ganado: "Ganado",
   perdido: "Perdido",
 };
@@ -110,6 +111,7 @@ const LEAD_STATUS_COLORS: Record<string, string> = {
   control: "#a855f7", // purple
   enviado: "#06b6d4", // cyan
   refuerzo: "#f97316", // orange
+  pendientes_cobro: "#f59e0b", // amber
   ganado: "#22c55e", // green
   perdido: "#ef4444", // red
 };
@@ -175,6 +177,7 @@ export default function StatsSection() {
         "control",
         "enviado",
         "refuerzo",
+        "pendientes_cobro",
         "ganado",
         "perdido",
       ] as const

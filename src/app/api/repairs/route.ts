@@ -6,11 +6,12 @@ import type { RepairStatus } from "../../../../generated/prisma/client";
 const ALL_STATUSES: RepairStatus[] = [
   "turno_asignado",
   "ingresado",
-  "repuestos_recibidos",
+  "pendientes_repuestos",
   "chapa",
   "pintura",
   "calidad",
   "experiencia_cliente",
+  "pendientes_cobro",
   "archivado",
 ];
 

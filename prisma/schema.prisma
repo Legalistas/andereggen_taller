@@ -250,6 +250,7 @@ enum LeadStatus {
   control // Control de presupuesto
   enviado // Presupuesto enviado
   refuerzo // Refuerzo de venta
+  pendientes_cobro // Pendientes de cobro
   ganado
   perdido
 }
@@ -724,18 +725,27 @@ model VehicleModel {
 // =====================================================
 
 /**
- * Estados del Kanban de Producción (spec 5.2). Orden exacto:
- * 1. turno_asignado, 2. ingresado, 3. repuestos_recibidos, 4. chapa,
- * 5. pintura, 6. calidad, 7. experiencia_cliente, 8. archivado
+ * Estados del Kanban de Producción. Orden exacto:
+ * 1. turno_asignado, 2. ingresado, 3. pendientes_repuestos, 4. chapa,
+ * 5. pintura, 6. calidad, 7. experiencia_cliente, 8. pendientes_cobro,
+ * 9. archivado
+ *
+ * "pendientes_repuestos" representa el paso intermedio entre el ingreso
+ * del vehículo y el comienzo de la chapa: el vehículo está en taller
+ * esperando que lleguen los repuestos pedidos.
+ *
+ * "pendientes_cobro" es la etapa entre experiencia_cliente y archivado:
+ * el trabajo está terminado y entregado, falta cobrar para archivar.
  */
 enum RepairStatus {
   turno_asignado
   ingresado
-  repuestos_recibidos
+  pendientes_repuestos
   chapa
   pintura
   calidad
   experiencia_cliente
+  pendientes_cobro
   archivado
 }
 

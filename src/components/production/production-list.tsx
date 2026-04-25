@@ -40,22 +40,24 @@ import type {
 const STATUS_LABEL: Record<RepairStatus, string> = {
   turno_asignado: "Turno Asignado",
   ingresado: "Ingresado",
-  repuestos_recibidos: "Repuestos Recibidos",
+  pendientes_repuestos: "Pendientes de Repuestos",
   chapa: "Chapa",
   pintura: "Pintura",
   calidad: "Calidad",
   experiencia_cliente: "Experiencia Cliente",
+  pendientes_cobro: "Pendientes de Cobro",
   archivado: "Archivado",
 };
 
 const STATUS_STYLE: Record<RepairStatus, string> = {
   turno_asignado: "bg-slate-100 text-slate-700 border-slate-200",
   ingresado: "bg-blue-100 text-blue-700 border-blue-200",
-  repuestos_recibidos: "bg-amber-100 text-amber-700 border-amber-200",
+  pendientes_repuestos: "bg-amber-100 text-amber-700 border-amber-200",
   chapa: "bg-orange-100 text-orange-700 border-orange-200",
   pintura: "bg-purple-100 text-purple-700 border-purple-200",
   calidad: "bg-cyan-100 text-cyan-700 border-cyan-200",
   experiencia_cliente: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  pendientes_cobro: "bg-amber-100 text-amber-800 border-amber-200",
   archivado: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
@@ -64,11 +66,12 @@ type SortBy = "recent" | "oldest" | "name_asc";
 const ALL_STATUSES: RepairStatus[] = [
   "turno_asignado",
   "ingresado",
-  "repuestos_recibidos",
+  "pendientes_repuestos",
   "chapa",
   "pintura",
   "calidad",
   "experiencia_cliente",
+  "pendientes_cobro",
 ];
 
 export default function ProductionList() {

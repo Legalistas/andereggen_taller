@@ -12,21 +12,22 @@ type RouteContext = { params: Promise<{ id: string }> };
 const ALL_STATUSES: RepairStatus[] = [
   "turno_asignado",
   "ingresado",
-  "repuestos_recibidos",
+  "pendientes_repuestos",
   "chapa",
   "pintura",
   "calidad",
   "experiencia_cliente",
+  "pendientes_cobro",
   "archivado",
 ];
 
 /**
  * PATCH /api/repairs/[id]/status
  * Mueve la reparación a una nueva columna del kanban y aplica side-effects:
- *  - ingresado       → setea enteredAt si era null
- *  - repuestos_recibidos → setea partsReceivedAt si era null
- *  - archivado       → setea archivedAt si era null
- *  - experiencia_cliente → en fase E dispara email automático (TODO)
+ *  - ingresado            → setea enteredAt si era null
+ *  - pendientes_repuestos → setea partsReceivedAt si era null
+ *  - archivado            → setea archivedAt si era null
+ *  - experiencia_cliente  → crea ServiceRating + dispara email
  */
 export async function PATCH(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
@@ -53,7 +54,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   if (status === "ingresado" && !existing.enteredAt) {
     data.enteredAt = now;
   }
-  if (status === "repuestos_recibidos" && !existing.partsReceivedAt) {
+  if (status === "pendientes_repuestos" && !existing.partsReceivedAt) {
     data.partsReceivedAt = now;
   }
   if (status === "archivado" && !existing.archivedAt) {
@@ -108,7 +109,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       >
     > = {
       ingresado: "vehicle_entered",
-      repuestos_recibidos: "parts_received",
+      pendientes_repuestos: "parts_received",
       calidad: "repair_completed", // listo para retirar (pasó QC)
       experiencia_cliente: "customer_experience",
     };

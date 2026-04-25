@@ -45,6 +45,7 @@ type LeadStatus =
   | "control"
   | "enviado"
   | "refuerzo"
+  | "pendientes_cobro"
   | "ganado"
   | "perdido";
 
@@ -66,11 +67,12 @@ type Actor = {
 type RepairStatusLite =
   | "turno_asignado"
   | "ingresado"
-  | "repuestos_recibidos"
+  | "pendientes_repuestos"
   | "chapa"
   | "pintura"
   | "calidad"
   | "experiencia_cliente"
+  | "pendientes_cobro"
   | "archivado";
 
 type RepairOnLead = {

@@ -3,6 +3,7 @@
 import {
   Car,
   ClipboardCheck,
+  DollarSign,
   FileText,
   Loader2,
   MoreVertical,
@@ -29,6 +30,7 @@ type LeadStatus =
   | "control"
   | "enviado"
   | "refuerzo"
+  | "pendientes_cobro"
   | "ganado"
   | "perdido";
 
@@ -50,11 +52,12 @@ export type Actor = {
 export type RepairStatusLite =
   | "turno_asignado"
   | "ingresado"
-  | "repuestos_recibidos"
+  | "pendientes_repuestos"
   | "chapa"
   | "pintura"
   | "calidad"
   | "experiencia_cliente"
+  | "pendientes_cobro"
   | "archivado";
 
 export type RepairOnLead = {
@@ -122,6 +125,13 @@ const COLUMNS: Array<{
     ringClass: "ring-orange-400",
   },
   {
+    id: "pendientes_cobro",
+    label: "Pendientes de Cobro",
+    icon: DollarSign,
+    headerClass: "bg-amber-50 text-amber-800 border-amber-200",
+    ringClass: "ring-amber-400",
+  },
+  {
     id: "ganado",
     label: "Ganado",
     icon: Trophy,
@@ -147,22 +157,24 @@ const ARS = new Intl.NumberFormat("es-AR", {
 const REPAIR_KANBAN_LABEL: Record<RepairStatusLite, string> = {
   turno_asignado: "Turno asignado",
   ingresado: "Ingresado",
-  repuestos_recibidos: "Repuestos OK",
+  pendientes_repuestos: "Pendientes Repuestos",
   chapa: "Chapa",
   pintura: "Pintura",
   calidad: "Calidad",
   experiencia_cliente: "Listo / encuesta",
+  pendientes_cobro: "Pend. Cobro",
   archivado: "Archivado",
 };
 
 const REPAIR_KANBAN_COLOR: Record<RepairStatusLite, string> = {
   turno_asignado: "bg-slate-100 text-slate-700",
   ingresado: "bg-blue-100 text-blue-700",
-  repuestos_recibidos: "bg-amber-100 text-amber-700",
+  pendientes_repuestos: "bg-amber-100 text-amber-700",
   chapa: "bg-orange-100 text-orange-700",
   pintura: "bg-purple-100 text-purple-700",
   calidad: "bg-cyan-100 text-cyan-700",
   experiencia_cliente: "bg-emerald-100 text-emerald-700",
+  pendientes_cobro: "bg-amber-100 text-amber-800",
   archivado: "bg-slate-200 text-slate-600",
 };
 
