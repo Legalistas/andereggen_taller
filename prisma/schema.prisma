@@ -13,70 +13,136 @@ datasource db {
   provider = "postgresql"
 }
 
+// ============================================================
+// BETTER AUTH — CORE MODELS
+// ============================================================
+
 model User {
-  id              String         @id @default(uuid())
-  name            String?
-  email           String?        @unique
-  emailVerified   DateTime?
+  id              String    @id @default(uuid())
+  name            String
+  email           String    @unique
+  emailVerified   Boolean   @default(false)
   image           String?
-  password        String? // Para empleados creados manualmente
-  isActive        Boolean        @default(true)
-  roleId          String? // Relación uno-a-muchos con Role
-  role            Role?          @relation(fields: [roleId], references: [id])
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  accounts        Account[]
-  sessions        Session[]
-  leadsCreated    Lead[]         @relation("LeadCreatedBy")
-  budgetsCreated  Budget[]       @relation("BudgetCreatedBy")
-  partMovements   PartMovement[] @relation("PartMovementCreatedBy")
-  toolsAssigned   Tool[]         @relation("ToolAssignedTo")
-  paymentsCreated Payment[]      @relation("PaymentCreatedBy")
-}
+  // Teléfono / celular — spec 8.2 (datos mínimos del actor)
+  phone           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  // admin plugin (field `role` del plugin mapeado a columna adminRole)
+  adminRole       String?
+  banned          Boolean?
+  banReason       String?
+  banExpires      DateTime?
+  // lastLoginMethod plugin
+  lastLoginMethod String?
+  // twoFactor plugin
+  twoFactorEnabled Boolean  @default(false)
 
-model Account {
-  id                String  @id @default(uuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
+  sessions  Session[]
+  accounts  Account[]
+  twoFactor TwoFactor?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Domain custom role (many-to-one con Role)
+  roleId    String?
+  role      Role?     @relation(fields: [roleId], references: [id])
+  isActive  Boolean   @default(true)
 
-  @@unique([provider, providerAccountId])
+  // Business relations
+  leadsCreated        Lead[]           @relation("LeadCreatedBy")
+  leadsAsInspector    Lead[]           @relation("LeadInspector")
+  leadsAsInsurance    Lead[]           @relation("LeadInsuranceAgent")
+  budgetsCreated      Budget[]         @relation("BudgetCreatedBy")
+  budgetEmailsSent    BudgetEmailLog[] @relation("BudgetEmailSentBy")
+  partMovements       PartMovement[]   @relation("PartMovementCreatedBy")
+  toolsAssigned       Tool[]           @relation("ToolAssignedTo")
+  paymentsCreated     Payment[]        @relation("PaymentCreatedBy")
+  repairsCreated      Repair[]         @relation("RepairCreatedBy")
+  repairsAssigned     Repair[]         @relation("RepairMechanic")
 }
 
 model Session {
-  id           String   @id @default(uuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token          String   @unique
+  expiresAt      DateTime
+  ipAddress      String?
+  userAgent      String?
+  // admin plugin
+  impersonatedBy String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
-model VerificationToken {
+model Account {
+  id                    String    @id @default(uuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  idToken               String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model Verification {
+  id         String   @id @default(uuid())
   identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
+
+// ============================================================
+// BETTER AUTH — TWO FACTOR PLUGIN
+// ============================================================
+
+model TwoFactor {
+  id          String @id @default(uuid())
+  secret      String
+  backupCodes String
+  userId      String @unique
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// BETTER AUTH — JWT PLUGIN (JWKS)
+// ============================================================
+
+model Jwks {
+  id         String   @id @default(uuid())
+  publicKey  String
+  privateKey String
+  createdAt  DateTime @default(now())
+}
+
+// ============================================================
+// DOMAIN — ROLES & PERMISSIONS (custom, separate from better-auth admin role)
+// ============================================================
 
 model Role {
   id          String           @id @default(uuid())
-  name        String           @unique
-  users       User[] // Relación uno-a-muchos con User
+  name        String           @unique // key estable (ej: "super_admin")
+  label       String // display en español (ej: "Administrativo del Taller")
+  type        RoleType         @default(INTERNAL)
+  description String?
+  isActive    Boolean          @default(true)
+  users       User[]
   permissions RolePermission[]
+  customers   Customer[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
-  customers   Customer[]
+}
+
+enum RoleType {
+  INTERNAL // Personal del taller
+  EXTERNAL // Clientes / terceros (aseguradoras, peritos, etc.)
 }
 
 model Permission {
@@ -140,6 +206,7 @@ model Customer {
   role     Role?             @relation(fields: [roleId], references: [id])
   vehicles CustomerVehicle[]
   leads    Lead[]
+  repairs  Repair[]
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -164,6 +231,7 @@ model CustomerVehicle {
   // Relación
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   leads    Lead[]
+  repairs  Repair[]
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -205,10 +273,19 @@ model Lead {
   source      String? // web, whatsapp, manual, etc.
   createdById String?
 
-  customer  Customer         @relation(fields: [customerId], references: [id])
-  vehicle   CustomerVehicle? @relation(fields: [vehicleId], references: [id])
-  createdBy User?            @relation("LeadCreatedBy", fields: [createdById], references: [id])
-  budgets   Budget[]
+  // Actores externos de la cotización (spec 4.3 + 8.1)
+  inspectorId        String? // User con rol "inspector"
+  insuranceAgentId   String? // User con rol "productor_seguros"
+  insuranceCompanyId String? // FK a InsuranceCompany — 4to actor (spec 8.1)
+
+  customer         Customer          @relation(fields: [customerId], references: [id])
+  vehicle          CustomerVehicle?  @relation(fields: [vehicleId], references: [id])
+  createdBy        User?             @relation("LeadCreatedBy", fields: [createdById], references: [id])
+  inspector        User?             @relation("LeadInspector", fields: [inspectorId], references: [id], onDelete: SetNull)
+  insuranceAgent   User?             @relation("LeadInsuranceAgent", fields: [insuranceAgentId], references: [id], onDelete: SetNull)
+  insuranceCompany InsuranceCompany? @relation(fields: [insuranceCompanyId], references: [id], onDelete: SetNull)
+  budgets          Budget[]
+  repairs          Repair[]          @relation("LeadRepairs")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -217,6 +294,8 @@ model Lead {
   @@index([customerId])
   @@index([vehicleId])
   @@index([createdById])
+  @@index([inspectorId])
+  @@index([insuranceAgentId])
 }
 
 // =====================================================
@@ -267,13 +346,15 @@ model Budget {
   acceptedAt DateTime?
   rejectedAt DateTime?
 
-  lead          Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead          Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
   concepts      BudgetConcept[]
   parts         BudgetPart[]
   partMovements PartMovement[]
   payments      Payment[]
+  emailLogs     BudgetEmailLog[]
+  repair        Repair?          @relation("BudgetRepair")
   createdById   String?
-  createdBy     User?           @relation("BudgetCreatedBy", fields: [createdById], references: [id])
+  createdBy     User?            @relation("BudgetCreatedBy", fields: [createdById], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -281,6 +362,29 @@ model Budget {
   @@index([leadId])
   @@index([status])
   @@index([createdById])
+}
+
+/**
+ * Log de envíos del presupuesto por email. Permite auditar cuándo se envió
+ * y a quién (cliente, perito, productor, otros).
+ */
+model BudgetEmailLog {
+  id          String   @id @default(uuid())
+  budgetId    String
+  budget      Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  sentAt      DateTime @default(now())
+  sentById    String?
+  sentBy      User?    @relation("BudgetEmailSentBy", fields: [sentById], references: [id])
+  // Destinatarios: json { customer?, inspector?, insurance?, others?: string[] }
+  recipients  Json
+  subject     String
+  messageBody String?  @db.Text
+  /** "sent" | "failed" */
+  status      String   @default("sent")
+  errorMsg    String?  @db.Text
+  messageId   String? // nodemailer messageId para tracking
+
+  @@index([budgetId, sentAt])
 }
 
 enum ConceptType {
@@ -514,6 +618,13 @@ model AppSettings {
   notifyOnStageChange    Boolean @default(true)
   reminderDaysAfterSent  Int     @default(5)
 
+  // Notificaciones automáticas — spec sección 6 (5 eventos)
+  notifyBudgetCreated      Boolean @default(true) // Presupuesto generado → Cliente + Inspector + Productor
+  notifyVehicleEntered     Boolean @default(true) // Vehículo ingresado al taller → Cliente + Productor
+  notifyPartsReceived      Boolean @default(true) // Repuestos recibidos → Inspector + Productor
+  notifyRepairCompleted    Boolean @default(true) // Reparación completada / listo para retirar → Cliente + Inspector + Productor
+  notifyCustomerExperience Boolean @default(true) // Solicitud de experiencia del cliente → Cliente
+
   // Apariencia / localización
   locale   String @default("es-AR")
   currency String @default("ARS")
@@ -546,6 +657,9 @@ model InsuranceCompany {
   notes       String? @db.Text
   isActive    Boolean @default(true)
 
+  // Leads vinculados a esta aseguradora (spec 8.1 — 4to actor)
+  leads Lead[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -567,6 +681,156 @@ model LeadSource {
   updatedAt DateTime @updatedAt
 
   @@index([isActive])
+}
+
+/**
+ * Catálogo de marcas de vehículos (Toyota, Ford, VW, etc.).
+ * Usado como autocomplete en VehicleForm / LeadCanvas.
+ * Los valores guardados en CustomerVehicle.brand son strings libres:
+ * este catálogo sugiere pero no fuerza.
+ */
+model VehicleBrand {
+  id       String         @id @default(uuid())
+  name     String         @unique
+  isActive Boolean        @default(true)
+  models   VehicleModel[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+/**
+ * Modelos de vehículos asociados a una marca (Etios, Fiesta, Gol, etc.).
+ * Unique compuesto (brandId, name): el mismo modelo no se duplica dentro de la marca.
+ */
+model VehicleModel {
+  id       String       @id @default(uuid())
+  brandId  String
+  brand    VehicleBrand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  name     String
+  isActive Boolean      @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([brandId, name])
+  @@index([brandId, isActive])
+}
+
+// =====================================================
+// Producción — Órdenes de reparación (Kanban de producción)
+// =====================================================
+
+/**
+ * Estados del Kanban de Producción (spec 5.2). Orden exacto:
+ * 1. turno_asignado, 2. ingresado, 3. repuestos_recibidos, 4. chapa,
+ * 5. pintura, 6. calidad, 7. experiencia_cliente, 8. archivado
+ */
+enum RepairStatus {
+  turno_asignado
+  ingresado
+  repuestos_recibidos
+  chapa
+  pintura
+  calidad
+  experiencia_cliente
+  archivado
+}
+
+/**
+ * Orden de reparación. Puede originarse:
+ *  - Desde un Budget aceptado (leadId + budgetId presentes).
+ *  - Directa desde el módulo de Producción (botón "Nueva Reparación" —
+ *    ambos en null, directCreation=true).
+ * Siempre tiene snapshot de cliente/vehículo (como Budget) para integridad
+ * histórica aunque Customer/CustomerVehicle se editen después.
+ */
+model Repair {
+  id     String       @id @default(uuid())
+  status RepairStatus @default(turno_asignado)
+
+  // Origen (opcional — null si fue Nueva Reparación directa)
+  leadId    String?
+  lead      Lead?    @relation("LeadRepairs", fields: [leadId], references: [id], onDelete: SetNull)
+  budgetId  String?  @unique
+  budget    Budget?  @relation("BudgetRepair", fields: [budgetId], references: [id], onDelete: SetNull)
+
+  // Flag de creación directa (sin presupuesto)
+  directCreation Boolean @default(false)
+
+  // Referencias al catálogo (opcionales, para edición posterior)
+  customerId String?
+  customer   Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  vehicleId  String?
+  vehicle    CustomerVehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  // Snapshot de cliente/vehículo al abrir la reparación (inmutable)
+  customerName  String
+  customerEmail String
+  customerPhone String
+  vehicleBrand  String
+  vehicleModel  String
+  vehicleYear   String
+  vehicleDomain String
+
+  // Motivo de ingreso — texto libre (obligatorio en Nueva Reparación directa)
+  reason String? @db.Text
+
+  // Asignación y fechas clave por etapa
+  assignedMechanicId String?
+  assignedMechanic   User?     @relation("RepairMechanic", fields: [assignedMechanicId], references: [id], onDelete: SetNull)
+  scheduledAt        DateTime? // turno asignado
+  enteredAt          DateTime? // cuando físicamente ingresa al taller
+  partsReceivedAt    DateTime? // col. "Repuestos Recibidos"
+  estimatedDeliveryAt DateTime?
+  deliveredAt        DateTime?
+  archivedAt         DateTime?
+
+  // Meta
+  notes String? @db.Text
+
+  createdById String?
+  createdBy   User?   @relation("RepairCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Encuesta de satisfacción (spec 6 "Solicitud de experiencia del cliente" + E2.B)
+  serviceRating ServiceRating?
+
+  @@index([status])
+  @@index([leadId])
+  @@index([assignedMechanicId])
+  @@index([archivedAt])
+  @@index([customerId])
+}
+
+/**
+ * Encuesta de satisfacción del cliente (E2.B + spec sección 6).
+ * Se genera automáticamente cuando la reparación pasa a estado
+ * "experiencia_cliente" y se envía al cliente un email con un link
+ * público `/reviews/[token]` para que califique sin necesidad de login.
+ */
+model ServiceRating {
+  id          String    @id @default(uuid())
+  repairId    String    @unique
+  repair      Repair    @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  /** Token opaco único — va en la URL pública /reviews/[token]. */
+  token       String    @unique
+  /** null hasta que el cliente responde. Al responder se setea 1-5. */
+  stars       Int?
+  comment     String?   @db.Text
+  respondedAt DateTime?
+  /** IP de quien respondió (auditoría mínima). */
+  respondedIp String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([token])
+  @@index([respondedAt])
 }
 
 // =====================================================

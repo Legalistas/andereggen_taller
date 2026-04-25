@@ -1,5 +1,5 @@
-import ProductionBoard from "@/components/production/production-board"
+import ProductionSection from "@/components/production/production-section";
 
 export default function ProduccionPage() {
-    return <ProductionBoard />
+  return <ProductionSection />;
 }

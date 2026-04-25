@@ -1,600 +1,382 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Breadcrumbs } from "@/components/layout/breadcrumbs"
-import { Card } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
-    Search,
-    MoreVertical,
-    Eye,
-    Edit,
-    MessageSquare,
-    ChevronLeft,
-    ChevronRight,
-    Calendar,
-    CheckCircle2,
-    Wrench,
-    Paintbrush,
-    Shield,
-    Package,
-    User,
-    Save,
-    X,
-    Car, Phone,
-} from "lucide-react"
+  ArrowUpDown,
+  Calendar,
+  Car,
+  Loader2,
+  Phone,
+  Search,
+  Trash2,
+  User,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Breadcrumbs } from "@/components/layout/breadcrumbs";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type {
+  KanbanRepair,
+  RepairStatus,
+} from "./production-kanban";
 
-type ProductionStatus = "assignTurn" | "received" | "bodywork" | "painting" | "quality" | "toDeliver" | "finished"
+const STATUS_LABEL: Record<RepairStatus, string> = {
+  turno_asignado: "Turno Asignado",
+  ingresado: "Ingresado",
+  repuestos_recibidos: "Repuestos Recibidos",
+  chapa: "Chapa",
+  pintura: "Pintura",
+  calidad: "Calidad",
+  experiencia_cliente: "Experiencia Cliente",
+  archivado: "Archivado",
+};
 
-interface VehicleJob {
-    id: string
-    customerName: string
-    customerPhone: string
-    customerEmail: string
-    vehicle: string
-    plate: string
-    status: ProductionStatus
-    assignedTechnician?: string
-    dateReceived?: string
-    estimatedDelivery?: string
-    notes?: string
-    progress?: number
-}
+const STATUS_STYLE: Record<RepairStatus, string> = {
+  turno_asignado: "bg-slate-100 text-slate-700 border-slate-200",
+  ingresado: "bg-blue-100 text-blue-700 border-blue-200",
+  repuestos_recibidos: "bg-amber-100 text-amber-700 border-amber-200",
+  chapa: "bg-orange-100 text-orange-700 border-orange-200",
+  pintura: "bg-purple-100 text-purple-700 border-purple-200",
+  calidad: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  experiencia_cliente: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  archivado: "bg-slate-200 text-slate-700 border-slate-300",
+};
 
-const statusConfig: Record<ProductionStatus, { label: string; color: string; icon: any }> = {
-    assignTurn: { label: "Para asignar turno", color: "bg-gray-100 text-gray-700", icon: Calendar },
-    received: { label: "Recibido", color: "bg-blue-100 text-blue-700", icon: CheckCircle2 },
-    bodywork: { label: "Chapa", color: "bg-orange-100 text-orange-700", icon: Wrench },
-    painting: { label: "Pintura", color: "bg-purple-100 text-purple-700", icon: Paintbrush },
-    quality: { label: "Calidad", color: "bg-cyan-100 text-cyan-700", icon: Shield },
-    toDeliver: { label: "Para entregar", color: "bg-green-100 text-green-700", icon: Package },
-    finished: { label: "Finalizado", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
-}
+type SortBy = "recent" | "oldest" | "name_asc";
 
-const mockJobs: VehicleJob[] = [
-    {
-        id: "1",
-        customerName: "Carlos Méndez",
-        customerPhone: "+54 11 2345-6789",
-        customerEmail: "carlos@email.com",
-        vehicle: "Toyota Corolla 2019",
-        plate: "ABC 123",
-        status: "assignTurn",
-        estimatedDelivery: "2024-02-01",
-    },
-    {
-        id: "2",
-        customerName: "María González",
-        customerPhone: "+54 11 2345-6790",
-        customerEmail: "maria@email.com",
-        vehicle: "Honda Civic 2020",
-        plate: "DEF 456",
-        status: "received",
-        assignedTechnician: "Juan Pérez",
-        dateReceived: "2024-01-15",
-        estimatedDelivery: "2024-01-25",
-    },
-    {
-        id: "3",
-        customerName: "Roberto Silva",
-        customerPhone: "+54 11 2345-6791",
-        customerEmail: "roberto@email.com",
-        vehicle: "Ford F-150 2018",
-        plate: "GHI 789",
-        status: "bodywork",
-        assignedTechnician: "Pedro López",
-        dateReceived: "2024-01-10",
-        estimatedDelivery: "2024-01-30",
-        progress: 45,
-        notes: "Reparación de puerta trasera y guardabarro",
-    },
-    {
-        id: "4",
-        customerName: "Ana Martínez",
-        customerPhone: "+54 11 2345-6792",
-        customerEmail: "ana@email.com",
-        vehicle: "Mazda 3 2021",
-        plate: "JKL 012",
-        status: "painting",
-        assignedTechnician: "Carlos Ruiz",
-        dateReceived: "2024-01-08",
-        estimatedDelivery: "2024-01-22",
-        progress: 70,
-    },
-    {
-        id: "5",
-        customerName: "Luis Fernández",
-        customerPhone: "+54 11 2345-6793",
-        customerEmail: "luis@email.com",
-        vehicle: "Chevrolet Cruze 2017",
-        plate: "MNO 345",
-        status: "quality",
-        assignedTechnician: "Miguel Torres",
-        dateReceived: "2024-01-05",
-        estimatedDelivery: "2024-01-20",
-        progress: 95,
-    },
-    {
-        id: "6",
-        customerName: "Patricia López",
-        customerPhone: "+54 11 2345-6794",
-        customerEmail: "patricia@email.com",
-        vehicle: "Nissan Sentra 2020",
-        plate: "PQR 678",
-        status: "toDeliver",
-        assignedTechnician: "Juan Pérez",
-        dateReceived: "2024-01-02",
-        estimatedDelivery: "2024-01-18",
-        progress: 100,
-        notes: "Cliente notificado - Documentos listos",
-    },
-]
-
-const mockMechanics = [
-    { id: "1", name: "Juan Pérez", assignedTasks: 3 },
-    { id: "2", name: "Pedro López", assignedTasks: 2 },
-    { id: "3", name: "Carlos Ruiz", assignedTasks: 5 },
-    { id: "4", name: "Miguel Torres", assignedTasks: 1 },
-]
+const ALL_STATUSES: RepairStatus[] = [
+  "turno_asignado",
+  "ingresado",
+  "repuestos_recibidos",
+  "chapa",
+  "pintura",
+  "calidad",
+  "experiencia_cliente",
+];
 
 export default function ProductionList() {
-    const [searchTerm, setSearchTerm] = useState("")
-    const [statusFilter, setStatusFilter] = useState<string>("all")
-    const [selectedJobs, setSelectedJobs] = useState<string[]>([])
-    const [currentPage, setCurrentPage] = useState(1)
-    const [itemsPerPage, setItemsPerPage] = useState(10)
-    const [selectedJob, setSelectedJob] = useState<VehicleJob | null>(null)
-    const [isDetailOpen, setIsDetailOpen] = useState(false)
-    const [isEditing, setIsEditing] = useState(false)
-    const [editedJob, setEditedJob] = useState<VehicleJob | null>(null)
+  const [repairs, setRepairs] = useState<KanbanRepair[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-    const filteredJobs = mockJobs.filter((job) => {
-        const matchesSearch =
-            job.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            job.vehicle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            job.plate.toLowerCase().includes(searchTerm.toLowerCase())
-        const matchesStatus = statusFilter === "all" || job.status === statusFilter
-        return matchesSearch && matchesStatus
-    })
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<RepairStatus | "all">("all");
+  const [sortBy, setSortBy] = useState<SortBy>("recent");
 
-    const totalPages = Math.ceil(filteredJobs.length / itemsPerPage)
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    const currentJobs = filteredJobs.slice(startIndex, endIndex)
-
-    const toggleSelectAll = () => {
-        if (selectedJobs.length === currentJobs.length) {
-            setSelectedJobs([])
-        } else {
-            setSelectedJobs(currentJobs.map((job) => job.id))
-        }
+  const fetchRepairs = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch("/api/repairs?tab=activas", { signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as { repairs: KanbanRepair[] };
+      setRepairs(body.repairs);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setLoadError(
+          e instanceof Error ? e.message : "Error al cargar reparaciones",
+        );
+      }
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    const toggleSelectJob = (jobId: string) => {
-        setSelectedJobs((prev) => (prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId]))
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchRepairs(ac.signal);
+    return () => ac.abort();
+  }, [fetchRepairs]);
+
+  const filtered = useMemo(() => {
+    const t = searchTerm.toLowerCase();
+    const list = repairs.filter((r) => {
+      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (t) {
+        const matches =
+          r.customerName.toLowerCase().includes(t) ||
+          `${r.vehicleBrand} ${r.vehicleModel} ${r.vehicleDomain}`
+            .toLowerCase()
+            .includes(t);
+        if (!matches) return false;
+      }
+      return true;
+    });
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      switch (sortBy) {
+        case "oldest":
+          return (
+            new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
+          );
+        case "name_asc":
+          return a.customerName.localeCompare(b.customerName, "es");
+        default:
+          return (
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          );
+      }
+    });
+    return sorted;
+  }, [repairs, searchTerm, statusFilter, sortBy]);
+
+  const activeFilters =
+    (statusFilter !== "all" ? 1 : 0) + (searchTerm ? 1 : 0);
+
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setSearchTerm("");
+    setSortBy("recent");
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("¿Eliminar esta reparación?")) return;
+    setRepairs((prev) => prev.filter((r) => r.id !== id));
+    try {
+      const res = await fetch(`/api/repairs/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      await fetchRepairs();
     }
+  };
 
-    const handleItemsPerPageChange = (value: number) => {
-        setItemsPerPage(value)
-        setCurrentPage(1)
-    }
+  return (
+    <div className="space-y-6">
+      <div>
+        <Breadcrumbs
+          items={[{ label: "Producción", href: "/produccion" }, { label: "Lista" }]}
+        />
+        <h1 className="text-3xl font-bold">Lista de reparaciones</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Reparaciones activas — vista tabular de todas las etapas excepto
+          archivadas.
+        </p>
+      </div>
 
-    const openJobDetail = (job: VehicleJob) => {
-        setSelectedJob(job)
-        setEditedJob({ ...job })
-        setIsDetailOpen(true)
-        setIsEditing(false)
-    }
-
-    const handleSaveChanges = () => {
-        if (editedJob) {
-            // Aquí se guardarían los cambios en la base de datos
-            console.log("[v0] Guardando cambios:", editedJob)
-            setSelectedJob(editedJob)
-            setIsEditing(false)
-        }
-    }
-
-    const handleCancelEdit = () => {
-        setEditedJob(selectedJob ? { ...selectedJob } : null)
-        setIsEditing(false)
-    }
-
-    return (
-        <div className="space-y-6">
-            <div>
-                <Breadcrumbs items={[{ label: "Producción", href: "/produccion" }, { label: "Lista completa" }]} />
-                <h1 className="text-3xl font-bold text-foreground">Producción — Lista completa</h1>
-                <p className="text-sm text-muted-foreground mt-1">
-                    Todos los trabajos en proceso organizados en lista.
-                </p>
-            </div>
-
-            {/* Filtros y búsqueda */}
-            <Card className="p-4">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                            placeholder="Buscar por cliente, vehículo o patente..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-9"
-                        />
-                    </div>
-                    <div className="flex gap-2">
-                        {selectedJobs.length > 0 ? (
-                            <>
-                                <span className="text-sm text-muted-foreground self-center">
-                                    {selectedJobs.length} seleccionado{selectedJobs.length > 1 ? "s" : ""}
-                                </span>
-                                <Button variant="outline" size="sm">
-                                    Cambiar estado
-                                </Button>
-                                <Button variant="outline" size="sm">
-                                    Notificar clientes
-                                </Button>
-                                <Button variant="outline" size="sm">
-                                    Exportar
-                                </Button>
-                            </>
-                        ) : (
-                            <>
-                                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                    <SelectTrigger className="w-50">
-                                        <SelectValue placeholder="Filtrar por estado" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">Todos los estados</SelectItem>
-                                        <SelectItem value="assignTurn">Para asignar turno</SelectItem>
-                                        <SelectItem value="received">Recibido</SelectItem>
-                                        <SelectItem value="bodywork">Chapa</SelectItem>
-                                        <SelectItem value="painting">Pintura</SelectItem>
-                                        <SelectItem value="quality">Calidad</SelectItem>
-                                        <SelectItem value="toDeliver">Para entregar</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <Button variant="outline" size="sm">
-                                    Ordenar
-                                </Button>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </Card>
-
-            {/* Tabla */}
-            <Card>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead className="w-12">
-                                <Checkbox
-                                    checked={selectedJobs.length === currentJobs.length && currentJobs.length > 0}
-                                    onCheckedChange={toggleSelectAll}
-                                    aria-label="Seleccionar todos"
-                                    className={selectedJobs.length > 0 && selectedJobs.length < currentJobs.length ? "data-[state=checked]:bg-primary/50" : ""}
-                                />
-                            </TableHead>
-                            <TableHead>Cliente</TableHead>
-                            <TableHead>Contacto</TableHead>
-                            <TableHead>Vehículo</TableHead>
-                            <TableHead>Patente</TableHead>
-                            <TableHead>Estado</TableHead>
-                            <TableHead>Técnico</TableHead>
-                            <TableHead>Progreso</TableHead>
-                            <TableHead>Entrega Est.</TableHead>
-                            <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {currentJobs.map((job) => {
-                            const StatusIcon = statusConfig[job.status].icon
-                            return (
-                                <TableRow key={job.id}>
-                                    <TableCell>
-                                        <Checkbox checked={selectedJobs.includes(job.id)} onCheckedChange={() => toggleSelectJob(job.id)} />
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="font-medium text-foreground">{job.customerName}</div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                                <Phone className="h-3 w-3" />
-                                                {job.customerPhone}
-                                            </div>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-2">
-                                            <Car className="h-4 w-4 text-muted-foreground" />
-                                            <span className="text-sm">{job.vehicle}</span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline">{job.plate}</Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge className={`gap-1 ${statusConfig[job.status].color}`}>
-                                            <StatusIcon className="h-3 w-3" />
-                                            {statusConfig[job.status].label}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        {job.assignedTechnician ? (
-                                            <div className="flex items-center gap-2 text-sm">
-                                                <User className="h-3 w-3 text-muted-foreground" />
-                                                {job.assignedTechnician}
-                                            </div>
-                                        ) : (
-                                            <span className="text-xs text-muted-foreground">Sin asignar</span>
-                                        )}
-                                    </TableCell>
-                                    <TableCell>
-                                        {job.progress !== undefined ? (
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
-                                                    <div className="h-full bg-primary transition-all" style={{ width: `${job.progress}%` }} />
-                                                </div>
-                                                <span className="text-xs font-medium">{job.progress}%</span>
-                                            </div>
-                                        ) : (
-                                            <span className="text-xs text-muted-foreground">-</span>
-                                        )}
-                                    </TableCell>
-                                    <TableCell>
-                                        {job.estimatedDelivery ? (
-                                            <div className="text-sm">{job.estimatedDelivery}</div>
-                                        ) : (
-                                            <span className="text-xs text-muted-foreground">-</span>
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                                    <MoreVertical className="h-4 w-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuItem onClick={() => openJobDetail(job)} className="gap-2">
-                                                    <Eye className="h-4 w-4" />
-                                                    Ver detalles
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem className="gap-2">
-                                                    <Edit className="h-4 w-4" />
-                                                    Editar
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem className="gap-2">
-                                                    <MessageSquare className="h-4 w-4" />
-                                                    Notificar cliente
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </TableCell>
-                                </TableRow>
-                            )
-                        })}
-                    </TableBody>
-                </Table>
-
-                {/* Paginación */}
-                <div className="border-t px-4 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="text-sm text-muted-foreground">
-                                Mostrando {startIndex + 1} a {Math.min(endIndex, filteredJobs.length)} de {filteredJobs.length} trabajos
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm text-muted-foreground">Mostrar</span>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm" className="h-8 gap-1 bg-transparent">
-                                            {itemsPerPage}
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="start">
-                                        <DropdownMenuItem onClick={() => handleItemsPerPageChange(10)}>10</DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => handleItemsPerPageChange(25)}>25</DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => handleItemsPerPageChange(50)}>50</DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                                <span className="text-sm text-muted-foreground">por página</span>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                                disabled={currentPage === 1}
-                            >
-                                <ChevronLeft className="h-4 w-4" />
-                                Anterior
-                            </Button>
-                            <div className="flex items-center gap-1">
-                                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                                    <Button
-                                        key={page}
-                                        variant={currentPage === page ? "default" : "outline"}
-                                        size="sm"
-                                        className="h-8 w-8 p-0"
-                                        onClick={() => setCurrentPage(page)}
-                                    >
-                                        {page}
-                                    </Button>
-                                ))}
-                            </div>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                                disabled={currentPage === totalPages}
-                            >
-                                Siguiente
-                                <ChevronRight className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            </Card>
-
-
-
-            {/* Modal de detalles */}
-            <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                        <div className="flex items-center justify-between">
-                            <DialogTitle>Detalles del Trabajo</DialogTitle>
-                            {!isEditing ? (
-                                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                                    <Edit className="h-4 w-4 mr-2" />
-                                    Editar
-                                </Button>
-                            ) : (
-                                <div className="flex gap-2">
-                                    <Button variant="outline" size="sm" onClick={handleCancelEdit}>
-                                        <X className="h-4 w-4 mr-2" />
-                                        Cancelar
-                                    </Button>
-                                    <Button size="sm" onClick={handleSaveChanges} className="bg-[#003b73] hover:bg-[#002850]">
-                                        <Save className="h-4 w-4 mr-2" />
-                                        Guardar cambios
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
-                    </DialogHeader>
-                    {selectedJob && editedJob && (
-                        <div className="space-y-6">
-                            {/* Información del cliente y vehículo */}
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                    <span className="text-muted-foreground">Cliente:</span>
-                                    <div className="font-medium">{selectedJob.customerName}</div>
-                                </div>
-                                <div>
-                                    <span className="text-muted-foreground">Teléfono:</span>
-                                    <div className="font-medium">{selectedJob.customerPhone}</div>
-                                </div>
-                                <div>
-                                    <span className="text-muted-foreground">Vehículo:</span>
-                                    <div className="font-medium">{selectedJob.vehicle}</div>
-                                </div>
-                                <div>
-                                    <span className="text-muted-foreground">Patente:</span>
-                                    <div className="font-medium">{selectedJob.plate}</div>
-                                </div>
-                                <div>
-                                    <span className="text-muted-foreground">Estado:</span>
-                                    <Badge className={`${statusConfig[selectedJob.status].color} mt-1`}>
-                                        {statusConfig[selectedJob.status].label}
-                                    </Badge>
-                                </div>
-                                {selectedJob.dateReceived && (
-                                    <div>
-                                        <span className="text-muted-foreground">Fecha de recepción:</span>
-                                        <div className="font-medium">{selectedJob.dateReceived}</div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {(selectedJob.status === "assignTurn" || isEditing) && (
-                                <div className="p-4 border rounded-lg bg-muted/30 space-y-4">
-                                    <h3 className="font-semibold text-sm flex items-center gap-2">
-                                        <Calendar className="h-4 w-4 text-[#003b73]" />
-                                        Asignación de Turno
-                                    </h3>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <Label htmlFor="turnDate">Fecha de turno</Label>
-                                            <Input
-                                                id="turnDate"
-                                                type="date"
-                                                value={editedJob.estimatedDelivery || ""}
-                                                onChange={(e) => setEditedJob({ ...editedJob, estimatedDelivery: e.target.value })}
-                                                disabled={!isEditing}
-                                                className="bg-background"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <Label htmlFor="mechanic">Mecánico asignado</Label>
-                                            <Select
-                                                value={editedJob.assignedTechnician || ""}
-                                                onValueChange={(value) => setEditedJob({ ...editedJob, assignedTechnician: value })}
-                                                disabled={!isEditing}
-                                            >
-                                                <SelectTrigger id="mechanic" className="bg-background">
-                                                    <SelectValue placeholder="Seleccionar mecánico" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {mockMechanics.map((mechanic) => (
-                                                        <SelectItem key={mechanic.id} value={mechanic.name}>
-                                                            <div className="flex items-center justify-between w-full">
-                                                                <span>{mechanic.name}</span>
-                                                                <span className="text-xs text-muted-foreground ml-2">
-                                                                    ({mechanic.assignedTasks} tareas)
-                                                                </span>
-                                                            </div>
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="space-y-2">
-                                <Label htmlFor="notes">Observaciones</Label>
-                                {isEditing ? (
-                                    <Textarea
-                                        id="notes"
-                                        value={editedJob.notes || ""}
-                                        onChange={(e) => setEditedJob({ ...editedJob, notes: e.target.value })}
-                                        placeholder="Agregar observaciones sobre el trabajo..."
-                                        rows={4}
-                                        className="bg-background"
-                                    />
-                                ) : (
-                                    <div className="p-3 bg-muted/50 rounded-lg text-sm min-h-25">
-                                        {selectedJob.notes || "Sin observaciones"}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Información adicional */}
-                            {selectedJob.progress !== undefined && (
-                                <div className="space-y-2">
-                                    <Label>Progreso del trabajo</Label>
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full bg-[#003b73] transition-all"
-                                                style={{ width: `${selectedJob.progress}%` }}
-                                            />
-                                        </div>
-                                        <span className="text-sm font-medium w-12 text-right">{selectedJob.progress}%</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </DialogContent>
-            </Dialog>
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-4">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+          <Input
+            placeholder="Buscar por cliente, patente, modelo…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white"
+          />
         </div>
-    )
+
+        <Select
+          value={statusFilter}
+          onValueChange={(v) => setStatusFilter(v as RepairStatus | "all")}
+        >
+          <SelectTrigger className="w-56 bg-white">
+            <SelectValue placeholder="Estado" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los estados</SelectItem>
+            {ALL_STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
+            <SelectTrigger className="w-44 bg-white">
+              <ArrowUpDown className="h-3.5 w-3.5 text-slate-400 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recent">Más recientes</SelectItem>
+              <SelectItem value="oldest">Más antiguos</SelectItem>
+              <SelectItem value="name_asc">Nombre (A–Z)</SelectItem>
+            </SelectContent>
+          </Select>
+          {activeFilters > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="text-slate-500 hover:text-slate-900 gap-1"
+            >
+              <X className="h-3.5 w-3.5" />
+              {activeFilters}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {loadError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {loadError}
+        </div>
+      )}
+
+      <Card className="p-0 overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Cliente</TableHead>
+              <TableHead>Vehículo</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Mecánico</TableHead>
+              <TableHead>Turno</TableHead>
+              <TableHead>Entrega est.</TableHead>
+              <TableHead className="w-12 text-right" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading && repairs.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="text-center py-12 text-sm text-muted-foreground"
+                >
+                  <Loader2 className="h-4 w-4 inline animate-spin mr-2" />
+                  Cargando reparaciones…
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && filtered.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="text-center py-12 text-sm text-muted-foreground italic"
+                >
+                  Sin reparaciones que coincidan con los filtros.
+                </TableCell>
+              </TableRow>
+            )}
+            {filtered.map((r) => (
+              <TableRow key={r.id} className="hover:bg-slate-50">
+                <TableCell>
+                  <div className="font-medium">{r.customerName}</div>
+                  {r.customerPhone && (
+                    <div className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      {r.customerPhone}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-start gap-1.5">
+                    <Car className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
+                    <div className="text-sm">
+                      <div>
+                        {r.vehicleBrand} {r.vehicleModel} {r.vehicleYear}
+                      </div>
+                      <div className="font-mono text-[10px] text-muted-foreground uppercase">
+                        {r.vehicleDomain}
+                      </div>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    className={`${STATUS_STYLE[r.status]} text-[10px] uppercase tracking-wider font-medium`}
+                  >
+                    {STATUS_LABEL[r.status]}
+                  </Badge>
+                  {r.directCreation && (
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] h-4 px-1.5 bg-indigo-50 border-indigo-200 text-indigo-600 font-normal ml-1"
+                    >
+                      Directa
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {r.assignedMechanic ? (
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-6 w-6 rounded-full bg-[#003b73] text-white flex items-center justify-center text-[10px] font-semibold">
+                        {initials(r.assignedMechanic.name)}
+                      </div>
+                      <span className="text-sm truncate max-w-[140px]">
+                        {r.assignedMechanic.name ?? "—"}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      Sin asignar
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {r.scheduledAt ? (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Calendar className="h-3 w-3" />
+                      {formatDate(r.scheduledAt)}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400">—</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {r.estimatedDeliveryAt ? (
+                    <div className="text-xs text-muted-foreground">
+                      {formatDate(r.estimatedDeliveryAt)}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(r.id)}
+                    className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Card>
+    </div>
+  );
+}
+
+function initials(name: string | null | undefined): string {
+  const s = (name ?? "").trim();
+  if (!s) return "?";
+  return (
+    s
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() ?? "")
+      .join("") || "?"
+  );
+}
+
+function formatDate(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d.toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }

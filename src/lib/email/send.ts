@@ -18,55 +18,59 @@ import type { ReactElement } from "react";
 import { getFromAddress, getMailer } from "./client";
 
 export type SendEmailOptions = {
-    to: string | string[];
-    subject: string;
-    react: ReactElement;
-    /** Reemplaza el "De" por esta dirección (default: SMTP_FROM / SMTP_USER). */
-    from?: string;
-    cc?: string | string[];
-    bcc?: string | string[];
-    replyTo?: string;
-    attachments?: Array<{
-        filename: string;
-        content: Buffer | string;
-        contentType?: string;
-    }>;
+  to: string | string[];
+  subject: string;
+  react: ReactElement;
+  /** Reemplaza el "De" por esta dirección (default: SMTP_FROM / SMTP_USER). */
+  from?: string;
+  cc?: string | string[];
+  bcc?: string | string[];
+  replyTo?: string;
+  attachments?: Array<{
+    filename: string;
+    content: Buffer | string;
+    contentType?: string;
+  }>;
 };
 
 export type SendEmailResult = {
-    messageId: string;
-    accepted: string[];
-    rejected: string[];
+  messageId: string;
+  accepted: string[];
+  rejected: string[];
 };
 
-export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult> {
-    const mailer = getMailer();
-    const html = await render(opts.react);
-    const text = await render(opts.react, { plainText: true });
+export async function sendEmail(
+  opts: SendEmailOptions,
+): Promise<SendEmailResult> {
+  const mailer = getMailer();
+  const html = await render(opts.react);
+  const text = await render(opts.react, { plainText: true });
 
-    const info = await mailer.sendMail({
-        from: opts.from ?? getFromAddress(),
-        to: opts.to,
-        cc: opts.cc,
-        bcc: opts.bcc,
-        replyTo: opts.replyTo,
-        subject: opts.subject,
-        html,
-        text,
-        attachments: opts.attachments,
-    });
+  const info = await mailer.sendMail({
+    from: opts.from ?? getFromAddress(),
+    to: opts.to,
+    cc: opts.cc,
+    bcc: opts.bcc,
+    replyTo: opts.replyTo,
+    subject: opts.subject,
+    html,
+    text,
+    attachments: opts.attachments,
+  });
 
-    const toAddr = (v: unknown): string =>
-        typeof v === "string" ? v : (v as { address?: string })?.address ?? String(v);
+  const toAddr = (v: unknown): string =>
+    typeof v === "string"
+      ? v
+      : ((v as { address?: string })?.address ?? String(v));
 
-    return {
-        messageId: info.messageId,
-        accepted: (info.accepted ?? []).map(toAddr),
-        rejected: (info.rejected ?? []).map(toAddr),
-    };
+  return {
+    messageId: info.messageId,
+    accepted: (info.accepted ?? []).map(toAddr),
+    rejected: (info.rejected ?? []).map(toAddr),
+  };
 }
 
 /** Verifica la conexión SMTP (útil para un endpoint de healthcheck). */
 export async function verifySmtp(): Promise<boolean> {
-    return getMailer().verify();
+  return getMailer().verify();
 }

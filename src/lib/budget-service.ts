@@ -3,14 +3,18 @@
  * Valida payload, recalcula totales y persiste en transacción.
  */
 
-import { computeBudgetTotals, computeConceptSubtotal, computePartSubtotal } from "./budget-catalog";
-import { prisma } from "./prisma";
-import { getAppSettings } from "./settings";
 import type {
   ConceptCategory,
   ConceptType,
   Prisma,
 } from "../../generated/prisma/client";
+import {
+  computeBudgetTotals,
+  computeConceptSubtotal,
+  computePartSubtotal,
+} from "./budget-catalog";
+import { prisma } from "./prisma";
+import { getAppSettings } from "./settings";
 
 export type ConceptPayload = {
   type: ConceptType;
@@ -47,42 +51,57 @@ export class BudgetValidationError extends Error {
 }
 
 export function validateBudgetPayload(p: unknown): BudgetPayload {
-  if (!p || typeof p !== "object") throw new BudgetValidationError("Invalid body");
+  if (!p || typeof p !== "object")
+    throw new BudgetValidationError("Invalid body");
   const body = p as Record<string, unknown>;
 
-  const concepts = Array.isArray(body.concepts) ? (body.concepts as ConceptPayload[]) : [];
+  const concepts = Array.isArray(body.concepts)
+    ? (body.concepts as ConceptPayload[])
+    : [];
   const parts = Array.isArray(body.parts) ? (body.parts as PartPayload[]) : [];
 
   concepts.forEach((c, idx) => {
     if (!c.type || !["DESCRIPTIVO", "UNIDADES", "FIJO"].includes(c.type)) {
       throw new BudgetValidationError(`concepts[${idx}].type invalid`);
     }
-    if (!c.category) throw new BudgetValidationError(`concepts[${idx}].category required`);
+    if (!c.category)
+      throw new BudgetValidationError(`concepts[${idx}].category required`);
     if (c.type === "UNIDADES") {
       if (c.units == null || c.unitValue == null) {
-        throw new BudgetValidationError(`concepts[${idx}] requires units and unitValue`);
+        throw new BudgetValidationError(
+          `concepts[${idx}] requires units and unitValue`,
+        );
       }
     }
     if (c.type === "FIJO") {
       if (c.fixedAmount == null) {
-        throw new BudgetValidationError(`concepts[${idx}] requires fixedAmount`);
+        throw new BudgetValidationError(
+          `concepts[${idx}] requires fixedAmount`,
+        );
       }
     }
   });
 
   parts.forEach((pt, idx) => {
     if (pt.quantity == null || pt.unitPrice == null || !pt.description) {
-      throw new BudgetValidationError(`parts[${idx}] requires quantity, unitPrice, description`);
+      throw new BudgetValidationError(
+        `parts[${idx}] requires quantity, unitPrice, description`,
+      );
     }
   });
 
   return {
     ivaRate: typeof body.ivaRate === "number" ? body.ivaRate : undefined,
-    validityDays: typeof body.validityDays === "number" ? body.validityDays : undefined,
-    deliveryDays: typeof body.deliveryDays === "number" ? body.deliveryDays : undefined,
+    validityDays:
+      typeof body.validityDays === "number" ? body.validityDays : undefined,
+    deliveryDays:
+      typeof body.deliveryDays === "number" ? body.deliveryDays : undefined,
     paymentCondition:
-      typeof body.paymentCondition === "string" ? body.paymentCondition : undefined,
-    observations: typeof body.observations === "string" ? body.observations : null,
+      typeof body.paymentCondition === "string"
+        ? body.paymentCondition
+        : undefined,
+    observations:
+      typeof body.observations === "string" ? body.observations : null,
     concepts,
     parts,
   };
@@ -107,7 +126,10 @@ function computedSubtotals(payload: BudgetPayload) {
       unitValue: c.unitValue,
       fixedAmount: c.fixedAmount,
     })),
-    parts: payload.parts.map((p) => ({ quantity: p.quantity, unitPrice: p.unitPrice })),
+    parts: payload.parts.map((p) => ({
+      quantity: p.quantity,
+      unitPrice: p.unitPrice,
+    })),
     ivaRate: payload.ivaRate,
   });
   return totals;
@@ -120,10 +142,10 @@ function mapConceptsForCreate(payload: BudgetPayload) {
     order: c.order ?? idx,
     subdetails: c.type === "DESCRIPTIVO" ? (c.subdetails ?? []) : [],
     additionalDetail: c.additionalDetail ?? null,
-    units: c.type === "UNIDADES" ? c.units ?? 0 : null,
-    unitValue: c.type === "UNIDADES" ? c.unitValue ?? 0 : null,
-    fixedAmount: c.type === "FIJO" ? c.fixedAmount ?? 0 : null,
-    fixedDescription: c.type === "FIJO" ? c.fixedDescription ?? null : null,
+    units: c.type === "UNIDADES" ? (c.units ?? 0) : null,
+    unitValue: c.type === "UNIDADES" ? (c.unitValue ?? 0) : null,
+    fixedAmount: c.type === "FIJO" ? (c.fixedAmount ?? 0) : null,
+    fixedDescription: c.type === "FIJO" ? (c.fixedDescription ?? null) : null,
     subtotal: computeConceptSubtotal({
       type: c.type,
       units: c.units,
@@ -158,12 +180,13 @@ export async function createBudgetForLead(params: {
     });
     if (!lead) throw new BudgetValidationError("Lead not found");
     if (!lead.vehicle) {
-      throw new BudgetValidationError("Lead has no vehicle — assign one before creating a budget");
+      throw new BudgetValidationError(
+        "Lead has no vehicle — assign one before creating a budget",
+      );
     }
 
     const settings = await getAppSettings();
-    const ivaRateForCalc =
-      payload.ivaRate ?? Number(settings.defaultIvaRate);
+    const ivaRateForCalc = payload.ivaRate ?? Number(settings.defaultIvaRate);
     const totals = computedSubtotals({ ...payload, ivaRate: ivaRateForCalc });
     const number = await nextBudgetNumber(tx);
 
@@ -186,7 +209,8 @@ export async function createBudgetForLead(params: {
         // Observaciones (defaults desde AppSettings; el payload puede sobrescribir)
         validityDays: payload.validityDays ?? settings.defaultValidityDays,
         deliveryDays: payload.deliveryDays ?? settings.defaultDeliveryDays,
-        paymentCondition: payload.paymentCondition ?? settings.defaultPaymentCondition,
+        paymentCondition:
+          payload.paymentCondition ?? settings.defaultPaymentCondition,
         observations: payload.observations,
         // Totales
         laborSubtotal: totals.laborSubtotal,
@@ -199,19 +223,28 @@ export async function createBudgetForLead(params: {
         concepts: { create: mapConceptsForCreate(payload) },
         parts: { create: mapPartsForCreate(payload) },
       },
-      include: { concepts: { orderBy: { order: "asc" } }, parts: { orderBy: { order: "asc" } } },
+      include: {
+        concepts: { orderBy: { order: "asc" } },
+        parts: { orderBy: { order: "asc" } },
+      },
     });
 
     // Al crear un presupuesto, si el lead estaba en "solicitud", avanza a "control"
     if (lead.status === "solicitud") {
-      await tx.lead.update({ where: { id: leadId }, data: { status: "control" } });
+      await tx.lead.update({
+        where: { id: leadId },
+        data: { status: "control" },
+      });
     }
 
     return budget;
   });
 }
 
-export async function updateBudget(params: { id: string; payload: BudgetPayload }) {
+export async function updateBudget(params: {
+  id: string;
+  payload: BudgetPayload;
+}) {
   const { id, payload } = params;
 
   return prisma.$transaction(async (tx) => {
@@ -245,7 +278,10 @@ export async function updateBudget(params: { id: string; payload: BudgetPayload 
         concepts: { create: mapConceptsForCreate(payload) },
         parts: { create: mapPartsForCreate(payload) },
       },
-      include: { concepts: { orderBy: { order: "asc" } }, parts: { orderBy: { order: "asc" } } },
+      include: {
+        concepts: { orderBy: { order: "asc" } },
+        parts: { orderBy: { order: "asc" } },
+      },
     });
   });
 }

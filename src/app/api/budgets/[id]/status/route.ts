@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { verifyAuth } from "@/lib/auth-utils";
+import { getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
-import type { BudgetStatus, LeadLostReason } from "../../../../../../generated/prisma/client";
+import type {
+  BudgetStatus,
+  LeadLostReason,
+} from "../../../../../../generated/prisma/client";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -26,7 +28,7 @@ export async function POST(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
   if (authError) return authError;
   const { id } = await ctx.params;
-  const session = await auth();
+  const session = await getServerSession();
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {
@@ -39,10 +41,12 @@ export async function POST(request: Request, ctx: RouteContext) {
     lostNotes?: string | null;
   };
 
-  if (!status) return NextResponse.json({ error: "status required" }, { status: 400 });
+  if (!status)
+    return NextResponse.json({ error: "status required" }, { status: 400 });
 
   const existing = await prisma.budget.findUnique({ where: { id } });
-  if (!existing) return NextResponse.json({ error: "Budget not found" }, { status: 404 });
+  if (!existing)
+    return NextResponse.json({ error: "Budget not found" }, { status: 404 });
 
   const allowed = ALLOWED_TRANSITIONS[existing.status];
   if (!allowed.includes(status)) {
@@ -52,7 +56,11 @@ export async function POST(request: Request, ctx: RouteContext) {
     );
   }
 
-  if (status === "rejected" && lostReason && !LOST_REASONS.includes(lostReason)) {
+  if (
+    status === "rejected" &&
+    lostReason &&
+    !LOST_REASONS.includes(lostReason)
+  ) {
     return NextResponse.json({ error: "Invalid lostReason" }, { status: 400 });
   }
 
@@ -72,9 +80,15 @@ export async function POST(request: Request, ctx: RouteContext) {
 
     // Sincronizar estado del lead con la transición del presupuesto
     if (status === "sent") {
-      await tx.lead.update({ where: { id: updated.leadId }, data: { status: "enviado" } });
+      await tx.lead.update({
+        where: { id: updated.leadId },
+        data: { status: "enviado" },
+      });
     } else if (status === "accepted") {
-      await tx.lead.update({ where: { id: updated.leadId }, data: { status: "ganado" } });
+      await tx.lead.update({
+        where: { id: updated.leadId },
+        data: { status: "ganado" },
+      });
 
       // Auto-descuento de stock: por cada BudgetPart con partId, generamos un
       // movimiento OUT y decrementamos Part.stockQty. Partes libres (sin partId)
@@ -110,6 +124,36 @@ export async function POST(request: Request, ctx: RouteContext) {
         } else if (newStock <= Number(bp.part.stockMin)) {
           stockWarnings.push(`${bp.part.name}: stock bajo (${newStock})`);
         }
+      }
+
+      // Auto-crear reparación vinculada al budget (si todavía no existe).
+      // Trae el lead para copiar customer/vehicle snapshot.
+      const leadForRepair = await tx.lead.findUnique({
+        where: { id: updated.leadId },
+        select: { customerId: true, vehicleId: true },
+      });
+      const existingRepair = await tx.repair.findUnique({
+        where: { budgetId: updated.id },
+      });
+      if (!existingRepair && leadForRepair) {
+        await tx.repair.create({
+          data: {
+            status: "turno_asignado",
+            budgetId: updated.id,
+            leadId: updated.leadId,
+            directCreation: false,
+            customerId: leadForRepair.customerId,
+            vehicleId: leadForRepair.vehicleId,
+            customerName: updated.customerName,
+            customerEmail: updated.customerEmail,
+            customerPhone: updated.customerPhone,
+            vehicleBrand: updated.vehicleBrand,
+            vehicleModel: updated.vehicleModel,
+            vehicleYear: updated.vehicleYear,
+            vehicleDomain: updated.vehicleDomain,
+            createdById: session?.user?.id ?? null,
+          },
+        });
       }
     } else if (status === "rejected") {
       await tx.lead.update({

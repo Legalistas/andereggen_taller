@@ -7,9 +7,9 @@
 import { prisma } from "./prisma";
 
 export async function getAppSettings() {
-    return prisma.appSettings.upsert({
-        where: { id: "app" },
-        update: {},
-        create: { id: "app" },
-    });
+  return prisma.appSettings.upsert({
+    where: { id: "app" },
+    update: {},
+    create: { id: "app" },
+  });
 }

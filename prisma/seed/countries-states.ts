@@ -10,8 +10,8 @@ async function seedCountriesAndStates() {
       update: {},
       create: {
         name: "Argentina",
-        code: "AR"
-      }
+        code: "AR",
+      },
     });
 
     console.log("✅ Argentina created:", argentina.name);
@@ -19,7 +19,7 @@ async function seedCountriesAndStates() {
     // Provincias de Argentina
     const argentineStates = [
       "Buenos Aires",
-      "Catamarca", 
+      "Catamarca",
       "Chaco",
       "Chubut",
       "Córdoba",
@@ -41,7 +41,7 @@ async function seedCountriesAndStates() {
       "Santiago del Estero",
       "Tierra del Fuego",
       "Tucumán",
-      "Ciudad Autónoma de Buenos Aires"
+      "Ciudad Autónoma de Buenos Aires",
     ];
 
     console.log("🏛️ Creating Argentine states...");
@@ -51,14 +51,14 @@ async function seedCountriesAndStates() {
         where: {
           name_countryId: {
             name: stateName,
-            countryId: argentina.id
-          }
+            countryId: argentina.id,
+          },
         },
         update: {},
         create: {
           name: stateName,
-          countryId: argentina.id
-        }
+          countryId: argentina.id,
+        },
       });
     }
 
@@ -67,15 +67,16 @@ async function seedCountriesAndStates() {
     // Mostrar resumen
     const countries = await prisma.country.findMany({
       include: {
-        states: true
-      }
+        states: true,
+      },
     });
 
     console.log("\n📊 Summary:");
-    countries.forEach(country => {
-      console.log(`🌍 ${country.name} (${country.code}): ${country.states.length} states`);
+    countries.forEach((country) => {
+      console.log(
+        `🌍 ${country.name} (${country.code}): ${country.states.length} states`,
+      );
     });
-
   } catch (error) {
     console.error("❌ Error:", error);
   } finally {

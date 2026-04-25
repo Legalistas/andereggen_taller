@@ -1,5 +1,5 @@
-import CustomersReportSection from "@/components/reports/customers-report-section"
+import { redirect } from "next/navigation";
 
-export default function ClientesReportPage() {
-    return <CustomersReportSection />
+export default function ClientesRedirect() {
+  redirect("/dashboard/clientes");
 }

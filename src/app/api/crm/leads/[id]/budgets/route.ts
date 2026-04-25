@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { verifyAuth } from "@/lib/auth-utils";
-import { prisma } from "@/lib/prisma";
+import { getServerSession, verifyAuth } from "@/lib/auth-utils";
 import {
   BudgetValidationError,
   createBudgetForLead,
   validateBudgetPayload,
 } from "@/lib/budget-service";
+import {
+  buildBudgetContext,
+  sendRepairEventNotification,
+} from "@/lib/notifications";
+import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -29,7 +32,7 @@ export async function GET(request: Request, ctx: RouteContext) {
 export async function POST(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
   if (authError) return authError;
-  const session = await auth();
+  const session = await getServerSession();
   const { id: leadId } = await ctx.params;
 
   const raw = await request.json().catch(() => null);
@@ -40,6 +43,15 @@ export async function POST(request: Request, ctx: RouteContext) {
       payload,
       createdById: session?.user?.id ?? null,
     });
+
+    // Notificación automática "Presupuesto generado" (spec 6) — no bloquea
+    // la respuesta ante fallas (catch silencioso, ya logea internamente).
+    buildBudgetContext(budget.id)
+      .then((ctx) => {
+        if (ctx) return sendRepairEventNotification("budget_created", ctx);
+      })
+      .catch((e) => console.error("[notif:budget_created] error en envío:", e));
+
     return NextResponse.json({ budget }, { status: 201 });
   } catch (err) {
     if (err instanceof BudgetValidationError) {

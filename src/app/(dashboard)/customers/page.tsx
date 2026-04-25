@@ -1,5 +1,5 @@
-import CustomersSection from "@/components/customers/customers-section"
+import CustomersSection from "@/components/customers/customers-section";
 
 export default function CustomersPage() {
-    return <CustomersSection />
+  return <CustomersSection />;
 }

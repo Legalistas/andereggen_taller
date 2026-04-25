@@ -1,5 +1,5 @@
-import LeadsSection from "@/components/crm/leads-section"
+import LeadsSection from "@/components/crm/leads-section";
 
 export default function LeadsPage() {
-    return <LeadsSection />
+  return <LeadsSection />;
 }

@@ -1,5 +1,5 @@
-import StatsSection from "@/components/stats/stats-section"
+import { redirect } from "next/navigation";
 
-export default function EstadisticasPage() {
-    return <StatsSection />
+export default function EstadisticasRedirect() {
+  redirect("/dashboard");
 }

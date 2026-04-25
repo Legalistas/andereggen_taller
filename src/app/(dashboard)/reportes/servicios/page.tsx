@@ -1,5 +1,5 @@
-import ServicesSection from "@/components/reports/services-section"
+import { redirect } from "next/navigation";
 
-export default function ServiciosPage() {
-    return <ServicesSection />
+export default function ServiciosRedirect() {
+  redirect("/dashboard/servicios");
 }

@@ -1,5 +1,5 @@
-import IncomeSection from "@/components/reports/income-section"
+import { redirect } from "next/navigation";
 
-export default function IngresosPage() {
-    return <IncomeSection />
+export default function IngresosRedirect() {
+  redirect("/dashboard/ingresos");
 }

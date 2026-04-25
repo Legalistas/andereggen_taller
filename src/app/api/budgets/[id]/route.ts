@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
-import { prisma } from "@/lib/prisma";
 import {
   BudgetValidationError,
   updateBudget,
   validateBudgetPayload,
 } from "@/lib/budget-service";
+import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -21,15 +21,24 @@ export async function GET(request: Request, ctx: RouteContext) {
       parts: { orderBy: { order: "asc" } },
       lead: {
         include: {
-          customer: { select: { id: true, name: true, email: true, phone: true } },
+          customer: {
+            select: { id: true, name: true, email: true, phone: true },
+          },
           vehicle: {
-            select: { id: true, brand: true, model: true, year: true, domain: true },
+            select: {
+              id: true,
+              brand: true,
+              model: true,
+              year: true,
+              domain: true,
+            },
           },
         },
       },
     },
   });
-  if (!budget) return NextResponse.json({ error: "Budget not found" }, { status: 404 });
+  if (!budget)
+    return NextResponse.json({ error: "Budget not found" }, { status: 404 });
   return NextResponse.json({ budget });
 }
 

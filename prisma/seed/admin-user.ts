@@ -1,102 +1,75 @@
+import "dotenv/config";
+import { auth } from "../../src/lib/auth";
 import { prisma } from "../../src/lib/prisma";
-import argon2 from "argon2";
 
+const ADMIN_EMAIL = process.env.ADMIN_SEED_EMAIL ?? "admin@andereggen.ar";
+const ADMIN_PASSWORD = process.env.ADMIN_SEED_PASSWORD ?? "Admin$123456";
+const ADMIN_NAME = process.env.ADMIN_SEED_NAME ?? "Super Admin";
+
+/**
+ * Crea el primer usuario super_admin usando el flujo de better-auth
+ * (hashea la password con scrypt y crea el Account correctamente).
+ * Idempotente: si el email ya existe, solo lo actualiza (reasigna rol,
+ * marca emailVerified, no toca la password para no romper logins previos).
+ */
 async function seedAdminUser() {
   try {
-    console.log("👤 Creating admin user...");
-
-    // Hash the password using argon2
-    const hashedPassword = await argon2.hash("Admin$123456");
-
-    // Get admin role
-    const adminRole = await prisma.role.findUnique({
-      where: { name: "admin" }
+    const superAdminRole = await prisma.role.findUnique({
+      where: { name: "super_admin" },
     });
-
-    if (!adminRole) {
-      throw new Error("Admin role not found. Please run roles and permissions seed first.");
+    if (!superAdminRole) {
+      throw new Error(
+        "El rol super_admin no existe. Correr primero `roles-permissions.ts`.",
+      );
     }
 
-    // Check if admin user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: "admin@example.com" }
+    const existing = await prisma.user.findUnique({
+      where: { email: ADMIN_EMAIL },
     });
 
-    if (existingUser) {
-      console.log("⚠️  Admin user already exists, updating...");
-      
-      const updatedUser = await prisma.user.update({
-        where: { email: "admin@example.com" },
+    if (existing) {
+      console.log(`  Usuario ${ADMIN_EMAIL} ya existe — actualizando rol + emailVerified.`);
+      await prisma.user.update({
+        where: { email: ADMIN_EMAIL },
         data: {
-          name: "John Doe",
-          password: hashedPassword,
-          roleId: adminRole.id,
-          isActive: true
+          name: ADMIN_NAME,
+          roleId: superAdminRole.id,
+          emailVerified: true,
+          adminRole: "admin", // rol del plugin admin de better-auth
+          isActive: true,
+          banned: false,
         },
-        include: {
-          role: {
-            include: {
-              permissions: {
-                include: {
-                  permission: true
-                }
-              }
-            }
-          }
-        }
       });
-
-      console.log("✅ Admin user updated:", {
-        name: updatedUser.name,
-        email: updatedUser.email,
-        role: updatedUser.role?.name,
-        permissions: updatedUser.role?.permissions.length
-      });
-
-    } else {
-      console.log("🆕 Creating new admin user...");
-      
-      const newUser = await prisma.user.create({
-        data: {
-          name: "John Doe",
-          email: "admin@example.com",
-          password: hashedPassword,
-          roleId: adminRole.id,
-          isActive: true
-        },
-        include: {
-          role: {
-            include: {
-              permissions: {
-                include: {
-                  permission: true
-                }
-              }
-            }
-          }
-        }
-      });
-
-      console.log("✅ Admin user created:", {
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role?.name,
-        permissions: newUser.role?.permissions.length
-      });
+      console.log(`  Listo: ${ADMIN_EMAIL} con rol super_admin.`);
+      return;
     }
 
-    console.log("\n📋 Admin user details:");
-    console.log("   Name: John Doe");
-    console.log("   Email: admin@example.com");
-    console.log("   Password: Admin$123456");
-    console.log("   Role: admin");
-    console.log("   Status: active");
+    console.log(`  Creando usuario super_admin: ${ADMIN_EMAIL}`);
+    await auth.api.signUpEmail({
+      body: {
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
+        name: ADMIN_NAME,
+      },
+      asResponse: false,
+    });
 
+    await prisma.user.update({
+      where: { email: ADMIN_EMAIL },
+      data: {
+        roleId: superAdminRole.id,
+        emailVerified: true,
+        adminRole: "admin",
+      },
+    });
+
+    console.log(`  Usuario creado — email: ${ADMIN_EMAIL}, password: ${ADMIN_PASSWORD}`);
+    console.log("  Cambiá la password apenas puedas.");
   } catch (error) {
-    console.error("❌ Error creating admin user:", error);
+    console.error("Error creando admin user:", error);
+    process.exit(1);
   } finally {
     await prisma.$disconnect();
-    console.log("\n🔌 Disconnected from database");
   }
 }
 

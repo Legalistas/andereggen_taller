@@ -1,551 +1,709 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Breadcrumbs } from "@/components/layout/breadcrumbs"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+  AlertCircle,
+  Car,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Mail,
+  MapPin,
+  Phone,
+  Plus,
+  Search,
+  Trash2,
+  User,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Breadcrumbs } from "@/components/layout/breadcrumbs";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
-    Search,
-    Plus,
-    MoreVertical,
-    Eye,
-    Edit,
-    Trash2,
-    Phone,
-    Mail,
-    MapPin,
-    User,
-    CreditCard,
-    ChevronLeft,
-    ChevronRight,
-} from "lucide-react"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+type Vehicle = {
+  id: string;
+  brand: string;
+  model: string;
+  year: string;
+  domain: string;
+  secure: string;
+};
 
 type Customer = {
-    id: number
-    name: string
-    phone: string
-    email: string
-    countryId: string
-    stateId: string
-    city: string
-    address: string
-    cp: string
-    dni: string
-    dniType: string
-    createdAt: string
-    totalServices: number
-}
-
-const mockCustomers: Customer[] = [
-    {
-        id: 1,
-        name: "Carlos Mendoza",
-        phone: "+54 9 11 2345-6789",
-        email: "carlos.mendoza@email.com",
-        countryId: "1",
-        stateId: "1",
-        city: "Buenos Aires",
-        address: "Av. Corrientes 1234",
-        cp: "1043",
-        dni: "12345678",
-        dniType: "DNI",
-        createdAt: "2024-01-15",
-        totalServices: 12,
-    },
-    {
-        id: 2,
-        name: "María García",
-        phone: "+54 9 11 8765-4321",
-        email: "maria.garcia@email.com",
-        countryId: "1",
-        stateId: "1",
-        city: "La Plata",
-        address: "Calle 7 No. 456",
-        cp: "1900",
-        dni: "87654321",
-        dniType: "DNI",
-        createdAt: "2024-02-20",
-        totalServices: 8,
-    },
-    {
-        id: 3,
-        name: "Juan Pérez",
-        phone: "+54 9 351 123-4567",
-        email: "juan.perez@email.com",
-        countryId: "1",
-        stateId: "2",
-        city: "Córdoba",
-        address: "Av. Colón 789",
-        cp: "5000",
-        dni: "23456789",
-        dniType: "DNI",
-        createdAt: "2024-03-10",
-        totalServices: 5,
-    },
-    {
-        id: 4,
-        name: "Ana Martínez",
-        phone: "+54 9 341 987-6543",
-        email: "ana.martinez@email.com",
-        countryId: "1",
-        stateId: "3",
-        city: "Rosario",
-        address: "San Martín 321",
-        cp: "2000",
-        dni: "98765432",
-        dniType: "DNI",
-        createdAt: "2024-03-25",
-        totalServices: 15,
-    },
-    {
-        id: 5,
-        name: "Roberto Silva",
-        phone: "+54 9 11 5555-6666",
-        email: "roberto.silva@email.com",
-        countryId: "1",
-        stateId: "1",
-        city: "Buenos Aires",
-        address: "Rivadavia 999",
-        cp: "1034",
-        dni: "34567890",
-        dniType: "DNI",
-        createdAt: "2024-04-05",
-        totalServices: 3,
-    },
-]
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  dni: string | null;
+  dniType: string | null;
+  city: string;
+  cp: string;
+  address: string;
+  vehicles: Vehicle[];
+  createdAt: string;
+};
 
 export default function CustomersSection() {
-    const [customers] = useState<Customer[]>(mockCustomers)
-    const [searchTerm, setSearchTerm] = useState("")
-    const [selectedCustomers, setSelectedCustomers] = useState<number[]>([])
-    const [currentPage, setCurrentPage] = useState(1)
-    const [itemsPerPage, setItemsPerPage] = useState(10)
-    const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-    // Filtrar customers
-    const filteredCustomers = customers.filter((customer) => {
-        const searchLower = searchTerm.toLowerCase()
-        return (
-            customer.name.toLowerCase().includes(searchLower) ||
-            customer.email.toLowerCase().includes(searchLower) ||
-            customer.phone.includes(searchTerm) ||
-            customer.city.toLowerCase().includes(searchLower)
-        )
-    })
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
-    // Paginación
-    const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage)
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    const paginatedCustomers = filteredCustomers.slice(startIndex, endIndex)
+  // Dialog Nuevo Cliente
+  const [showNewDialog, setShowNewDialog] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    dni: "",
+    dniType: "DNI",
+    city: "",
+    cp: "",
+    address: "",
+  });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-    // Selección
-    const toggleCustomer = (id: number) => {
-        setSelectedCustomers((prev) => (prev.includes(id) ? prev.filter((customerId) => customerId !== id) : [...prev, id]))
+  // Dialog confirmación de borrado
+  const [toDelete, setToDelete] = useState<Customer | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const fetchCustomers = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch("/api/customers?limit=100", { signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as { customers: Customer[] };
+      setCustomers(body.customers);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setLoadError(
+          e instanceof Error ? e.message : "Error al cargar clientes",
+        );
+      }
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    const toggleAllCustomers = () => {
-        if (selectedCustomers.length === paginatedCustomers.length) {
-            setSelectedCustomers([])
-        } else {
-            setSelectedCustomers(paginatedCustomers.map((c) => c.id))
-        }
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchCustomers(ac.signal);
+    return () => ac.abort();
+  }, [fetchCustomers]);
+
+  const filtered = useMemo(() => {
+    const t = searchTerm.toLowerCase();
+    if (!t) return customers;
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(t) ||
+        c.email.toLowerCase().includes(t) ||
+        c.phone.includes(searchTerm) ||
+        c.city.toLowerCase().includes(t) ||
+        c.dni?.includes(searchTerm),
+    );
+  }, [customers, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginated = filtered.slice(startIndex, endIndex);
+
+  const resetForm = () => {
+    setForm({
+      name: "",
+      email: "",
+      phone: "",
+      dni: "",
+      dniType: "DNI",
+      city: "",
+      cp: "",
+      address: "",
+    });
+    setCreateError(null);
+  };
+
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/customers/${toDelete.id}`, {
+        method: "DELETE",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      setToDelete(null);
+      await fetchCustomers();
+    } catch (e) {
+      setDeleteError(
+        e instanceof Error ? e.message : "Error al eliminar cliente",
+      );
+    } finally {
+      setDeleting(false);
     }
+  };
 
-    const isAllSelected = selectedCustomers.length === paginatedCustomers.length && paginatedCustomers.length > 0
-    const isSomeSelected = selectedCustomers.length > 0 && selectedCustomers.length < paginatedCustomers.length
-
-    const handleItemsPerPageChange = (value: number) => {
-        setItemsPerPage(value)
-        setCurrentPage(1)
+  const handleCreate = async () => {
+    setCreateError(null);
+    if (!form.name.trim() || !form.email.trim() || !form.phone.trim()) {
+      setCreateError("Nombre, email y teléfono son obligatorios.");
+      return;
     }
+    setCreating(true);
+    try {
+      const res = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          email: form.email.trim(),
+          phone: form.phone.trim(),
+          dni: form.dni.trim() || null,
+          dniType: form.dni.trim() ? form.dniType : null,
+          city: form.city.trim() || null,
+          cp: form.cp.trim() || null,
+          address: form.address.trim() || null,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      resetForm();
+      setShowNewDialog(false);
+      await fetchCustomers();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : "Error al crear cliente");
+    } finally {
+      setCreating(false);
+    }
+  };
 
-    return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <Breadcrumbs items={[{ label: "Clientes" }]} />
-                    <h1 className="text-3xl font-bold text-foreground">Clientes</h1>
-                    <p className="text-sm text-muted-foreground mt-1">Gestiona la información de tus clientes</p>
-                </div>
-                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                    <DialogTrigger asChild>
-                        <Button className="gap-2">
-                            <Plus className="h-4 w-4" />
-                            Nuevo Cliente
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                        <DialogHeader>
-                            <DialogTitle>Agregar Nuevo Cliente</DialogTitle>
-                            <DialogDescription>Complete los datos del cliente para agregarlo al sistema</DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="name">Nombre completo *</Label>
-                                <Input id="name" placeholder="Ej: Juan Pérez" />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="phone">Teléfono *</Label>
-                                    <Input id="phone" placeholder="+54 9 11 1234-5678" />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="email">Email</Label>
-                                    <Input id="email" type="email" placeholder="cliente@email.com" />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="dniType">Tipo de documento *</Label>
-                                    <Select>
-                                        <SelectTrigger id="dniType">
-                                            <SelectValue placeholder="Seleccionar" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="dni">DNI</SelectItem>
-                                            <SelectItem value="pasaporte">Pasaporte</SelectItem>
-                                            <SelectItem value="cuil">CUIL</SelectItem>
-                                            <SelectItem value="cuit">CUIT</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="dni">Número de documento *</Label>
-                                    <Input id="dni" placeholder="12345678" />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="country">País *</Label>
-                                    <Select>
-                                        <SelectTrigger id="country">
-                                            <SelectValue placeholder="Seleccionar país" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="1">Argentina</SelectItem>
-                                            <SelectItem value="2">Chile</SelectItem>
-                                            <SelectItem value="3">Uruguay</SelectItem>
-                                            <SelectItem value="4">Paraguay</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="state">Provincia/Estado *</Label>
-                                    <Select>
-                                        <SelectTrigger id="state">
-                                            <SelectValue placeholder="Seleccionar provincia" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="1">Buenos Aires</SelectItem>
-                                            <SelectItem value="2">Córdoba</SelectItem>
-                                            <SelectItem value="3">Santa Fe</SelectItem>
-                                            <SelectItem value="4">Mendoza</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="city">Ciudad *</Label>
-                                    <Input id="city" placeholder="Ej: Buenos Aires" />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="cp">Código Postal *</Label>
-                                    <Input id="cp" placeholder="1234" />
-                                </div>
-                            </div>
-
-                            <div className="grid gap-2">
-                                <Label htmlFor="address">Dirección *</Label>
-                                <Input id="address" placeholder="Calle, número, piso, depto" />
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                                Cancelar
-                            </Button>
-                            <Button onClick={() => setIsDialogOpen(false)}>Guardar Cliente</Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card className="p-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-xs text-muted-foreground">Total Clientes</p>
-                            <p className="text-2xl font-bold text-foreground">{customers.length}</p>
-                        </div>
-                        <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-                            <User className="h-5 w-5 text-blue-500" />
-                        </div>
-                    </div>
-                </Card>
-
-                <Card className="p-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-xs text-muted-foreground">Nuevos (mes)</p>
-                            <p className="text-2xl font-bold text-foreground">3</p>
-                        </div>
-                        <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
-                            <Plus className="h-5 w-5 text-green-500" />
-                        </div>
-                    </div>
-                </Card>
-
-                <Card className="p-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-xs text-muted-foreground">Servicios Total</p>
-                            <p className="text-2xl font-bold text-foreground">43</p>
-                        </div>
-                        <div className="h-10 w-10 rounded-full bg-purple-500/10 flex items-center justify-center">
-                            <CreditCard className="h-5 w-5 text-purple-500" />
-                        </div>
-                    </div>
-                </Card>
-
-                <Card className="p-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-xs text-muted-foreground">Promedio Servicios</p>
-                            <p className="text-2xl font-bold text-foreground">8.6</p>
-                        </div>
-                        <div className="h-10 w-10 rounded-full bg-orange-500/10 flex items-center justify-center">
-                            <MapPin className="h-5 w-5 text-orange-500" />
-                        </div>
-                    </div>
-                </Card>
-            </div>
-
-            {/* Search and Filters */}
-            <Card className="p-4">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                            placeholder="Buscar por nombre, email, ciudad..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-9"
-                        />
-                    </div>
-                    <div className="flex gap-2">
-                        {selectedCustomers.length > 0 ? (
-                            <>
-                                <span className="text-sm text-muted-foreground self-center">
-                                    {selectedCustomers.length} seleccionado{selectedCustomers.length > 1 ? "s" : ""}
-                                </span>
-                                <Button variant="outline" size="sm">
-                                    Exportar
-                                </Button>
-                                <Button variant="outline" size="sm" className="text-destructive bg-transparent">
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            </>
-                        ) : (
-                            <>
-                                <Button variant="outline" size="sm">
-                                    Filtrar
-                                </Button>
-                                <Button variant="outline" size="sm">
-                                    Ordenar
-                                </Button>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </Card>
-
-            {/* Clients Table */}
-            <Card className="py-0">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead className="w-12">
-                                <Checkbox
-                                    checked={isAllSelected}
-                                    onCheckedChange={toggleAllCustomers}
-                                    aria-label="Seleccionar todos"
-                                    className={isSomeSelected ? "data-[state=checked]:bg-primary/50" : ""}
-                                />
-                            </TableHead>
-                            <TableHead>Cliente</TableHead>
-                            <TableHead>Contacto</TableHead>
-                            <TableHead>Documento</TableHead>
-                            <TableHead>Ubicación</TableHead>
-                            <TableHead>Servicios</TableHead>
-                            <TableHead>Registrado</TableHead>
-                            <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {paginatedCustomers.map((customer) => (
-                            <TableRow key={customer.id}>
-                                <TableCell>
-                                    <Checkbox
-                                        checked={selectedCustomers.includes(customer.id)}
-                                        onCheckedChange={() => toggleCustomer(customer.id)}
-                                        aria-label={`Seleccionar ${customer.name}`}
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-2">
-                                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                                            <User className="h-4 w-4 text-primary" />
-                                        </div>
-                                        <div className="font-medium text-foreground">{customer.name}</div>
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                            <Phone className="h-3 w-3" />
-                                            {customer.phone}
-                                        </div>
-                                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                            <Mail className="h-3 w-3" />
-                                            {customer.email}
-                                        </div>
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex flex-col gap-1">
-                                        <span className="text-sm font-medium">{customer.dniType}</span>
-                                        <span className="text-xs text-muted-foreground">{customer.dni}</span>
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-1 text-sm">
-                                        <MapPin className="h-3 w-3 text-muted-foreground" />
-                                        <span>{customer.city}</span>
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">CP: {customer.cp}</div>
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-1">
-                                        <span className="font-medium text-foreground">{customer.totalServices}</span>
-                                        <span className="text-xs text-muted-foreground">servicios</span>
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    <span className="text-sm text-muted-foreground">{customer.createdAt}</span>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                                <MoreVertical className="h-4 w-4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuItem className="gap-2">
-                                                <Eye className="h-4 w-4" />
-                                                Ver perfil
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem className="gap-2">
-                                                <Edit className="h-4 w-4" />
-                                                Editar
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem className="gap-2">
-                                                <Phone className="h-4 w-4" />
-                                                Contactar
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem className="gap-2 text-destructive">
-                                                <Trash2 className="h-4 w-4" />
-                                                Eliminar
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-
-                {/* Pagination Controls */}
-                <div className="flex items-center justify-between border-t px-4 py-4">
-                    <div className="flex items-center gap-4">
-                        <div className="text-sm text-muted-foreground">
-                            Mostrando {startIndex + 1} a {Math.min(endIndex, filteredCustomers.length)} de {filteredCustomers.length}{" "}
-                            clientes
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm text-muted-foreground">Mostrar</span>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="sm" className="h-8 gap-1 bg-transparent">
-                                        {itemsPerPage}
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="start">
-                                    <DropdownMenuItem onClick={() => handleItemsPerPageChange(10)}>10</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleItemsPerPageChange(25)}>25</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleItemsPerPageChange(50)}>50</DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                            <span className="text-sm text-muted-foreground">por página</span>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                            disabled={currentPage === 1}
-                        >
-                            <ChevronLeft className="h-4 w-4" />
-                            Anterior
-                        </Button>
-                        <div className="flex items-center gap-1">
-                            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map((page) => (
-                                <Button
-                                    key={page}
-                                    variant={currentPage === page ? "default" : "outline"}
-                                    size="sm"
-                                    className="h-8 w-8 p-0"
-                                    onClick={() => setCurrentPage(page)}
-                                >
-                                    {page}
-                                </Button>
-                            ))}
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                            disabled={currentPage === totalPages}
-                        >
-                            Siguiente
-                            <ChevronRight className="h-4 w-4" />
-                        </Button>
-                    </div>
-                </div>
-            </Card>
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <Breadcrumbs items={[{ label: "Clientes" }]} />
+          <h1 className="text-3xl font-bold text-foreground">Clientes</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Listado de clientes registrados. También se crean automáticamente
+            desde Cotizaciones y Producción.
+          </p>
         </div>
-    )
+        <Dialog
+          open={showNewDialog}
+          onOpenChange={(v) => {
+            setShowNewDialog(v);
+            if (!v) resetForm();
+          }}
+        >
+          <DialogTrigger asChild>
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" />
+              Nuevo Cliente
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Nuevo cliente</DialogTitle>
+              <DialogDescription>
+                Datos esenciales. La dirección completa se autocompleta con
+                Argentina · Santa Fe · Rafaela y se puede editar después.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-3 py-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="cName">Nombre completo *</Label>
+                <Input
+                  id="cName"
+                  placeholder="Apellido, Nombre"
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="cEmail">Email *</Label>
+                  <Input
+                    id="cEmail"
+                    type="email"
+                    placeholder="cliente@email.com"
+                    value={form.email}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, email: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="cPhone">Teléfono *</Label>
+                  <Input
+                    id="cPhone"
+                    placeholder="+54 9 3492 155-9075"
+                    value={form.phone}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, phone: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-[120px_1fr] gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="cDniType">Doc.</Label>
+                  <Select
+                    value={form.dniType}
+                    onValueChange={(v) =>
+                      setForm((f) => ({ ...f, dniType: v }))
+                    }
+                  >
+                    <SelectTrigger id="cDniType">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DNI">DNI</SelectItem>
+                      <SelectItem value="CUIL">CUIL</SelectItem>
+                      <SelectItem value="CUIT">CUIT</SelectItem>
+                      <SelectItem value="Pasaporte">Pasaporte</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="cDni">Número (opcional)</Label>
+                  <Input
+                    id="cDni"
+                    placeholder="12345678"
+                    value={form.dni}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, dni: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-[1fr_120px] gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="cCity">Ciudad</Label>
+                  <Input
+                    id="cCity"
+                    placeholder="Rafaela"
+                    value={form.city}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, city: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="cCp">CP</Label>
+                  <Input
+                    id="cCp"
+                    placeholder="2300"
+                    value={form.cp}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, cp: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label htmlFor="cAddress">Dirección</Label>
+                <Input
+                  id="cAddress"
+                  placeholder="Calle 123"
+                  value={form.address}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, address: e.target.value }))
+                  }
+                />
+              </div>
+
+              {createError && (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>{createError}</span>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowNewDialog(false)}
+                disabled={creating}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleCreate}
+                disabled={creating}
+                className="gap-2"
+              >
+                {creating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Creando…
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" /> Crear cliente
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats reales */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">Total Clientes</p>
+              <p className="text-2xl font-bold tabular-nums">
+                {customers.length}
+              </p>
+            </div>
+            <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+              <User className="h-5 w-5 text-blue-500" />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">Total Vehículos</p>
+              <p className="text-2xl font-bold tabular-nums">
+                {customers.reduce((a, c) => a + c.vehicles.length, 0)}
+              </p>
+            </div>
+            <div className="h-10 w-10 rounded-full bg-purple-500/10 flex items-center justify-center">
+              <Car className="h-5 w-5 text-purple-500" />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">
+                Con datos de contacto
+              </p>
+              <p className="text-2xl font-bold tabular-nums">
+                {customers.filter((c) => c.email && c.phone).length}
+              </p>
+            </div>
+            <div className="h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
+              <Mail className="h-5 w-5 text-emerald-500" />
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <Card className="p-4">
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nombre, email, teléfono, DNI o ciudad…"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="pl-9"
+          />
+        </div>
+      </Card>
+
+      {loadError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {loadError}
+        </div>
+      )}
+
+      <Card className="py-0 overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Cliente</TableHead>
+              <TableHead>Contacto</TableHead>
+              <TableHead>Documento</TableHead>
+              <TableHead>Ubicación</TableHead>
+              <TableHead>Vehículos</TableHead>
+              <TableHead>Registrado</TableHead>
+              <TableHead className="w-12 text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading && customers.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="text-center py-12 text-sm text-muted-foreground"
+                >
+                  <Loader2 className="h-4 w-4 inline animate-spin mr-2" />
+                  Cargando clientes…
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && filtered.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="text-center py-12 text-sm text-muted-foreground italic"
+                >
+                  {searchTerm
+                    ? "Sin clientes que coincidan con la búsqueda."
+                    : "Todavía no hay clientes registrados."}
+                </TableCell>
+              </TableRow>
+            )}
+            {paginated.map((c) => (
+              <TableRow key={c.id} className="hover:bg-slate-50">
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                      <User className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="font-medium">{c.name}</div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                    {c.phone && (
+                      <div className="flex items-center gap-1">
+                        <Phone className="h-3 w-3" />
+                        {c.phone}
+                      </div>
+                    )}
+                    {c.email && (
+                      <div className="flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        {c.email}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  {c.dni ? (
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium">
+                        {c.dniType ?? "DNI"}
+                      </span>
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {c.dni}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">—</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1 text-sm">
+                    <MapPin className="h-3 w-3 text-muted-foreground" />
+                    <span>{c.city}</span>
+                  </div>
+                  {c.cp && c.cp !== "-" && (
+                    <div className="text-xs text-muted-foreground">
+                      CP: {c.cp}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {c.vehicles.length === 0 ? (
+                    <span className="text-xs text-slate-400 italic">—</span>
+                  ) : (
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1 text-sm">
+                        <Car className="h-3 w-3 text-muted-foreground" />
+                        <span className="font-medium">{c.vehicles.length}</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate max-w-40">
+                        {c.vehicles[0].brand} {c.vehicles[0].model}
+                        {c.vehicles.length > 1
+                          ? ` +${c.vehicles.length - 1}`
+                          : ""}
+                      </div>
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(c.createdAt).toLocaleDateString("es-AR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                    })}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setToDelete(c);
+                    }}
+                    aria-label={`Eliminar ${c.name}`}
+                    title="Eliminar cliente"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        {filtered.length > 0 && (
+          <div className="flex items-center justify-between border-t px-4 py-3 gap-4 flex-wrap">
+            <div className="text-xs text-muted-foreground">
+              Mostrando {startIndex + 1} a {Math.min(endIndex, filtered.length)}{" "}
+              de {filtered.length} cliente{filtered.length === 1 ? "" : "s"}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">por página</span>
+              {[10, 25, 50].map((n) => (
+                <Button
+                  key={n}
+                  variant={itemsPerPage === n ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => {
+                    setItemsPerPage(n);
+                    setCurrentPage(1);
+                  }}
+                >
+                  {n}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="h-7 px-2"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums px-2">
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+                className="h-7 px-2"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Dialog
+        open={toDelete !== null}
+        onOpenChange={(v) => {
+          if (!v && !deleting) {
+            setToDelete(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar cliente</DialogTitle>
+            <DialogDescription>
+              Vas a eliminar <strong>{toDelete?.name}</strong> y todos sus datos
+              asociados (vehículos, leads y presupuestos). Las reparaciones
+              quedarán como histórico sin cliente vinculado. Esta acción no se
+              puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+
+          {toDelete && toDelete.vehicles.length > 0 && (
+            <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+              Se eliminarán también <strong>{toDelete.vehicles.length}</strong>{" "}
+              vehículo{toDelete.vehicles.length === 1 ? "" : "s"} y todos los
+              presupuestos asociados.
+            </div>
+          )}
+
+          {deleteError && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{deleteError}</span>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setToDelete(null)}
+              disabled={deleting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="gap-2"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Eliminando…
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" /> Eliminar definitivamente
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }

@@ -70,3 +70,8 @@ Desktop.ini
 *.tmp
 .cache/
 tmp/
+
+# ─── data import / scripts internos ──────────────────────────
+convert-to-upload/
+scripts/
+*.code-workspace

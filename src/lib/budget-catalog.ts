@@ -6,7 +6,10 @@
  * admin, se migra a tabla Prisma sin romper contratos (los `key` son estables).
  */
 
-import type { ConceptCategory, ConceptType } from "../../generated/prisma/client";
+import type {
+  ConceptCategory,
+  ConceptType,
+} from "../../generated/prisma/client";
 
 export type CategoryDef = {
   key: ConceptCategory;
@@ -21,29 +24,71 @@ export type CategoryDef = {
 export const CATEGORIES: CategoryDef[] = [
   // --- Descriptivas (sin importe) ---
   { key: "DESMONTAR", label: "Desmontar", type: "DESCRIPTIVO" },
-  { key: "DESMONTAR_Y_REPARAR", label: "Desmontar y reparar", type: "DESCRIPTIVO" },
-  { key: "DESMONTAR_Y_CAMBIAR", label: "Desmontar y cambiar", type: "DESCRIPTIVO" },
-  { key: "BANCADA_DE_ESTIRAMIENTO", label: "Bancada de estiramiento", type: "DESCRIPTIVO" },
+  {
+    key: "DESMONTAR_Y_REPARAR",
+    label: "Desmontar y reparar",
+    type: "DESCRIPTIVO",
+  },
+  {
+    key: "DESMONTAR_Y_CAMBIAR",
+    label: "Desmontar y cambiar",
+    type: "DESCRIPTIVO",
+  },
+  {
+    key: "BANCADA_DE_ESTIRAMIENTO",
+    label: "Bancada de estiramiento",
+    type: "DESCRIPTIVO",
+  },
   { key: "DESABOLLAR", label: "Desabollar", type: "DESCRIPTIVO" },
 
   // --- Por unidades (chapa / pintura) ---
-  { key: "CHAPA", label: "Chapa (incluye armado)", type: "UNIDADES", hint: "Unidades × valor" },
-  { key: "PINTURA", label: "Pintura (incluye lavado y pulido)", type: "UNIDADES", hint: "Unidades × valor" },
+  {
+    key: "CHAPA",
+    label: "Chapa (incluye armado)",
+    type: "UNIDADES",
+    hint: "Unidades × valor",
+  },
+  {
+    key: "PINTURA",
+    label: "Pintura (incluye lavado y pulido)",
+    type: "UNIDADES",
+    hint: "Unidades × valor",
+  },
 
   // --- Importe fijo ---
-  { key: "MECANICA", label: "Mecánica", type: "FIJO", fixedLabel: "Importe mecánica" },
+  {
+    key: "MECANICA",
+    label: "Mecánica",
+    type: "FIJO",
+    fixedLabel: "Importe mecánica",
+  },
   { key: "ALINEACION_BALANCEO", label: "Alineación – Balanceo", type: "FIJO" },
   { key: "AIRE_ACONDICIONADO", label: "Aire acondicionado", type: "FIJO" },
   { key: "AIRBAGS", label: "Airbags (montaje y reseteo)", type: "FIJO" },
-  { key: "COLOCACION_PARABRISAS", label: "Colocación parabrisas (kit pegamento)", type: "FIJO" },
-  { key: "COLOCACION_LUNETA", label: "Colocación luneta (kit pegamento)", type: "FIJO" },
+  {
+    key: "COLOCACION_PARABRISAS",
+    label: "Colocación parabrisas (kit pegamento)",
+    type: "FIJO",
+  },
+  {
+    key: "COLOCACION_LUNETA",
+    label: "Colocación luneta (kit pegamento)",
+    type: "FIJO",
+  },
   { key: "PULIDO_COMPLETO", label: "Pulido completo", type: "FIJO" },
-  { key: "OTROS_ADICIONALES", label: "Otros / Adicionales", type: "FIJO", hint: "Descripción libre + importe" },
+  {
+    key: "OTROS_ADICIONALES",
+    label: "Otros / Adicionales",
+    type: "FIJO",
+    hint: "Descripción libre + importe",
+  },
 ];
 
-export const CATEGORY_BY_KEY: Record<ConceptCategory, CategoryDef> = Object.fromEntries(
-  CATEGORIES.map((c) => [c.key, c]),
-) as Record<ConceptCategory, CategoryDef>;
+export const CATEGORY_BY_KEY: Record<ConceptCategory, CategoryDef> =
+  Object.fromEntries(CATEGORIES.map((c) => [c.key, c])) as Record<
+    ConceptCategory,
+    CategoryDef
+  >;
 
 // =====================================================
 // Subdetalles (Nivel 2) — solo categorías DESCRIPTIVO
@@ -55,7 +100,9 @@ export type SubdetailGroup = {
   items: { key: string; label: string }[];
 };
 
-export type SubdetailCatalog = Partial<Record<ConceptCategory, SubdetailGroup[]>>;
+export type SubdetailCatalog = Partial<
+  Record<ConceptCategory, SubdetailGroup[]>
+>;
 
 export const SUBDETAILS: SubdetailCatalog = {
   // --- 3.1 DESMONTAR ---
@@ -63,9 +110,18 @@ export const SUBDETAILS: SubdetailCatalog = {
     {
       title: "Guardaplást",
       items: [
-        { key: "guardaplast_ambos_delanteros", label: "Ambos guardaplást delanteros" },
-        { key: "guardaplast_ambos_traseros", label: "Ambos guardaplást traseros" },
-        { key: "guardaplast_del_izq", label: "Guardaplást delantero izquierdo" },
+        {
+          key: "guardaplast_ambos_delanteros",
+          label: "Ambos guardaplást delanteros",
+        },
+        {
+          key: "guardaplast_ambos_traseros",
+          label: "Ambos guardaplást traseros",
+        },
+        {
+          key: "guardaplast_del_izq",
+          label: "Guardaplást delantero izquierdo",
+        },
         { key: "guardaplast_del_der", label: "Guardaplást delantero derecho" },
         { key: "guardaplast_tras_izq", label: "Guardaplást trasero izquierdo" },
         { key: "guardaplast_tras_der", label: "Guardaplást trasero derecho" },
@@ -74,25 +130,49 @@ export const SUBDETAILS: SubdetailCatalog = {
     {
       title: "Tapizados de baúl / portón",
       items: [
-        { key: "tapizado_porton_trasero", label: "Tapizado interior de portón trasero" },
+        {
+          key: "tapizado_porton_trasero",
+          label: "Tapizado interior de portón trasero",
+        },
         { key: "tapizado_baul", label: "Tapizado interior de baúl" },
-        { key: "tapizado_tapa_baul", label: "Tapizado interior de tapa de baúl" },
+        {
+          key: "tapizado_tapa_baul",
+          label: "Tapizado interior de tapa de baúl",
+        },
       ],
     },
     {
       title: "Tapizados de puertas — ambos",
       items: [
-        { key: "tapizado_ambos_puertas_izq", label: "Ambos tapizados interiores de puertas izquierdas" },
-        { key: "tapizado_ambos_puertas_der", label: "Ambos tapizados interiores de puertas derechas" },
+        {
+          key: "tapizado_ambos_puertas_izq",
+          label: "Ambos tapizados interiores de puertas izquierdas",
+        },
+        {
+          key: "tapizado_ambos_puertas_der",
+          label: "Ambos tapizados interiores de puertas derechas",
+        },
       ],
     },
     {
       title: "Tapizados de puertas — por puerta",
       items: [
-        { key: "tapizado_puerta_del_izq", label: "Tapizado interior de puerta delantera izquierda" },
-        { key: "tapizado_puerta_del_der", label: "Tapizado interior de puerta delantera derecha" },
-        { key: "tapizado_puerta_tras_izq", label: "Tapizado interior de puerta trasera izquierda" },
-        { key: "tapizado_puerta_tras_der", label: "Tapizado interior de puerta trasera derecha" },
+        {
+          key: "tapizado_puerta_del_izq",
+          label: "Tapizado interior de puerta delantera izquierda",
+        },
+        {
+          key: "tapizado_puerta_del_der",
+          label: "Tapizado interior de puerta delantera derecha",
+        },
+        {
+          key: "tapizado_puerta_tras_izq",
+          label: "Tapizado interior de puerta trasera izquierda",
+        },
+        {
+          key: "tapizado_puerta_tras_der",
+          label: "Tapizado interior de puerta trasera derecha",
+        },
       ],
     },
     {
@@ -100,11 +180,13 @@ export const SUBDETAILS: SubdetailCatalog = {
       items: [
         {
           key: "puerta_completa_del_izq",
-          label: "Tapizado interior, cerrajería y cristalería de puerta delantera izquierda",
+          label:
+            "Tapizado interior, cerrajería y cristalería de puerta delantera izquierda",
         },
         {
           key: "puerta_completa_del_der",
-          label: "Tapizado interior, cerrajería y cristalería de puerta delantera derecha",
+          label:
+            "Tapizado interior, cerrajería y cristalería de puerta delantera derecha",
         },
       ],
     },
@@ -119,7 +201,10 @@ export const SUBDETAILS: SubdetailCatalog = {
     {
       title: "Otros desmontajes",
       items: [
-        { key: "radiadores_electroventilador", label: "Conjunto de radiadores y electroventilador" },
+        {
+          key: "radiadores_electroventilador",
+          label: "Conjunto de radiadores y electroventilador",
+        },
         { key: "luneta_termica", label: "Luneta térmica" },
       ],
     },
@@ -132,16 +217,28 @@ export const SUBDETAILS: SubdetailCatalog = {
       items: [
         { key: "lamina_paragolpe_del", label: "Lámina de paragolpe delantero" },
         { key: "lamina_paragolpe_tras", label: "Lámina de paragolpe trasero" },
-        { key: "moldura_paragolpe_del", label: "Moldura plástica de paragolpe delantero" },
-        { key: "moldura_paragolpe_tras", label: "Moldura plástica de paragolpe trasero" },
+        {
+          key: "moldura_paragolpe_del",
+          label: "Moldura plástica de paragolpe delantero",
+        },
+        {
+          key: "moldura_paragolpe_tras",
+          label: "Moldura plástica de paragolpe trasero",
+        },
       ],
     },
     {
       title: "Frente y estructura delantera",
       items: [
-        { key: "frente_plastico_radiadores", label: "Frente plástico soporte de radiadores" },
+        {
+          key: "frente_plastico_radiadores",
+          label: "Frente plástico soporte de radiadores",
+        },
         { key: "grilla_frente", label: "Grilla de frente" },
-        { key: "marco_opticas_fibra", label: "Marco interior soporte de ópticas (fibra de vidrio)" },
+        {
+          key: "marco_opticas_fibra",
+          label: "Marco interior soporte de ópticas (fibra de vidrio)",
+        },
       ],
     },
     {
@@ -167,34 +264,65 @@ export const SUBDETAILS: SubdetailCatalog = {
     {
       title: "Estructura delantera",
       items: [
-        { key: "escuadrar_frente_carroceria", label: "Escuadrar frente de carrocería" },
-        { key: "escuadrar_largueros_falso_chasis_del", label: "Escuadrar largueros falso chasis delantero" },
+        {
+          key: "escuadrar_frente_carroceria",
+          label: "Escuadrar frente de carrocería",
+        },
+        {
+          key: "escuadrar_largueros_falso_chasis_del",
+          label: "Escuadrar largueros falso chasis delantero",
+        },
       ],
     },
     {
       title: "Estructura trasera",
       items: [
-        { key: "escuadrar_panel_cola", label: "Escuadrar panel cola de carrocería" },
-        { key: "escuadrar_compacto_cola", label: "Escuadrar compacto cola de carrocería" },
+        {
+          key: "escuadrar_panel_cola",
+          label: "Escuadrar panel cola de carrocería",
+        },
+        {
+          key: "escuadrar_compacto_cola",
+          label: "Escuadrar compacto cola de carrocería",
+        },
       ],
     },
     {
       title: "Parantes delanteros",
       items: [
-        { key: "parante_bisagras_del_izq", label: "Escuadrar parante soporte bisagras (puerta delantera izquierda)" },
-        { key: "parante_bisagras_del_der", label: "Escuadrar parante soporte bisagras (puerta delantera derecha)" },
+        {
+          key: "parante_bisagras_del_izq",
+          label:
+            "Escuadrar parante soporte bisagras (puerta delantera izquierda)",
+        },
+        {
+          key: "parante_bisagras_del_der",
+          label:
+            "Escuadrar parante soporte bisagras (puerta delantera derecha)",
+        },
       ],
     },
     {
       title: "Parantes centrales",
       items: [
-        { key: "parante_central_izq", label: "Escuadrar parante central puertas izquierdas" },
-        { key: "parante_central_der", label: "Escuadrar parante central puertas derechas" },
+        {
+          key: "parante_central_izq",
+          label: "Escuadrar parante central puertas izquierdas",
+        },
+        {
+          key: "parante_central_der",
+          label: "Escuadrar parante central puertas derechas",
+        },
       ],
     },
     {
       title: "Eje",
-      items: [{ key: "escuadrar_eje_trasero", label: "Escuadrar y alinear eje trasero" }],
+      items: [
+        {
+          key: "escuadrar_eje_trasero",
+          label: "Escuadrar y alinear eje trasero",
+        },
+      ],
     },
   ],
 
@@ -204,8 +332,14 @@ export const SUBDETAILS: SubdetailCatalog = {
       title: "Guardabarros",
       items: [
         { key: "verificar_costillado", label: "Verificar costillado" },
-        { key: "ambos_guardabarros_del", label: "Ambos guardabarros delanteros" },
-        { key: "guardabarro_del_izq", label: "Guardabarro delantero izquierdo" },
+        {
+          key: "ambos_guardabarros_del",
+          label: "Ambos guardabarros delanteros",
+        },
+        {
+          key: "guardabarro_del_izq",
+          label: "Guardabarro delantero izquierdo",
+        },
         { key: "guardabarro_del_der", label: "Guardabarro delantero derecho" },
         { key: "guardabarro_tras_izq", label: "Guardabarro trasero izquierdo" },
         { key: "guardabarro_tras_der", label: "Guardabarro trasero derecho" },
@@ -215,7 +349,10 @@ export const SUBDETAILS: SubdetailCatalog = {
       title: "Capot",
       items: [
         { key: "capot_motor", label: "Capot motor" },
-        { key: "panel_exterior_marco_capot", label: "Panel exterior + marco interior capot" },
+        {
+          key: "panel_exterior_marco_capot",
+          label: "Panel exterior + marco interior capot",
+        },
       ],
     },
     {
@@ -223,7 +360,10 @@ export const SUBDETAILS: SubdetailCatalog = {
       items: [
         { key: "frente_carroceria", label: "Frente de carrocería" },
         { key: "panel_cola_carroceria", label: "Panel cola de carrocería" },
-        { key: "partes_dañadas_choque", label: "Partes dañadas por el choque (general)" },
+        {
+          key: "partes_dañadas_choque",
+          label: "Partes dañadas por el choque (general)",
+        },
       ],
     },
     {
@@ -239,9 +379,18 @@ export const SUBDETAILS: SubdetailCatalog = {
     {
       title: "Puertas",
       items: [
-        { key: "panel_puerta_del_izq", label: "Panel puerta delantera izquierda" },
-        { key: "panel_puerta_del_der", label: "Panel puerta delantera derecha" },
-        { key: "panel_puerta_tras_izq", label: "Panel puerta trasera izquierda" },
+        {
+          key: "panel_puerta_del_izq",
+          label: "Panel puerta delantera izquierda",
+        },
+        {
+          key: "panel_puerta_del_der",
+          label: "Panel puerta delantera derecha",
+        },
+        {
+          key: "panel_puerta_tras_izq",
+          label: "Panel puerta trasera izquierda",
+        },
         { key: "panel_puerta_tras_der", label: "Panel puerta trasera derecha" },
       ],
     },
@@ -261,17 +410,35 @@ export const SUBDETAILS: SubdetailCatalog = {
     {
       title: "Parantes superiores / contorno",
       items: [
-        { key: "parante_sup_puertas_izq", label: "Parante superior contorno puertas izq." },
-        { key: "parante_sup_puertas_der", label: "Parante superior contorno puertas der." },
-        { key: "parante_contorno_parabrisas_izq", label: "Parante contorno parabrisas izq." },
-        { key: "parante_contorno_parabrisas_der", label: "Parante contorno parabrisas der." },
+        {
+          key: "parante_sup_puertas_izq",
+          label: "Parante superior contorno puertas izq.",
+        },
+        {
+          key: "parante_sup_puertas_der",
+          label: "Parante superior contorno puertas der.",
+        },
+        {
+          key: "parante_contorno_parabrisas_izq",
+          label: "Parante contorno parabrisas izq.",
+        },
+        {
+          key: "parante_contorno_parabrisas_der",
+          label: "Parante contorno parabrisas der.",
+        },
       ],
     },
     {
       title: "Parantes traseros",
       items: [
-        { key: "parante_tras_izq_cabina", label: "Parante trasero izq. cabina" },
-        { key: "parante_tras_der_cabina", label: "Parante trasero der. cabina" },
+        {
+          key: "parante_tras_izq_cabina",
+          label: "Parante trasero izq. cabina",
+        },
+        {
+          key: "parante_tras_der_cabina",
+          label: "Parante trasero der. cabina",
+        },
       ],
     },
     {
@@ -288,8 +455,14 @@ export const SUBDETAILS: SubdetailCatalog = {
     {
       title: "Paragolpes / Láminas / Grilla",
       items: [
-        { key: "cambio_lamina_paragolpe_del", label: "Lámina paragolpe delantero" },
-        { key: "cambio_lamina_paragolpe_tras", label: "Lámina paragolpe trasero" },
+        {
+          key: "cambio_lamina_paragolpe_del",
+          label: "Lámina paragolpe delantero",
+        },
+        {
+          key: "cambio_lamina_paragolpe_tras",
+          label: "Lámina paragolpe trasero",
+        },
         { key: "cambio_grilla_central_frente", label: "Grilla central frente" },
         { key: "cambio_tapa_remolque", label: "Tapa remolque" },
       ],
@@ -329,7 +502,12 @@ export const SUBDETAILS: SubdetailCatalog = {
     },
     {
       title: "Repuestos detallados externamente",
-      items: [{ key: "repuestos_hoja_adjunta", label: "Repuestos que se detallan en hoja adjunta" }],
+      items: [
+        {
+          key: "repuestos_hoja_adjunta",
+          label: "Repuestos que se detallan en hoja adjunta",
+        },
+      ],
     },
   ],
 };
@@ -390,9 +568,18 @@ export function computeBudgetTotals(opts: {
   );
   const ivaAmount = round2((laborSubtotal * ivaRate) / 100);
   const laborTotal = round2(laborSubtotal + ivaAmount);
-  const partsSubtotal = round2(opts.parts.reduce((acc, p) => acc + computePartSubtotal(p), 0));
+  const partsSubtotal = round2(
+    opts.parts.reduce((acc, p) => acc + computePartSubtotal(p), 0),
+  );
   const grandTotal = round2(laborTotal + partsSubtotal);
-  return { laborSubtotal, ivaRate, ivaAmount, laborTotal, partsSubtotal, grandTotal };
+  return {
+    laborSubtotal,
+    ivaRate,
+    ivaAmount,
+    laborTotal,
+    partsSubtotal,
+    grandTotal,
+  };
 }
 
 function round2(n: number): number {

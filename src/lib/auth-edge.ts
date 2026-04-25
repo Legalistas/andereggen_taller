@@ -1,87 +1,126 @@
-// Edge-compatible utilities for authentication checks
-// This file contains only functions that can run in the Edge Runtime
+// Edge-compatible helpers — NO imports de prisma ni better-auth server.
+// Se usan en componentes cliente y en el middleware (runtime edge).
 
-export interface UserSession {
+export interface DomainRole {
+  id: string;
+  name: string;
+  label?: string; // display name en español ("Super Admin", "Administrativo del Taller", …)
+  type?: "INTERNAL" | "EXTERNAL";
+  permissions: Array<{
+    permission: {
+      name: string;
+      description: string;
+    };
+  }>;
+}
+
+/**
+ * Fallback de labels para los roles base del sistema — útil en componentes
+ * que solo tienen el `name` (ej: listados desde /api/users) y no pasan
+ * por el customSession que ya expone `label`.
+ */
+const ROLE_LABELS: Record<string, string> = {
+  super_admin: "Super Admin",
+  admin_taller: "Administrativo del Taller",
+  contable: "Contable",
+  cliente: "Cliente",
+  inspector: "Inspector / Perito",
+  productor_seguros: "Productor de Seguros",
+  compania_seguros: "Compañía de Seguros",
+};
+
+export function roleLabel(name: string | null | undefined): string {
+  if (!name) return "—";
+  return ROLE_LABELS[name] ?? name;
+}
+
+export interface AppUser {
   id: string;
   email: string;
   name: string;
-  role: {
-    id: string;
-    name: string;
-    permissions: Array<{
-      permission: {
-        name: string;
-        description: string;
-      };
-    }>;
-  } | null;
-  isActive: boolean;
+  image?: string | null;
+  emailVerified?: boolean;
+  banned?: boolean | null;
+  isActive?: boolean;
+  role?: string | null; // better-auth admin role string
+  domainRole?: DomainRole | null; // custom Role con permisos
+  twoFactorEnabled?: boolean;
 }
 
-/**
- * Check if user has specific permission (edge-compatible)
- */
-export function hasPermissionEdge(session: any, permission: string): boolean {
-  if (!session?.user?.role?.permissions) {
-    return false;
-  }
-
-  return session.user.role.permissions.some(
-    (p: any) => p.permission.name === permission
-  );
+export interface AppSessionLike {
+  user: AppUser;
+  session: { id: string; userId: string; expiresAt: Date | string };
 }
 
-/**
- * Check if user has admin role (edge-compatible)
- */
-export function isAdminEdge(session: any): boolean {
-  return session?.user?.role?.name === "admin";
+export function hasPermissionEdge(
+  session: AppSessionLike | null | undefined,
+  permission: string,
+): boolean {
+  const perms = session?.user?.domainRole?.permissions;
+  if (!perms) return false;
+  return perms.some((p) => p.permission.name === permission);
 }
 
-/**
- * Check if user has internal role (edge-compatible)
- */
-export function isInternalEdge(session: any): boolean {
-  return session?.user?.role?.name === "internal";
+export const INTERNAL_ROLES_EDGE = [
+  "super_admin",
+  "admin_taller",
+  "contable",
+] as const;
+
+export const ADMIN_ROLES_EDGE = ["super_admin", "admin_taller"] as const;
+
+export function isSuperAdminEdge(
+  session: AppSessionLike | null | undefined,
+): boolean {
+  return session?.user?.domainRole?.name === "super_admin";
 }
 
-/**
- * Check if user has admin or internal role (edge-compatible)
- */
-export function isAdminOrInternalEdge(session: any): boolean {
-  const roleName = session?.user?.role?.name;
-  return roleName === "admin" || roleName === "internal";
+/** true para super_admin o admin_taller. */
+export function isAdminEdge(
+  session: AppSessionLike | null | undefined,
+): boolean {
+  const name = session?.user?.domainRole?.name;
+  return !!name && (ADMIN_ROLES_EDGE as readonly string[]).includes(name);
 }
 
-/**
- * Get user permissions as array of strings (edge-compatible)
- */
-export function getUserPermissionsEdge(session: any): string[] {
-  if (!session?.user?.role?.permissions) {
-    return [];
-  }
-
-  return session.user.role.permissions.map((p: any) => p.permission.name);
+/** true para cualquier rol interno (super_admin, admin_taller, contable). */
+export function isInternalEdge(
+  session: AppSessionLike | null | undefined,
+): boolean {
+  const name = session?.user?.domainRole?.name;
+  return !!name && (INTERNAL_ROLES_EDGE as readonly string[]).includes(name);
 }
 
-/**
- * Check if session is valid and user is active (edge-compatible)
- */
-export function isValidSessionEdge(session: any): boolean {
+/** @deprecated Mismo significado que isInternalEdge ahora. */
+export function isAdminOrInternalEdge(
+  session: AppSessionLike | null | undefined,
+): boolean {
+  return isInternalEdge(session);
+}
+
+export function getUserPermissionsEdge(
+  session: AppSessionLike | null | undefined,
+): string[] {
+  const perms = session?.user?.domainRole?.permissions;
+  if (!perms) return [];
+  return perms.map((p) => p.permission.name);
+}
+
+export function isValidSessionEdge(
+  session: AppSessionLike | null | undefined,
+): boolean {
   return !!(
     session?.user?.id &&
     session?.user?.email &&
-    session?.user?.isActive !== false
+    session.user.isActive !== false &&
+    !session.user.banned
   );
 }
 
-/**
- * Extract role information from session (edge-compatible)
- */
-export function getRoleInfoEdge(session: any) {
+export function getRoleInfoEdge(session: AppSessionLike | null | undefined) {
   return {
-    id: session?.user?.role?.id,
-    name: session?.user?.role?.name,
-    permissions: getUserPermissionsEdge(session)
+    id: session?.user?.domainRole?.id,
+    name: session?.user?.domainRole?.name,
+    permissions: getUserPermissionsEdge(session),
   };
 }

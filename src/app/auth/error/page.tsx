@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense } from "react";
+import { AlertTriangle, ArrowLeft, Home } from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import Link from "next/link";
-import { AlertTriangle, ArrowLeft, Home } from "lucide-react";
 
 const errorMessages = {
   AccessDenied: {

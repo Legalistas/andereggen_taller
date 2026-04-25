@@ -1,23 +1,26 @@
+import type { AppSessionLike } from "./auth-edge";
 import { hasPermission, isAdmin, isInternal } from "./auth-utils";
+
+type SessionInput = AppSessionLike | null | undefined;
 
 /**
  * Permission checker utilities
  * Centralized place for all permission validations
  */
 export class Can {
-  private session: any;
+  private session: SessionInput;
 
-  constructor(session: any) {
+  constructor(session: SessionInput) {
     this.session = session;
   }
 
   // Role checks
   get isAdmin() {
-    return isAdmin(this.session);
+    return isAdmin(this.session as never);
   }
 
   get isInternal() {
-    return isInternal(this.session);
+    return isInternal(this.session as never);
   }
 
   get isAdminOrInternal() {
@@ -26,23 +29,23 @@ export class Can {
 
   // User permissions
   get viewUsers() {
-    return hasPermission(this.session, "view_users");
+    return hasPermission(this.session as never, "view_users");
   }
 
   get createUsers() {
-    return hasPermission(this.session, "create_users");
+    return hasPermission(this.session as never, "create_users");
   }
 
   get editUsers() {
-    return hasPermission(this.session, "edit_users");
+    return hasPermission(this.session as never, "edit_users");
   }
 
   get deleteUsers() {
-    return hasPermission(this.session, "delete_users");
+    return hasPermission(this.session as never, "delete_users");
   }
 
   get disableUsers() {
-    return hasPermission(this.session, "disable_users");
+    return hasPermission(this.session as never, "disable_users");
   }
 
   // Combined permissions
@@ -55,13 +58,17 @@ export class Can {
   }
 
   // Get all user permissions as array
-  get permissions() {
-    return this.session?.user?.role?.permissions?.map((p: any) => p.permission.name) || [];
+  get permissions(): string[] {
+    return (
+      this.session?.user?.domainRole?.permissions?.map(
+        (p) => p.permission.name,
+      ) ?? []
+    );
   }
 
   // Check custom permission
   permission(permissionName: string) {
-    return hasPermission(this.session, permissionName);
+    return hasPermission(this.session as never, permissionName);
   }
 
   // Get user info
@@ -70,17 +77,17 @@ export class Can {
       id: this.session?.user?.id,
       name: this.session?.user?.name,
       email: this.session?.user?.email,
-      role: this.session?.user?.role?.name,
-      isActive: this.session?.user?.isActive
+      role: this.session?.user?.domainRole?.name,
+      isActive: this.session?.user?.isActive,
     };
   }
 
   // Get role info
   get role() {
     return {
-      id: this.session?.user?.role?.id,
-      name: this.session?.user?.role?.name,
-      permissions: this.permissions
+      id: this.session?.user?.domainRole?.id,
+      name: this.session?.user?.domainRole?.name,
+      permissions: this.permissions,
     };
   }
 }
@@ -88,13 +95,13 @@ export class Can {
 /**
  * Factory function to create Can instance
  */
-export function can(session: any) {
+export function can(session: SessionInput) {
   return new Can(session);
 }
 
 /**
  * Hook-like function for components
  */
-export function useCan(session: any) {
+export function useCan(session: SessionInput) {
   return can(session);
 }
