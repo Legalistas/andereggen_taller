@@ -115,7 +115,7 @@ export async function GET(request: Request) {
     where: {
       OR: [
         { vehicleDomain: { equals: rawDomain, mode: "insensitive" } },
-        { vehicleDomain: { contains: target.slice(0, 3), mode: "insensitive" } },
+        { vehicleDomain: { contains: target.slice(0, 2), mode: "insensitive" } },
       ],
     },
     select: {
