@@ -36,6 +36,7 @@ export async function GET(request: Request) {
     phone: u.phone,
     image: u.image,
     isActive: u.isActive,
+    emailVerified: u.emailVerified,
     role: u.role,
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
@@ -142,13 +143,17 @@ export async function POST(request: Request) {
         );
       }
 
-      // Asignar rol custom + phone + isActive (better-auth no maneja estos)
+      // Asignar rol custom + phone + isActive (better-auth no maneja estos).
+      // Auto-verificamos el email: si un admin lo creó, no tiene sentido
+      // bloquearle el acceso esperando un mail de verificación que puede no
+      // llegar. Si querés exigir verificación, sacá emailVerified de aquí.
       const user = await prisma.user.update({
         where: { id: createdId },
         data: {
           phone: phone?.trim() || null,
           roleId,
           isActive: finalIsActive,
+          emailVerified: true,
         },
         include: { role: { select: { id: true, name: true } } },
       });

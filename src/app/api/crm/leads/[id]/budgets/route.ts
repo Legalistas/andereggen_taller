@@ -5,10 +5,6 @@ import {
   createBudgetForLead,
   validateBudgetPayload,
 } from "@/lib/budget-service";
-import {
-  buildBudgetContext,
-  sendRepairEventNotification,
-} from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -44,13 +40,16 @@ export async function POST(request: Request, ctx: RouteContext) {
       createdById: session?.user?.id ?? null,
     });
 
-    // Notificación automática "Presupuesto generado" (spec 6) — no bloquea
-    // la respuesta ante fallas (catch silencioso, ya logea internamente).
-    buildBudgetContext(budget.id)
-      .then((ctx) => {
-        if (ctx) return sendRepairEventNotification("budget_created", ctx);
-      })
-      .catch((e) => console.error("[notif:budget_created] error en envío:", e));
+    // El envío automático de mail al crear presupuesto está deshabilitado.
+    // El admin lo manda manualmente con el botón "Enviar" del lead-canvas
+    // (que dispara /api/budgets/[id]/send con destinatarios y mensaje custom).
+    // Si querés reactivar el aviso automático, descomentá el bloque:
+    //
+    //   buildBudgetContext(budget.id)
+    //     .then((ctx) => {
+    //       if (ctx) return sendRepairEventNotification("budget_created", ctx);
+    //     })
+    //     .catch((e) => console.error("[notif:budget_created] error:", e));
 
     return NextResponse.json({ budget }, { status: 201 });
   } catch (err) {

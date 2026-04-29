@@ -111,6 +111,8 @@ type LeadInfo = {
 
 type Props = {
   leadId?: string;
+  /** Si está, el modal carga el budget existente y al guardar hace PATCH (modo edición). */
+  budgetId?: string;
   onSaved?: () => void;
   hideTrigger?: boolean;
   open?: boolean;
@@ -150,11 +152,13 @@ function emptyConcept(category: ConceptCategory): ConceptDraft {
 
 export default function BudgetModal({
   leadId,
+  budgetId,
   onSaved,
   hideTrigger,
   open: openProp,
   onOpenChange,
 }: Props) {
+  const isEditing = !!budgetId;
   const [internalOpen, setInternalOpen] = useState(false);
   const open = openProp ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
@@ -168,6 +172,9 @@ export default function BudgetModal({
   );
   const [observations, setObservations] = useState("");
   const [newCategory, setNewCategory] = useState<ConceptCategory | "">("");
+  // IVA rate del budget — al crear se usa el default; al editar se carga
+  // el valor guardado (algunos presupuestos importados están con 0).
+  const [ivaRate, setIvaRate] = useState<number>(DEFAULT_IVA_RATE);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leadInfo, setLeadInfo] = useState<LeadInfo | null>(null);
@@ -192,6 +199,76 @@ export default function BudgetModal({
     };
   }, [open, leadId]);
 
+  // Modo edición: cuando se abre con budgetId, traer el budget completo y
+  // poblar concepts/parts/conditions del form. Solo corre una vez por
+  // apertura (cuando open pasa a true) para no pisar lo que el usuario edita.
+  useEffect(() => {
+    if (!open || !budgetId) return;
+    let cancelled = false;
+    fetch(`/api/budgets/${budgetId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !data?.budget) return;
+        const b = data.budget as {
+          ivaRate: string | number | null;
+          validityDays: number;
+          deliveryDays: number;
+          paymentCondition: string;
+          observations: string | null;
+          concepts: Array<{
+            type: ConceptType;
+            category: ConceptCategory;
+            subdetails: string[];
+            additionalDetail: string | null;
+            units: string | number | null;
+            unitValue: string | number | null;
+            fixedAmount: string | number | null;
+            fixedDescription: string | null;
+          }>;
+          parts: Array<{
+            partId: string | null;
+            quantity: string | number;
+            description: string;
+            unitPrice: string | number;
+          }>;
+        };
+        // IVA del budget — algunos importados están con 0; respetamos el guardado
+        if (b.ivaRate !== null) setIvaRate(Number(b.ivaRate));
+        setValidityDays(String(b.validityDays ?? 10));
+        setDeliveryDays(String(b.deliveryDays ?? 20));
+        setPaymentCondition(b.paymentCondition ?? "Contado contra entrega");
+        setObservations(b.observations ?? "");
+        setConcepts(
+          b.concepts.map((c) => ({
+            localId: uid(),
+            type: c.type,
+            category: c.category,
+            subdetails: c.subdetails ?? [],
+            additionalDetail: c.additionalDetail ?? "",
+            units: c.units !== null ? String(c.units) : "",
+            unitValue: c.unitValue !== null ? String(c.unitValue) : "",
+            fixedAmount: c.fixedAmount !== null ? String(c.fixedAmount) : "",
+            fixedDescription: c.fixedDescription ?? "",
+          })),
+        );
+        setParts(
+          b.parts.map((p) => ({
+            localId: uid(),
+            partId: p.partId,
+            quantity: String(p.quantity ?? ""),
+            description: p.description,
+            unitPrice: String(p.unitPrice ?? ""),
+          })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // Solo dependemos de open + budgetId — re-fetchear al abrir; no en cada
+    // tipeo del usuario.
+  }, [open, budgetId]);
+
   const totals = useMemo(() => {
     return computeBudgetTotals({
       concepts: concepts.map((c) => ({
@@ -204,9 +281,9 @@ export default function BudgetModal({
         quantity: num(p.quantity),
         unitPrice: num(p.unitPrice),
       })),
-      ivaRate: DEFAULT_IVA_RATE,
+      ivaRate,
     });
-  }, [concepts, parts]);
+  }, [concepts, parts, ivaRate]);
 
   const addConcept = useCallback(() => {
     if (!newCategory) return;
@@ -240,16 +317,17 @@ export default function BudgetModal({
   const removePart = (id: string) =>
     setParts((prev) => prev.filter((p) => p.localId !== id));
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setConcepts([]);
     setParts([]);
     setValidityDays("10");
     setDeliveryDays("20");
     setPaymentCondition("Contado contra entrega");
     setObservations("");
+    setIvaRate(DEFAULT_IVA_RATE);
     setError(null);
     setLeadInfo(null);
-  };
+  }, []);
 
   const handleSubmit = async () => {
     if (!leadId) {
@@ -288,8 +366,12 @@ export default function BudgetModal({
           unitPrice: num(p.unitPrice),
         })),
       };
-      const res = await fetch(`/api/crm/leads/${leadId}/budgets`, {
-        method: "POST",
+      // En modo edición → PATCH al budget; en modo nuevo → POST a leads/{id}/budgets.
+      const url = isEditing
+        ? `/api/budgets/${budgetId}`
+        : `/api/crm/leads/${leadId}/budgets`;
+      const res = await fetch(url, {
+        method: isEditing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -308,6 +390,12 @@ export default function BudgetModal({
       setSaving(false);
     }
   };
+
+  // Limpiar el form cuando el modal se cierra (sino al reabrir queda con
+  // los datos del último presupuesto editado).
+  useEffect(() => {
+    if (!open) resetForm();
+  }, [open, resetForm]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -329,7 +417,9 @@ export default function BudgetModal({
         className="max-w-[98vw] sm:max-w-[98vw] w-[98vw] h-[95vh] p-0 gap-0 flex flex-col sm:rounded-xl overflow-hidden"
       >
         {/* DialogTitle + Description para a11y (el header visual está abajo). */}
-        <DialogTitle className="sr-only">Nuevo presupuesto</DialogTitle>
+        <DialogTitle className="sr-only">
+          {isEditing ? "Editar presupuesto" : "Nuevo presupuesto"}
+        </DialogTitle>
         <DialogDescription className="sr-only">
           Editor de presupuesto con conceptos, repuestos y condiciones.
         </DialogDescription>
@@ -342,7 +432,7 @@ export default function BudgetModal({
             </div>
             <div>
               <h2 className="text-xl font-bold leading-tight">
-                Nuevo presupuesto
+                {isEditing ? "Editar presupuesto" : "Nuevo presupuesto"}
               </h2>
               {leadInfo && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-muted-foreground mt-0.5">

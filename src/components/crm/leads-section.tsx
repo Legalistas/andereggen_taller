@@ -163,8 +163,12 @@ export default function LeadsSection() {
     return () => ac.abort();
   }, []);
 
-  // Estado del BudgetModal por fila
-  const [budgetFor, setBudgetFor] = useState<string | null>(null);
+  // Estado del BudgetModal por fila — guarda leadId y opcionalmente budgetId
+  // (cuando se está editando un presupuesto existente).
+  const [budgetFor, setBudgetFor] = useState<{
+    leadId: string;
+    budgetId?: string;
+  } | null>(null);
   // Canvas lateral: leadId abierto (null = cerrado)
   const [canvasLeadId, setCanvasLeadId] = useState<string | null>(null);
   // Contador para forzar refetch del canvas sin cerrarlo (ej: después de guardar presupuesto)
@@ -772,13 +776,14 @@ export default function LeadsSection() {
         onStatusChange={handleStatusChange}
         onAssignActor={handleAssignActor}
         onOpenDetail={(lead) => setCanvasLeadId(lead.id)}
-        onOpenBudget={(leadId) => setBudgetFor(leadId)}
+        onOpenBudget={(leadId) => setBudgetFor({ leadId })}
         onDelete={handleDeleteLead}
       />
 
       {/* Budget modal (controlado) */}
       <BudgetModal
-        leadId={budgetFor ?? undefined}
+        leadId={budgetFor?.leadId}
+        budgetId={budgetFor?.budgetId}
         hideTrigger
         open={budgetFor !== null}
         onOpenChange={(v) => {
@@ -802,7 +807,7 @@ export default function LeadsSection() {
         onChanged={() => fetchLeads()}
         reloadNonce={canvasReloadNonce}
         suppressed={budgetFor !== null}
-        onOpenBudget={(leadId) => setBudgetFor(leadId)}
+        onOpenBudget={(leadId, budgetId) => setBudgetFor({ leadId, budgetId })}
       />
     </div>
   );

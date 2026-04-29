@@ -23,6 +23,15 @@ import {
   X as XIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -188,8 +197,9 @@ type Props = {
   onClose: () => void;
   /** Llamada cuando el lead se modifica, para que el kanban refresque. */
   onChanged?: () => void;
-  /** Llamada cuando piden abrir un presupuesto del lead. */
-  onOpenBudget?: (leadId: string) => void;
+  /** Llamada cuando piden abrir un presupuesto del lead.
+   *  Si `budgetId` viene → modo edición; sin él → nuevo presupuesto. */
+  onOpenBudget?: (leadId: string, budgetId?: string) => void;
   /**
    * Incrementá este valor desde afuera para forzar un refetch del detalle
    * (ej: después de guardar un presupuesto sin cerrar el canvas).
@@ -221,6 +231,32 @@ export function LeadCanvas({
   const [sendingBudget, setSendingBudget] = useState<BudgetLite | null>(null);
   // Contador interno para refetch después de enviar (no pisa el reloadNonce externo)
   const [internalReload, setInternalReload] = useState(0);
+  // Presupuesto pendiente de confirmar eliminación
+  const [deletingBudget, setDeletingBudget] = useState<BudgetLite | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteBudget = useCallback(async () => {
+    if (!deletingBudget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/budgets/${deletingBudget.id}`, {
+        method: "DELETE",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      setDeletingBudget(null);
+      setInternalReload((n) => n + 1); // refetch del lead
+      onChanged?.(); // refrescar el kanban afuera
+    } catch (e) {
+      setDeleteError(
+        e instanceof Error ? e.message : "Error al eliminar presupuesto",
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [deletingBudget, onChanged]);
 
   const markSaving = useCallback(() => setSavingIndicator("saving"), []);
   const markSaved = useCallback(() => {
@@ -437,6 +473,10 @@ export function LeadCanvas({
                 budgets={lead.budgets}
                 onOpenBudget={onOpenBudget}
                 onSendBudget={(b) => setSendingBudget(b)}
+                onDeleteBudget={(b) => {
+                  setDeleteError(null);
+                  setDeletingBudget(b);
+                }}
               />
 
               {lead.vehicle && (
@@ -486,6 +526,62 @@ export function LeadCanvas({
           </>
         )}
       </SheetContent>
+
+      {/* Dialog de confirmación de eliminación de presupuesto. */}
+      <Dialog
+        open={deletingBudget !== null}
+        onOpenChange={(v) => {
+          if (!v && !deleteBusy) {
+            setDeletingBudget(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar presupuesto</DialogTitle>
+            <DialogDescription>
+              Vas a eliminar el presupuesto{" "}
+              <strong>#{deletingBudget?.number}</strong> y todo su contenido
+              (conceptos, repuestos, pagos asociados, logs de envío). Esta
+              acción no se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteError && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{deleteError}</span>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeletingBudget(null)}
+              disabled={deleteBusy}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteBudget}
+              disabled={deleteBusy}
+              className="gap-2"
+            >
+              {deleteBusy ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Eliminando…
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" /> Eliminar
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog de envio de presupuesto por email — fuera del Sheet para
           que tenga su propio overlay y no interfiera. */}
@@ -1430,11 +1526,14 @@ function BudgetsSection({
   budgets,
   onOpenBudget,
   onSendBudget,
+  onDeleteBudget,
 }: {
   leadId: string;
   budgets: BudgetLite[];
-  onOpenBudget?: (leadId: string) => void;
+  /** Si se pasa budgetId → modo edición. Sin budgetId → nuevo presupuesto. */
+  onOpenBudget?: (leadId: string, budgetId?: string) => void;
   onSendBudget?: (budget: BudgetLite) => void;
+  onDeleteBudget?: (budget: BudgetLite) => void;
 }) {
   const STATUS_STYLES: Record<string, string> = {
     draft: "bg-slate-100 text-slate-700",
@@ -1499,7 +1598,7 @@ function BudgetsSection({
               <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => onOpenBudget?.(leadId)}
+                  onClick={() => onOpenBudget?.(leadId, b.id)}
                   className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 transition-colors"
                 >
                   <Pencil className="h-3 w-3" /> Editar
@@ -1511,6 +1610,15 @@ function BudgetsSection({
                 >
                   <Send className="h-3 w-3" />
                   {b.status === "draft" ? "Enviar" : "Reenviar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteBudget?.(b)}
+                  className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50 transition-colors"
+                  title="Eliminar presupuesto"
+                  aria-label={`Eliminar presupuesto #${b.number}`}
+                >
+                  <Trash2 className="h-3 w-3" />
                 </button>
               </div>
             </div>

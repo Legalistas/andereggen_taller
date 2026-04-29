@@ -70,13 +70,10 @@ export async function DELETE(request: Request, ctx: RouteContext) {
   if (!existing) {
     return NextResponse.json({ error: "Budget not found" }, { status: 404 });
   }
-  if (existing.status !== "draft") {
-    return NextResponse.json(
-      { error: `Cannot delete budget in status "${existing.status}"` },
-      { status: 400 },
-    );
-  }
 
+  // Permitimos borrar en cualquier status — la confirmación visual la
+  // hace el admin desde la UI. La cascade del schema (BudgetConcept,
+  // BudgetPart, BudgetEmailLog, Payment) se encarga de los hijos.
   await prisma.budget.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

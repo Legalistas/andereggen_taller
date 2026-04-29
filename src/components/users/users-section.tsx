@@ -73,6 +73,7 @@ type UserDataType = {
   name: string | null;
   email: string | null;
   isActive: boolean;
+  emailVerified: boolean;
   role: { id: string; name: string } | null;
   createdAt: string;
 };
@@ -332,6 +333,22 @@ export default function UsersSection({ currentUserId }: Props) {
       setActionError(e instanceof Error ? e.message : "Error al cambiar rol");
     } finally {
       setActionBusy(false);
+    }
+  };
+
+  const handleActivate = async (u: UserDataType) => {
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/users/${u.id}/activate`, {
+        method: "POST",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      await fetchUsers();
+    } catch (e) {
+      setActionError(
+        e instanceof Error ? e.message : "Error al activar la cuenta",
+      );
     }
   };
 
@@ -897,23 +914,44 @@ export default function UsersSection({ currentUserId }: Props) {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {user.isActive ? (
-                      <Badge
-                        variant="outline"
-                        className="gap-1 bg-green-500/10 text-green-700 border-green-200"
-                      >
-                        <div className="h-2 w-2 rounded-full bg-green-500" />
-                        Activo
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="gap-1 bg-gray-500/10 text-gray-700 border-gray-200"
-                      >
-                        <div className="h-2 w-2 rounded-full bg-gray-500" />
-                        Inactivo
-                      </Badge>
-                    )}
+                    <div className="flex flex-col gap-1 items-start">
+                      {user.isActive ? (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 bg-green-500/10 text-green-700 border-green-200"
+                        >
+                          <div className="h-2 w-2 rounded-full bg-green-500" />
+                          Activo
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 bg-gray-500/10 text-gray-700 border-gray-200"
+                        >
+                          <div className="h-2 w-2 rounded-full bg-gray-500" />
+                          Inactivo
+                        </Badge>
+                      )}
+                      {user.emailVerified ? (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 bg-blue-500/10 text-blue-700 border-blue-200"
+                          title="Email verificado — puede iniciar sesión"
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          Verificado
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 bg-amber-500/10 text-amber-700 border-amber-200"
+                          title="Email sin verificar — no puede loguearse hasta activar"
+                        >
+                          <AlertTriangle className="h-3 w-3" />
+                          Sin verificar
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -964,6 +1002,15 @@ export default function UsersSection({ currentUserId }: Props) {
                           <Mail className="h-4 w-4" />
                           Enviar correo
                         </DropdownMenuItem>
+                        {(!user.emailVerified || !user.isActive) && (
+                          <DropdownMenuItem
+                            className="gap-2 text-emerald-700 focus:text-emerald-700"
+                            onClick={() => handleActivate(user)}
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            Activar cuenta
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           className="gap-2"
                           disabled={isSelf(user)}
