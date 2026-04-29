@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BudgetHistoryButton } from "@/components/crm/budget-history-button";
 import BudgetModal from "@/components/crm/budget-modal";
 import CustomerSelector, {
   type Customer,
@@ -884,6 +885,13 @@ export default function QuotesSection() {
                   </span>
                 )}
               </div>
+
+              {/* Historial de envíos */}
+              <BudgetHistoryButton
+                budgetId={detail.id}
+                budgetNumber={detail.number}
+                variant="label"
+              />
 
               {/* Conceptos */}
               <div className="space-y-2">
