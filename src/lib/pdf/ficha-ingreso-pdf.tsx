@@ -4,16 +4,16 @@
  *   1. FICHA INGRESO (acepta presupuesto, declara objetos, condición de pago)
  *   2. CONFORMIDAD DE REPARACIONES (al retirar)
  *
- * Los campos resaltados en amarillo son los que la UI permite editar antes
- * de imprimir (seguro, seg. técnico, monto franquicia).
- *
- * Estilo: mismo header/typography que budget-pdf para mantener look-and-feel.
+ * Layout: el mismo que la planilla original que el taller venía usando.
+ * Sin cajas/badges/colores extra — solo logo + contacto, datos en texto
+ * plano, manifiesto, firmas, conformidad. Los campos en amarillo son los
+ * que la UI permite editar antes de imprimir (seguro, seg. tec., franquicia).
  */
 
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
 export type FichaIngresoData = {
-  date: string; // ya formateada DD/MM/YYYY
+  date: string;
   budgetNumber: number;
   customer: {
     name: string;
@@ -27,11 +27,10 @@ export type FichaIngresoData = {
     year: string;
     domain: string;
   };
-  /** Resaltados — editables en el dialog antes de imprimir */
   highlights: {
-    insurance: string; // "LA SEGUNDA"
-    technicalInsurance: string; // "SAN CRISTOBAL" — seguro del tercero o seg. técnico
-    franchiseAmount: string; // "$ 250.000,00" o "-"
+    insurance: string;
+    technicalInsurance: string;
+    franchiseAmount: string;
   };
   paymentCondition: string;
   company: {
@@ -44,115 +43,58 @@ export type FichaIngresoData = {
 };
 
 const C = {
-  brand: "#003b73",
-  ink: "#0f172a",
-  slate700: "#334155",
-  slate500: "#64748b",
-  slate200: "#e2e8f0",
-  slate50: "#f8fafc",
-  highlight: "#fff4a3", // amarillo marcador
+  ink: "#000",
+  highlight: "#fff4a3",
 } as const;
 
 const s = StyleSheet.create({
   page: {
-    padding: 36,
+    paddingHorizontal: 36,
+    paddingVertical: 30,
     fontSize: 10,
     fontFamily: "Helvetica",
-    color: C.slate700,
+    color: C.ink,
     lineHeight: 1.4,
   },
-  // ─── Header con logo + contacto + badge ──────────────────────────
+
+  // Header simple: logo izquierda, contacto derecha
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingBottom: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: C.brand,
-    marginBottom: 14,
+    marginBottom: 8,
   },
-  companyBlock: { flexDirection: "column", maxWidth: 360 },
-  logo: { width: 138, height: 48, marginBottom: 8, objectFit: "contain" },
-  companyLine: { fontSize: 8, color: C.slate500 },
-  badge: {
-    alignSelf: "flex-start",
-    backgroundColor: C.brand,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 4,
-    minWidth: 150,
-  },
-  badgeTitle: {
-    fontSize: 8,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: "white",
-    opacity: 0.85,
-    marginBottom: 4,
-  },
-  badgeNumber: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "white",
-    lineHeight: 1,
-    marginBottom: 6,
-  },
-  badgeDate: { fontSize: 8, color: "white", opacity: 0.9 },
+  logo: { width: 150, height: 52, objectFit: "contain" },
+  contactBlock: { textAlign: "right", fontSize: 9 },
 
-  // ─── Datos cliente/vehículo (estilo budget) ──────────────────────
-  sectionTitle: {
-    fontSize: 9,
+  title: {
+    fontSize: 14,
     fontWeight: "bold",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: C.brand,
-    marginBottom: 6,
+    textAlign: "center",
+    marginBottom: 14,
     marginTop: 4,
   },
-  twoCol: { flexDirection: "row", gap: 16 },
-  col: { flex: 1 },
-  box: {
-    padding: 8,
-    backgroundColor: C.slate50,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: C.slate200,
-  },
-  row: {
-    flexDirection: "row",
-    marginBottom: 2,
-  },
-  label: {
-    fontSize: 8,
-    fontWeight: "bold",
-    color: C.slate500,
-    width: 65,
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  value: { fontSize: 9, color: C.ink, flex: 1 },
+
+  // Datos cliente/vehículo: filas con dos columnas, label bold + valor
+  dataBlock: { marginBottom: 10 },
+  dataRow: { flexDirection: "row", marginBottom: 3 },
+  dataCol: { flexDirection: "row", flex: 1, alignItems: "flex-start" },
+  dataLabel: { fontWeight: "bold", marginRight: 4 },
+  dataValue: {},
   highlight: {
     backgroundColor: C.highlight,
     paddingHorizontal: 3,
-    paddingVertical: 0,
-    fontWeight: "bold",
   },
 
-  // ─── Manifiesto y firmas ─────────────────────────────────────────
-  manifiestoBlock: { marginTop: 12, marginBottom: 8 },
-  paragraph: { marginBottom: 5, lineHeight: 1.45 },
-  paragraphLast: { marginBottom: 5 },
-  franchiseRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 4,
-    marginBottom: 6,
-  },
-  franchiseLabel: { fontWeight: "bold" },
+  // Manifiesto en texto plano
+  paragraph: { marginBottom: 4, lineHeight: 1.45 },
+  inlineLabel: { fontWeight: "bold" },
+
+  // Firmas
   signatureRow: {
     flexDirection: "row",
-    marginTop: 22,
-    gap: 24,
+    marginTop: 18,
+    gap: 28,
   },
   signatureField: {
     flexDirection: "row",
@@ -162,55 +104,29 @@ const s = StyleSheet.create({
   signatureLabel: {
     fontWeight: "bold",
     marginRight: 6,
-    fontSize: 9,
   },
   signatureLine: {
     flex: 1,
     borderBottomWidth: 1,
-    borderBottomColor: C.slate700,
+    borderBottomColor: C.ink,
     height: 1,
   },
 
-  // ─── Sección Conformidad ─────────────────────────────────────────
   divider: {
     borderBottomWidth: 1,
-    borderBottomColor: C.slate200,
+    borderBottomColor: C.ink,
     marginVertical: 14,
   },
+
   conformidadTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "bold",
-    color: C.brand,
     textAlign: "center",
-    marginBottom: 6,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
+    marginBottom: 8,
+    marginTop: 4,
   },
 });
 
-/** Field con label en negrita seguido de valor (con o sin highlight) */
-function Field({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
-  return (
-    <View style={s.row}>
-      <Text style={s.label}>{label}</Text>
-      {highlight ? (
-        <Text style={[s.value, s.highlight]}>{value}</Text>
-      ) : (
-        <Text style={s.value}>{value}</Text>
-      )}
-    </View>
-  );
-}
-
-/** Línea horizontal con label en negrita para firmar */
 function SignField({ label, flex = 1 }: { label: string; flex?: number }) {
   return (
     <View style={[s.signatureField, { flex }]}>
@@ -225,88 +141,98 @@ export function FichaIngresoPdf({ data }: { data: FichaIngresoData }) {
     <Document
       title={`Ficha Ingreso #${data.budgetNumber}`}
       author={data.company.name}
-      subject={`Ficha de Ingreso/Egreso #${data.budgetNumber} — ${data.customer.name}`}
     >
       <Page size="A4" style={s.page}>
-        {/* Header — mismo estilo que el presupuesto */}
+        {/* Header: logo izquierda, contacto derecha. Sin barra de color, sin badge. */}
         <View style={s.header}>
-          <View style={s.companyBlock}>
-            {data.company.logoUrl ? (
-              <Image src={data.company.logoUrl} style={s.logo} />
-            ) : null}
-            <Text style={s.companyLine}>{data.company.address}</Text>
-            <Text style={s.companyLine}>
-              Tel: {data.company.phone} · {data.company.email}
-            </Text>
-          </View>
-          <View style={s.badge}>
-            <Text style={s.badgeTitle}>Ficha Ingreso</Text>
-            <Text style={s.badgeNumber}>#{data.budgetNumber}</Text>
-            <Text style={s.badgeDate}>Fecha: {data.date}</Text>
+          {data.company.logoUrl ? (
+            <Image src={data.company.logoUrl} style={s.logo} />
+          ) : (
+            <View />
+          )}
+          <View style={s.contactBlock}>
+            <Text>{data.company.address}</Text>
+            <Text>Tel.: {data.company.phone}</Text>
+            <Text>E-mail: {data.company.email}</Text>
           </View>
         </View>
 
-        {/* Cliente + Vehículo en dos boxes con sectionTitle (estilo budget) */}
-        <View style={s.twoCol}>
-          <View style={s.col}>
-            <Text style={s.sectionTitle}>Cliente</Text>
-            <View style={s.box}>
-              <Field label="Titular" value={data.customer.name.toUpperCase()} />
-              <Field label="Dirección" value={data.customer.address} />
-              <Field
-                label="Localidad"
-                value={data.customer.locality.toUpperCase()}
-              />
-              <Field label="Teléfono" value={data.customer.phone} />
-              {data.customer.dni ? (
-                <Field label="DNI" value={data.customer.dni} />
-              ) : null}
+        <Text style={s.title}>FICHA INGRESO</Text>
+
+        {/* Datos cliente/vehículo en dos columnas, texto plano */}
+        <View style={s.dataBlock}>
+          <View style={s.dataRow}>
+            <View style={s.dataCol}>
+              <Text style={s.dataLabel}>Fecha:</Text>
+              <Text style={s.dataValue}>{data.date}</Text>
+            </View>
+            <View style={s.dataCol}>
+              <Text style={s.dataLabel}>Vehículo:</Text>
+              <Text style={s.dataValue}>{data.vehicle.brandModel}</Text>
             </View>
           </View>
-          <View style={s.col}>
-            <Text style={s.sectionTitle}>Vehículo</Text>
-            <View style={s.box}>
-              <Field label="Vehículo" value={data.vehicle.brandModel} />
-              <Field label="Dominio" value={data.vehicle.domain} />
-              <Field label="Año" value={data.vehicle.year} />
-              <Field
-                label="Seguro"
-                value={data.highlights.insurance || "—"}
-                highlight
-              />
-              <Field
-                label="Seg. Tec."
-                value={data.highlights.technicalInsurance || "—"}
-                highlight
-              />
+          <View style={s.dataRow}>
+            <View style={s.dataCol}>
+              <Text style={s.dataLabel}>Titular:</Text>
+              <Text style={s.dataValue}>
+                {data.customer.name.toUpperCase()}
+              </Text>
+            </View>
+            <View style={s.dataCol}>
+              <Text style={s.dataLabel}>Dominio:</Text>
+              <Text style={s.dataValue}>{data.vehicle.domain}</Text>
+              <Text style={[s.dataLabel, { marginLeft: 16 }]}>Año:</Text>
+              <Text style={s.dataValue}>{data.vehicle.year}</Text>
+            </View>
+          </View>
+          <View style={s.dataRow}>
+            <View style={s.dataCol}>
+              <Text style={s.dataLabel}>Direc.:</Text>
+              <Text style={s.dataValue}>{data.customer.address}</Text>
+            </View>
+            <View style={s.dataCol}>
+              <Text style={s.dataLabel}>Teléfono:</Text>
+              <Text style={s.dataValue}>{data.customer.phone}</Text>
+            </View>
+          </View>
+          <View style={s.dataRow}>
+            <View style={s.dataCol}>
+              <Text style={s.dataLabel}>Loc.:</Text>
+              <Text style={s.dataValue}>
+                {data.customer.locality.toUpperCase()}
+              </Text>
+            </View>
+            <View style={s.dataCol}>
+              <Text style={s.dataLabel}>Seguro:</Text>
+              <Text style={s.highlight}>{data.highlights.insurance || " "}</Text>
+              <Text style={[s.dataLabel, { marginLeft: 12 }]}>Seg. Tec.:</Text>
+              <Text style={s.highlight}>
+                {data.highlights.technicalInsurance || " "}
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* Manifiesto */}
-        <View style={s.manifiestoBlock}>
-          <Text style={s.paragraph}>
-            Manifiesto aceptación para la realización del trabajo conforme al
-            presupuesto N°{" "}
-            <Text style={{ fontWeight: "bold", color: C.ink }}>
-              {data.budgetNumber}
-            </Text>{" "}
-            enviado y aprobado por mi compañía de seguros.
+        {/* Manifiesto en texto plano */}
+        <Text style={s.paragraph}>
+          Manifiesto aceptación para la realización del trabajo conforme al
+          presupuesto N°{" "}
+          <Text style={s.inlineLabel}>{data.budgetNumber}</Text> enviado y
+          aprobado por mi compañía de seguros.
+        </Text>
+        <Text style={s.paragraph}>
+          Declaro no poseer objetos de valor en el vehículo.
+        </Text>
+        <Text style={s.paragraph}>
+          Condición de pago: {data.paymentCondition}.
+        </Text>
+        <View style={[s.dataRow, { flexWrap: "wrap" }]}>
+          <Text style={s.inlineLabel}>
+            Monto de franquicia a abonar en efectivo al retirar el rodado:{" "}
           </Text>
-          <Text style={s.paragraph}>
-            Declaro no poseer objetos de valor en el vehículo.
+          <Text style={s.highlight}>
+            {data.highlights.franchiseAmount || "-"}
           </Text>
-          <Text style={s.paragraph}>
-            Condición de pago: {data.paymentCondition}.
-          </Text>
-          <View style={s.franchiseRow}>
-            <Text style={s.franchiseLabel}>
-              Monto de franquicia a abonar en efectivo al retirar el rodado:{" "}
-            </Text>
-            <Text style={s.highlight}>
-              {data.highlights.franchiseAmount || "-"}
-            </Text>
-          </View>
         </View>
 
         <View style={s.signatureRow}>
@@ -322,8 +248,7 @@ export function FichaIngresoPdf({ data }: { data: FichaIngresoData }) {
 
         <View style={s.divider} />
 
-        {/* Conformidad de Reparaciones */}
-        <Text style={s.conformidadTitle}>Conformidad de Reparaciones</Text>
+        <Text style={s.conformidadTitle}>CONFORMIDAD DE REPARACIONES</Text>
 
         <Text style={s.paragraph}>
           Por medio del presente manifiesto conformidad con las reparaciones
