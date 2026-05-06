@@ -20,6 +20,7 @@ export async function GET(request: Request, ctx: RouteContext) {
           year: true,
           domain: true,
           chassis: true,
+          color: true,
           perladoTricapa: true,
           secure: true,
           thirdPartySecure: true,

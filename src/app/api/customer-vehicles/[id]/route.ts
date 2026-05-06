@@ -59,6 +59,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     year,
     domain,
     chassis,
+    color,
     perladoTricapa,
     secure,
     thirdPartySecure,
@@ -92,6 +93,10 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   if (chassis !== undefined) {
     const c = (chassis as string | null) ?? "";
     data.chassis = c.trim() === "" ? null : c.trim().toUpperCase();
+  }
+  if (color !== undefined) {
+    const c = (color as string | null) ?? "";
+    data.color = c.trim() === "" ? null : c.trim();
   }
   if (perladoTricapa !== undefined) {
     data.perladoTricapa = Boolean(perladoTricapa);

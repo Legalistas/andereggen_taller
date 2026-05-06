@@ -226,6 +226,8 @@ model CustomerVehicle {
   year             String // Año
   domain           String // Dominio o patente
   chassis          String? // Nº de chasis
+  /** Color del vehículo — opcional, se completa cuando entra al taller. Sale en la Ficha Técnica. */
+  color            String?
   /** Pintura perlada tricapa — afecta el costo de la mano de obra de pintura */
   perladoTricapa   Boolean  @default(false)
   secure           String // Seguro (compañía del cliente)
