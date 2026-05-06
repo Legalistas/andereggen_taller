@@ -61,7 +61,10 @@ import {
   computeBudgetTotals,
   computeConceptSubtotal,
   computePartSubtotal,
+  customSubdetailLabel,
   DEFAULT_IVA_RATE,
+  isCustomSubdetail,
+  makeCustomSubdetailKey,
   SUBDETAILS,
 } from "@/lib/budget-catalog";
 import type {
@@ -171,13 +174,37 @@ export default function BudgetModal({
     "Contado contra entrega",
   );
   const [observations, setObservations] = useState("");
+  // Aclaración libre sobre los repuestos a proveer — sale en el PDF al cliente.
+  const [partsNote, setPartsNote] = useState("");
   const [newCategory, setNewCategory] = useState<ConceptCategory | "">("");
   // IVA rate del budget — al crear se usa el default; al editar se carga
   // el valor guardado (algunos presupuestos importados están con 0).
   const [ivaRate, setIvaRate] = useState<number>(DEFAULT_IVA_RATE);
+  // Número de presupuesto: en modo crear, el admin puede sobreescribir el
+  // correlativo sugerido (max+1). En modo edición no se permite cambiarlo.
+  const [budgetNumber, setBudgetNumber] = useState("");
+  const [suggestedNumber, setSuggestedNumber] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leadInfo, setLeadInfo] = useState<LeadInfo | null>(null);
+
+  // Al abrir en modo crear, sugerir el próximo correlativo (max+1) para
+  // pre-poblar el input. Si el admin lo cambia, respetamos lo que escribió.
+  useEffect(() => {
+    if (!open || isEditing) return;
+    let cancelled = false;
+    fetch("/api/budgets/next-number")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || typeof data?.next !== "number") return;
+        setSuggestedNumber(data.next);
+        setBudgetNumber((curr) => (curr === "" ? String(data.next) : curr));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isEditing]);
 
   // Fetch info del lead cuando se abre, para mostrar header contextual
   useEffect(() => {
@@ -210,11 +237,13 @@ export default function BudgetModal({
       .then((data) => {
         if (cancelled || !data?.budget) return;
         const b = data.budget as {
+          number: number;
           ivaRate: string | number | null;
           validityDays: number;
           deliveryDays: number;
           paymentCondition: string;
           observations: string | null;
+          partsNote: string | null;
           concepts: Array<{
             type: ConceptType;
             category: ConceptCategory;
@@ -234,10 +263,12 @@ export default function BudgetModal({
         };
         // IVA del budget — algunos importados están con 0; respetamos el guardado
         if (b.ivaRate !== null) setIvaRate(Number(b.ivaRate));
+        setBudgetNumber(String(b.number));
         setValidityDays(String(b.validityDays ?? 10));
         setDeliveryDays(String(b.deliveryDays ?? 20));
         setPaymentCondition(b.paymentCondition ?? "Contado contra entrega");
         setObservations(b.observations ?? "");
+        setPartsNote(b.partsNote ?? "");
         setConcepts(
           b.concepts.map((c) => ({
             localId: uid(),
@@ -324,7 +355,10 @@ export default function BudgetModal({
     setDeliveryDays("20");
     setPaymentCondition("Contado contra entrega");
     setObservations("");
+    setPartsNote("");
     setIvaRate(DEFAULT_IVA_RATE);
+    setBudgetNumber("");
+    setSuggestedNumber(null);
     setError(null);
     setLeadInfo(null);
   }, []);
@@ -338,14 +372,26 @@ export default function BudgetModal({
       setError("El presupuesto necesita al menos un concepto o repuesto.");
       return;
     }
+    // Validación cliente del Nº manual (aplica al crear y al editar).
+    let parsedNumber: number | undefined;
+    if (budgetNumber.trim() !== "") {
+      const n = Number(budgetNumber);
+      if (!Number.isInteger(n) || n <= 0) {
+        setError("El número de presupuesto debe ser un entero positivo.");
+        return;
+      }
+      parsedNumber = n;
+    }
     setSaving(true);
     setError(null);
     try {
       const payload = {
+        number: parsedNumber,
         validityDays: num(validityDays) || 10,
         deliveryDays: num(deliveryDays) || 20,
         paymentCondition,
         observations: observations || null,
+        partsNote: partsNote.trim() || null,
         concepts: concepts.map((c, idx) => ({
           type: c.type,
           category: c.category,
@@ -657,6 +703,21 @@ export default function BudgetModal({
                   </TableBody>
                 </Table>
               )}
+              <div className="grid gap-1.5 pt-2 border-t">
+                <Label htmlFor="partsNote" className="text-xs">
+                  Aclaración sobre los repuestos a proveer
+                </Label>
+                <Textarea
+                  id="partsNote"
+                  rows={2}
+                  placeholder="Ej: Los repuestos serán provistos por el taller / por la aseguradora / por el cliente..."
+                  value={partsNote}
+                  onChange={(e) => setPartsNote(e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Este texto se incluye en el PDF que recibe el cliente.
+                </p>
+              </div>
             </Card>
           </section>
 
@@ -701,6 +762,31 @@ export default function BudgetModal({
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   Condiciones
                 </h3>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="budgetNumber" className="text-xs">
+                    Nº de presupuesto
+                  </Label>
+                  <Input
+                    id="budgetNumber"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={budgetNumber}
+                    onChange={(e) => setBudgetNumber(e.target.value)}
+                    placeholder={
+                      !isEditing && suggestedNumber !== null
+                        ? String(suggestedNumber)
+                        : ""
+                    }
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {isEditing
+                      ? "Podés cambiar el número; debe ser único."
+                      : suggestedNumber !== null
+                        ? `Sugerido (max+1): #${suggestedNumber}. Podés sobrescribirlo.`
+                        : "Calculando próximo correlativo..."}
+                  </p>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-1.5">
                     <Label htmlFor="validityDays" className="text-xs">
@@ -936,12 +1022,30 @@ function DescriptiveFields({
 }) {
   const baseId = useId();
   const groups = SUBDETAILS[concept.category] ?? [];
+  const customs = concept.subdetails.filter(isCustomSubdetail);
+  const [newCustom, setNewCustom] = useState("");
 
   const toggle = (key: string, checked: boolean) => {
     const set = new Set(concept.subdetails);
     if (checked) set.add(key);
     else set.delete(key);
     onChange({ subdetails: [...set] });
+  };
+
+  const addCustom = () => {
+    const label = newCustom.trim();
+    if (!label) return;
+    const key = makeCustomSubdetailKey(label);
+    if (concept.subdetails.includes(key)) {
+      setNewCustom("");
+      return;
+    }
+    onChange({ subdetails: [...concept.subdetails, key] });
+    setNewCustom("");
+  };
+
+  const removeCustom = (key: string) => {
+    onChange({ subdetails: concept.subdetails.filter((k) => k !== key) });
   };
 
   return (
@@ -992,6 +1096,62 @@ function DescriptiveFields({
             </div>
           </div>
         ))}
+      </div>
+      {/* Opciones personalizadas: el usuario agrega items que no están en el catálogo.
+          Se guardan inline en `subdetails` con el prefijo `custom:` (ver budget-catalog.ts). */}
+      <div className="space-y-2 pt-2 border-t">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          Opciones personalizadas
+        </div>
+        {customs.length > 0 && (
+          <ul className="space-y-1">
+            {customs.map((key) => (
+              <li
+                key={key}
+                className="flex items-start gap-2 text-sm px-2 py-1 rounded-md bg-primary/5"
+              >
+                <Checkbox checked className="mt-0.5" disabled />
+                <span className="flex-1 leading-tight">
+                  {customSubdetailLabel(key)}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-destructive"
+                  onClick={() => removeCustom(key)}
+                  aria-label="Quitar opción"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex gap-2">
+          <Input
+            value={newCustom}
+            placeholder="Escribir opción que no está en la lista…"
+            onChange={(e) => setNewCustom(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addCustom();
+              }
+            }}
+            className="flex-1"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addCustom}
+            disabled={!newCustom.trim()}
+            className="gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Agregar
+          </Button>
+        </div>
       </div>
       <div className="grid gap-1.5 pt-2 border-t">
         <Label htmlFor={`${baseId}-detalle`} className="text-xs">

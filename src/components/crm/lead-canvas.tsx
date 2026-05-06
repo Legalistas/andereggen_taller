@@ -7,6 +7,7 @@ import {
   Car,
   Check,
   ChevronDown,
+  ClipboardList,
   FileText,
   Hash,
   Loader2,
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +56,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { BudgetAdminDialog } from "./budget-admin-dialog";
 import { BudgetHistoryButton } from "./budget-history-button";
 import { SendBudgetDialog } from "./send-budget-dialog";
 import { BrandField, ModelField, YearField } from "./vehicle-fields";
@@ -95,8 +98,12 @@ type VehicleDetail = {
   model: string;
   year: string;
   domain: string;
+  chassis: string | null;
+  perladoTricapa: boolean;
   secure: string;
   thirdPartySecure: string;
+  coverageType: string | null;
+  franchise: string | number | null;
 };
 
 type CustomerDetail = {
@@ -106,6 +113,7 @@ type CustomerDetail = {
   phone: string;
   dni: string | null;
   dniType: string | null;
+  address: string | null;
 };
 
 type BudgetLite = {
@@ -1390,6 +1398,25 @@ function VehicleSection({
             onSave={(v) => onPatch({ domain: v.toUpperCase() })}
           />
         </div>
+        <BlurField
+          label="Nº de chasis"
+          value={vehicle.chassis ?? ""}
+          mono
+          onSave={(v) => onPatch({ chassis: v.trim().toUpperCase() || null })}
+        />
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="perladoTricapa"
+            checked={vehicle.perladoTricapa}
+            onCheckedChange={(c) => onPatch({ perladoTricapa: Boolean(c) })}
+          />
+          <Label
+            htmlFor="perladoTricapa"
+            className="text-xs font-medium text-slate-700 cursor-pointer"
+          >
+            Pintura perlada tricapa
+          </Label>
+        </div>
         <div className="h-px bg-slate-100 my-1" />
         <div className="grid grid-cols-2 gap-2">
           <InsuranceField
@@ -1402,6 +1429,51 @@ function VehicleSection({
             value={vehicle.thirdPartySecure}
             onSave={(v) => onPatch({ thirdPartySecure: v })}
           />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="grid gap-1">
+            <Label className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+              Cobertura
+            </Label>
+            <Select
+              value={vehicle.coverageType ?? "none"}
+              onValueChange={(v) => {
+                const next = v === "none" ? null : v;
+                // Si pasa a "terceros", limpiamos franquicia automáticamente.
+                onPatch(
+                  next === "terceros"
+                    ? { coverageType: next, franchise: null }
+                    : { coverageType: next },
+                );
+              }}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Sin definir" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin definir</SelectItem>
+                <SelectItem value="todo_riesgo">Contra todo riesgo</SelectItem>
+                <SelectItem value="terceros">Contra terceros</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {vehicle.coverageType === "todo_riesgo" && (
+            <BlurField
+              label="Franquicia ($)"
+              value={
+                vehicle.franchise === null || vehicle.franchise === undefined
+                  ? ""
+                  : String(vehicle.franchise)
+              }
+              type="number"
+              onSave={(v) => {
+                const trimmed = v.trim();
+                return onPatch({
+                  franchise: trimmed === "" ? null : Number(trimmed),
+                });
+              }}
+            />
+          )}
         </div>
       </div>
     </SectionCard>
@@ -1470,6 +1542,11 @@ function CustomerSection({
             onSave={(v) => onPatch({ dni: v })}
           />
         </div>
+        <BlurField
+          label="Dirección"
+          value={customer.address ?? ""}
+          onSave={(v) => onPatch({ address: v.trim() })}
+        />
       </div>
     </SectionCard>
   );
@@ -1536,6 +1613,12 @@ function BudgetsSection({
   onSendBudget?: (budget: BudgetLite) => void;
   onDeleteBudget?: (budget: BudgetLite) => void;
 }) {
+  // Modal "Administrativa" abierto para un budget puntual (id + número).
+  const [adminOpenFor, setAdminOpenFor] = useState<{
+    id: string;
+    number: number;
+  } | null>(null);
+
   const STATUS_STYLES: Record<string, string> = {
     draft: "bg-slate-100 text-slate-700",
     sent: "bg-cyan-100 text-cyan-700",
@@ -1553,6 +1636,7 @@ function BudgetsSection({
   };
 
   return (
+    <>
     <SectionCard
       icon={FileText}
       title="Presupuestos"
@@ -1615,6 +1699,17 @@ function BudgetsSection({
                 <BudgetHistoryButton budgetId={b.id} budgetNumber={b.number} />
                 <button
                   type="button"
+                  onClick={() =>
+                    setAdminOpenFor({ id: b.id, number: b.number })
+                  }
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+                  title="Administrativa (interno) — cotizaciones, compras, fotos"
+                >
+                  <ClipboardList className="h-3 w-3" />
+                  Administrativa
+                </button>
+                <button
+                  type="button"
                   onClick={() => onDeleteBudget?.(b)}
                   className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50 transition-colors"
                   title="Eliminar presupuesto"
@@ -1636,6 +1731,15 @@ function BudgetsSection({
         </div>
       )}
     </SectionCard>
+    <BudgetAdminDialog
+      budgetId={adminOpenFor?.id ?? null}
+      budgetNumber={adminOpenFor?.number}
+      open={adminOpenFor !== null}
+      onOpenChange={(o) => {
+        if (!o) setAdminOpenFor(null);
+      }}
+    />
+    </>
   );
 }
 

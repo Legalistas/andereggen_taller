@@ -25,7 +25,12 @@ export type BudgetPdfData = {
     model: string;
     year: string;
     domain: string;
+    chassis?: string | null;
+    perladoTricapa?: boolean;
     insurance?: string | null;
+    /** "todo_riesgo" | "terceros" | null */
+    coverageType?: string | null;
+    franchise?: number | string | null;
   };
   concepts: Array<{
     type: "DESCRIPTIVO" | "UNIDADES" | "FIJO";
@@ -42,6 +47,8 @@ export type BudgetPdfData = {
     description: string;
     unitPrice: number | string;
   }>;
+  /** Aclaración libre sobre los repuestos (sale debajo de la tabla) */
+  partsNote?: string | null;
   totals: {
     laborSubtotal: number;
     ivaRate: number;
@@ -352,10 +359,47 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
                 <Text style={s.label}>Dominio</Text>
                 <Text style={s.value}>{data.vehicle.domain}</Text>
               </View>
+              {data.vehicle.chassis ? (
+                <View style={s.row}>
+                  <Text style={s.label}>Chasis</Text>
+                  <Text style={s.value}>{data.vehicle.chassis}</Text>
+                </View>
+              ) : null}
+              {data.vehicle.perladoTricapa ? (
+                <View style={s.row}>
+                  <Text style={s.label}>Pintura</Text>
+                  <Text style={s.value}>Perlada tricapa</Text>
+                </View>
+              ) : null}
               {data.vehicle.insurance ? (
                 <View style={s.row}>
                   <Text style={s.label}>Seguro</Text>
                   <Text style={s.value}>{data.vehicle.insurance}</Text>
+                </View>
+              ) : null}
+              {data.vehicle.coverageType ? (
+                <View style={s.row}>
+                  <Text style={s.label}>Cobertura</Text>
+                  <Text style={s.value}>
+                    {data.vehicle.coverageType === "todo_riesgo"
+                      ? "Contra todo riesgo"
+                      : "Contra terceros"}
+                  </Text>
+                </View>
+              ) : null}
+              {data.vehicle.coverageType === "todo_riesgo" &&
+              data.vehicle.franchise !== null &&
+              data.vehicle.franchise !== undefined &&
+              data.vehicle.franchise !== "" ? (
+                <View style={s.row}>
+                  <Text style={s.label}>Franquicia</Text>
+                  <Text style={s.value}>
+                    {new Intl.NumberFormat("es-AR", {
+                      style: "currency",
+                      currency: "ARS",
+                      minimumFractionDigits: 2,
+                    }).format(Number(data.vehicle.franchise))}
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -436,55 +480,69 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
         ) : null}
 
         {/* Repuestos */}
-        {data.parts.length > 0 ? (
+        {data.parts.length > 0 || data.partsNote ? (
           <View>
             <Text style={s.sectionTitle}>Repuestos</Text>
-            <View style={s.table}>
-              <View style={s.trHeader}>
-                <Text style={[s.th, { width: 50, textAlign: "right" }]}>
-                  Cant.
-                </Text>
-                <Text style={[s.th, { flex: 1 }]}>Descripción</Text>
-                <Text style={[s.th, { width: 80, textAlign: "right" }]}>
-                  P. unit.
-                </Text>
-                <Text style={[s.th, { width: 80, textAlign: "right" }]}>
-                  Subtotal
-                </Text>
-              </View>
-              {data.parts.map((p, idx) => {
-                const subtotal = toNum(p.quantity) * toNum(p.unitPrice);
-                const isLast = idx === data.parts.length - 1;
-                return (
-                  <View
-                    // biome-ignore lint/suspicious/noArrayIndexKey: PDF render — orden estable, sin id
-                    key={idx}
-                    style={[s.tr, isLast ? { borderBottomWidth: 0 } : {}]}
-                    wrap={false}
-                  >
-                    <Text style={[s.td, { width: 50, textAlign: "right" }]}>
-                      {toNum(p.quantity)}
-                    </Text>
-                    <Text style={[s.td, { flex: 1 }]}>{p.description}</Text>
-                    <Text style={[s.td, { width: 80, textAlign: "right" }]}>
-                      {ARS.format(toNum(p.unitPrice))}
-                    </Text>
-                    <Text
-                      style={[
-                        s.td,
-                        {
-                          width: 80,
-                          textAlign: "right",
-                          fontWeight: "bold",
-                        },
-                      ]}
+            {data.parts.length > 0 ? (
+              <View style={s.table}>
+                <View style={s.trHeader}>
+                  <Text style={[s.th, { width: 50, textAlign: "right" }]}>
+                    Cant.
+                  </Text>
+                  <Text style={[s.th, { flex: 1 }]}>Descripción</Text>
+                  <Text style={[s.th, { width: 80, textAlign: "right" }]}>
+                    P. unit.
+                  </Text>
+                  <Text style={[s.th, { width: 80, textAlign: "right" }]}>
+                    Subtotal
+                  </Text>
+                </View>
+                {data.parts.map((p, idx) => {
+                  const subtotal = toNum(p.quantity) * toNum(p.unitPrice);
+                  const isLast = idx === data.parts.length - 1;
+                  return (
+                    <View
+                      // biome-ignore lint/suspicious/noArrayIndexKey: PDF render — orden estable, sin id
+                      key={idx}
+                      style={[s.tr, isLast ? { borderBottomWidth: 0 } : {}]}
+                      wrap={false}
                     >
-                      {ARS.format(subtotal)}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
+                      <Text style={[s.td, { width: 50, textAlign: "right" }]}>
+                        {toNum(p.quantity)}
+                      </Text>
+                      <Text style={[s.td, { flex: 1 }]}>{p.description}</Text>
+                      <Text style={[s.td, { width: 80, textAlign: "right" }]}>
+                        {ARS.format(toNum(p.unitPrice))}
+                      </Text>
+                      <Text
+                        style={[
+                          s.td,
+                          {
+                            width: 80,
+                            textAlign: "right",
+                            fontWeight: "bold",
+                          },
+                        ]}
+                      >
+                        {ARS.format(subtotal)}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
+            {data.partsNote ? (
+              <Text
+                style={{
+                  marginTop: 6,
+                  fontSize: 9,
+                  fontStyle: "italic",
+                  color: C.slate500,
+                }}
+              >
+                {data.partsNote}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -541,12 +599,8 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
             <Text style={s.label}>Pago</Text>
             <Text style={s.value}>{data.conditions.paymentCondition}</Text>
           </View>
-          {data.conditions.observations ? (
-            <View style={[s.row, { marginTop: 4 }]}>
-              <Text style={s.label}>Notas</Text>
-              <Text style={s.value}>{data.conditions.observations}</Text>
-            </View>
-          ) : null}
+          {/* Notas internas omitidas del PDF — son información de la empresa,
+              no del cliente. Permanecen guardadas y visibles en el admin. */}
         </View>
 
         <Text style={s.footer} fixed>

@@ -512,8 +512,25 @@ export const SUBDETAILS: SubdetailCatalog = {
   ],
 };
 
-/** Devuelve el label legible de una key de subdetalle (fallback: la propia key). */
+/** Prefijo para subdetalles añadidos a mano (no están en el catálogo predefinido). */
+export const CUSTOM_SUBDETAIL_PREFIX = "custom:";
+
+export function isCustomSubdetail(key: string): boolean {
+  return key.startsWith(CUSTOM_SUBDETAIL_PREFIX);
+}
+
+export function customSubdetailLabel(key: string): string {
+  return key.slice(CUSTOM_SUBDETAIL_PREFIX.length);
+}
+
+export function makeCustomSubdetailKey(label: string): string {
+  return `${CUSTOM_SUBDETAIL_PREFIX}${label}`;
+}
+
+/** Devuelve el label legible de una key de subdetalle (fallback: la propia key).
+ *  Para opciones personalizadas (prefijo `custom:`) devuelve el texto del usuario. */
 export function subdetailLabel(category: ConceptCategory, key: string): string {
+  if (isCustomSubdetail(key)) return customSubdetailLabel(key);
   const groups = SUBDETAILS[category];
   if (!groups) return key;
   for (const g of groups) {

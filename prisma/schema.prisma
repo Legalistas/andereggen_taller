@@ -219,14 +219,21 @@ model Customer {
 }
 
 model CustomerVehicle {
-  id               String @id @default(uuid())
+  id               String   @id @default(uuid())
   customerId       String
   brand            String // Marca
   model            String // Modelo
   year             String // Año
   domain           String // Dominio o patente
-  secure           String // Seguro
-  thirdPartySecure String // Seguro terceros
+  chassis          String? // Nº de chasis
+  /** Pintura perlada tricapa — afecta el costo de la mano de obra de pintura */
+  perladoTricapa   Boolean  @default(false)
+  secure           String // Seguro (compañía del cliente)
+  thirdPartySecure String // Seguro terceros (compañía del tercero)
+  /** "todo_riesgo" | "terceros" — tipo de cobertura del seguro propio */
+  coverageType     String?
+  /** Importe de franquicia, solo aplica cuando coverageType == "todo_riesgo" */
+  franchise        Decimal? @db.Decimal(14, 2)
 
   // Relación
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -327,7 +334,14 @@ model Budget {
   vehicleModel     String
   vehicleYear      String
   vehicleDomain    String
+  vehicleChassis   String?
+  /** Pintura perlada tricapa — snapshot al momento del presupuesto */
+  vehiclePerladoTricapa Boolean @default(false)
   vehicleInsurance String?
+  /** Tipo de cobertura: "todo_riesgo" | "terceros" — snapshot al momento del presupuesto */
+  insuranceCoverageType String?
+  /** Franquicia en pesos (solo si todo_riesgo) — snapshot */
+  insuranceFranchise    Decimal? @db.Decimal(14, 2)
 
   // Totales (materializados; se recalculan al guardar)
   laborSubtotal Decimal @default(0) @db.Decimal(14, 2)
@@ -342,18 +356,21 @@ model Budget {
   deliveryDays     Int     @default(20)
   paymentCondition String  @default("Contado contra entrega")
   observations     String? @db.Text
+  /** Aclaración libre sobre los repuestos que se proveen (sale en el PDF junto a la tabla) */
+  partsNote        String? @db.Text
 
   sentAt     DateTime?
   acceptedAt DateTime?
   rejectedAt DateTime?
 
-  lead          Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead          Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
   concepts      BudgetConcept[]
   parts         BudgetPart[]
   partMovements PartMovement[]
   payments      Payment[]
   emailLogs     BudgetEmailLog[]
-  repair        Repair?          @relation("BudgetRepair")
+  adminItems    BudgetAdminItem[]
+  repair        Repair?           @relation("BudgetRepair")
   createdById   String?
   createdBy     User?            @relation("BudgetCreatedBy", fields: [createdById], references: [id])
 
@@ -363,6 +380,61 @@ model Budget {
   @@index([leadId])
   @@index([status])
   @@index([createdById])
+}
+
+/**
+ * Pestaña "Administrativa" del presupuesto — uso 100% interno (no sale en PDF).
+ * Reemplaza la pestaña Excel donde antes se cargaban cotizaciones de proveedores
+ * (pre-cierre) y compras efectivamente realizadas (durante producción).
+ *
+ * Estructura:
+ *   BudgetAdminItem  — un repuesto a cotizar (descripción + fotos como URLs)
+ *      ├── BudgetAdminQuote (N)   — cotizaciones de N proveedores para ese repuesto
+ *      └── BudgetAdminPurchase (0..1) — la compra final realmente hecha
+ */
+model BudgetAdminItem {
+  id          String   @id @default(uuid())
+  budgetId    String
+  budget      Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  order       Int      @default(0)
+  description String   @db.Text
+  notes       String?  @db.Text
+  /** URLs de imágenes (Drive, etc.) — el cliente pega links, no hay upload aún */
+  photos      String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quotes   BudgetAdminQuote[]
+  purchase BudgetAdminPurchase?
+
+  @@index([budgetId])
+}
+
+model BudgetAdminQuote {
+  id           String          @id @default(uuid())
+  itemId       String
+  item         BudgetAdminItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  supplierName String
+  price        Decimal         @db.Decimal(14, 2)
+  notes        String?         @db.Text
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([itemId])
+}
+
+model BudgetAdminPurchase {
+  id           String          @id @default(uuid())
+  /** unique → 0..1 por item */
+  itemId       String          @unique
+  item         BudgetAdminItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  supplierName String
+  amount       Decimal         @db.Decimal(14, 2)
+  purchasedAt  DateTime        @default(now())
+  notes        String?         @db.Text
+  receiptUrl   String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 }
 
 /**

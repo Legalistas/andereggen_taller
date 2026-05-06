@@ -37,11 +37,18 @@ export type PartPayload = {
 };
 
 export type BudgetPayload = {
+  /** Si se pasa, fuerza este Nº de presupuesto.
+   *  Al crear: en lugar de usar max+1.
+   *  Al editar: cambia el número existente.
+   *  Falla si ya existe en otro budget. */
+  number?: number;
   ivaRate?: number;
   validityDays?: number;
   deliveryDays?: number;
   paymentCondition?: string;
   observations?: string | null;
+  /** Aclaración libre sobre los repuestos a proveer — sale en el PDF al cliente. */
+  partsNote?: string | null;
   concepts: ConceptPayload[];
   parts: PartPayload[];
 };
@@ -90,7 +97,20 @@ export function validateBudgetPayload(p: unknown): BudgetPayload {
     }
   });
 
+  // Validar number opcional: si viene, debe ser un entero positivo
+  let parsedNumber: number | undefined;
+  if (body.number !== undefined && body.number !== null && body.number !== "") {
+    const n = Number(body.number);
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new BudgetValidationError(
+        "El número de presupuesto debe ser un entero positivo",
+      );
+    }
+    parsedNumber = n;
+  }
+
   return {
+    number: parsedNumber,
     ivaRate: typeof body.ivaRate === "number" ? body.ivaRate : undefined,
     validityDays:
       typeof body.validityDays === "number" ? body.validityDays : undefined,
@@ -102,6 +122,7 @@ export function validateBudgetPayload(p: unknown): BudgetPayload {
         : undefined,
     observations:
       typeof body.observations === "string" ? body.observations : null,
+    partsNote: typeof body.partsNote === "string" ? body.partsNote : null,
     concepts,
     parts,
   };
@@ -188,7 +209,24 @@ export async function createBudgetForLead(params: {
     const settings = await getAppSettings();
     const ivaRateForCalc = payload.ivaRate ?? Number(settings.defaultIvaRate);
     const totals = computedSubtotals({ ...payload, ivaRate: ivaRateForCalc });
-    const number = await nextBudgetNumber(tx);
+
+    // Si el usuario pasó un número manual, validamos que no choque con uno
+    // existente; si no, calculamos el correlativo (max+1).
+    let number: number;
+    if (payload.number !== undefined) {
+      const dupe = await tx.budget.findUnique({
+        where: { number: payload.number },
+        select: { id: true },
+      });
+      if (dupe) {
+        throw new BudgetValidationError(
+          `Ya existe un presupuesto con el número ${payload.number}.`,
+        );
+      }
+      number = payload.number;
+    } else {
+      number = await nextBudgetNumber(tx);
+    }
 
     const budget = await tx.budget.create({
       data: {
@@ -205,13 +243,18 @@ export async function createBudgetForLead(params: {
         vehicleModel: lead.vehicle.model,
         vehicleYear: lead.vehicle.year,
         vehicleDomain: lead.vehicle.domain,
+        vehicleChassis: lead.vehicle.chassis,
+        vehiclePerladoTricapa: lead.vehicle.perladoTricapa,
         vehicleInsurance: lead.vehicle.secure,
+        insuranceCoverageType: lead.vehicle.coverageType,
+        insuranceFranchise: lead.vehicle.franchise,
         // Observaciones (defaults desde AppSettings; el payload puede sobrescribir)
         validityDays: payload.validityDays ?? settings.defaultValidityDays,
         deliveryDays: payload.deliveryDays ?? settings.defaultDeliveryDays,
         paymentCondition:
           payload.paymentCondition ?? settings.defaultPaymentCondition,
         observations: payload.observations,
+        partsNote: payload.partsNote ?? null,
         // Totales
         laborSubtotal: totals.laborSubtotal,
         ivaRate: totals.ivaRate,
@@ -258,6 +301,22 @@ export async function updateBudget(params: {
 
     const totals = computedSubtotals(payload);
 
+    // Si el usuario cambió el número, validamos que no choque con otro budget.
+    if (
+      payload.number !== undefined &&
+      payload.number !== existing.number
+    ) {
+      const dupe = await tx.budget.findUnique({
+        where: { number: payload.number },
+        select: { id: true },
+      });
+      if (dupe && dupe.id !== id) {
+        throw new BudgetValidationError(
+          `Ya existe un presupuesto con el número ${payload.number}.`,
+        );
+      }
+    }
+
     // Estrategia: reemplazar conceptos y partes (los hijos son de identidad del budget).
     await tx.budgetConcept.deleteMany({ where: { budgetId: id } });
     await tx.budgetPart.deleteMany({ where: { budgetId: id } });
@@ -265,10 +324,12 @@ export async function updateBudget(params: {
     return tx.budget.update({
       where: { id },
       data: {
+        number: payload.number ?? existing.number,
         validityDays: payload.validityDays ?? existing.validityDays,
         deliveryDays: payload.deliveryDays ?? existing.deliveryDays,
         paymentCondition: payload.paymentCondition ?? existing.paymentCondition,
         observations: payload.observations ?? existing.observations,
+        partsNote: payload.partsNote ?? existing.partsNote,
         laborSubtotal: totals.laborSubtotal,
         ivaRate: totals.ivaRate,
         ivaAmount: totals.ivaAmount,

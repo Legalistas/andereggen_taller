@@ -28,8 +28,12 @@ export async function GET(request: Request, ctx: RouteContext) {
 
 /**
  * PATCH /api/customer-vehicles/[id]
- * Acepta cualquier subset de: brand, model, year, domain, secure,
- * thirdPartySecure. El customerId no se cambia por acá.
+ * Acepta cualquier subset de: brand, model, year, domain, chassis, secure,
+ * thirdPartySecure, coverageType, franchise. El customerId no se cambia por acá.
+ *
+ * coverageType: "todo_riesgo" | "terceros" | null
+ * franchise: number — solo aplica si coverageType === "todo_riesgo".
+ *   Si coverageType pasa a "terceros", limpiamos la franquicia.
  */
 export async function PATCH(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
@@ -49,26 +53,70 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     );
   }
 
-  const { brand, model, year, domain, secure, thirdPartySecure } = body as Record<
-    string,
-    unknown
-  >;
+  const {
+    brand,
+    model,
+    year,
+    domain,
+    chassis,
+    perladoTricapa,
+    secure,
+    thirdPartySecure,
+    coverageType,
+    franchise,
+  } = body as Record<string, unknown>;
 
-  const updated = await prisma.customerVehicle.update({
-    where: { id },
-    data: {
-      ...(brand !== undefined && { brand: (brand as string).trim() }),
-      ...(model !== undefined && { model: (model as string).trim() }),
-      ...(year !== undefined && { year: (year as string).trim() }),
-      ...(domain !== undefined && {
-        domain: (domain as string).trim().toUpperCase(),
-      }),
-      ...(secure !== undefined && { secure: (secure as string) ?? "" }),
-      ...(thirdPartySecure !== undefined && {
-        thirdPartySecure: (thirdPartySecure as string) ?? "",
-      }),
-    },
-  });
+  if (
+    coverageType !== undefined &&
+    coverageType !== null &&
+    coverageType !== "todo_riesgo" &&
+    coverageType !== "terceros"
+  ) {
+    return NextResponse.json(
+      { error: "coverageType debe ser 'todo_riesgo', 'terceros' o null" },
+      { status: 400 },
+    );
+  }
+
+  // Resolver coverageType final (el del body o el ya guardado)
+  const finalCoverage =
+    coverageType !== undefined
+      ? (coverageType as string | null)
+      : existing.coverageType;
+
+  const data: Record<string, unknown> = {};
+  if (brand !== undefined) data.brand = (brand as string).trim();
+  if (model !== undefined) data.model = (model as string).trim();
+  if (year !== undefined) data.year = (year as string).trim();
+  if (domain !== undefined) data.domain = (domain as string).trim().toUpperCase();
+  if (chassis !== undefined) {
+    const c = (chassis as string | null) ?? "";
+    data.chassis = c.trim() === "" ? null : c.trim().toUpperCase();
+  }
+  if (perladoTricapa !== undefined) {
+    data.perladoTricapa = Boolean(perladoTricapa);
+  }
+  if (secure !== undefined) data.secure = (secure as string) ?? "";
+  if (thirdPartySecure !== undefined) {
+    data.thirdPartySecure = (thirdPartySecure as string) ?? "";
+  }
+  if (coverageType !== undefined) {
+    data.coverageType = (coverageType as string | null) || null;
+  }
+  if (franchise !== undefined) {
+    const n = franchise === null || franchise === "" ? null : Number(franchise);
+    if (n !== null && (!Number.isFinite(n) || n < 0)) {
+      return NextResponse.json(
+        { error: "franchise debe ser un número >= 0" },
+        { status: 400 },
+      );
+    }
+    data.franchise = n;
+  }
+  // Si la cobertura final es "terceros", la franquicia debe quedar nula.
+  if (finalCoverage === "terceros") data.franchise = null;
+
+  const updated = await prisma.customerVehicle.update({ where: { id }, data });
 
   return NextResponse.json({ vehicle: updated });
 }

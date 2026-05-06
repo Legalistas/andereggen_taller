@@ -96,7 +96,14 @@ export async function POST(request: Request, ctx: RouteContext) {
       model: budget.vehicleModel,
       year: budget.vehicleYear,
       domain: budget.vehicleDomain,
+      chassis: budget.vehicleChassis,
+      perladoTricapa: budget.vehiclePerladoTricapa,
       insurance: budget.vehicleInsurance,
+      coverageType: budget.insuranceCoverageType,
+      franchise:
+        budget.insuranceFranchise !== null
+          ? Number(budget.insuranceFranchise)
+          : null,
     },
     concepts: budget.concepts.map((c) => ({
       type: c.type as "DESCRIPTIVO" | "UNIDADES" | "FIJO",
@@ -113,6 +120,7 @@ export async function POST(request: Request, ctx: RouteContext) {
       description: p.description,
       unitPrice: Number(p.unitPrice),
     })),
+    partsNote: budget.partsNote,
     totals: {
       laborSubtotal: Number(budget.laborSubtotal),
       ivaRate: Number(budget.ivaRate),

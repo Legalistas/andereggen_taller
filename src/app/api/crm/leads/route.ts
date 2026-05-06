@@ -125,8 +125,12 @@ export async function POST(request: Request) {
       model: string;
       year: string;
       domain: string;
+      chassis?: string;
+      perladoTricapa?: boolean;
       secure?: string;
       thirdPartySecure?: string;
+      coverageType?: "todo_riesgo" | "terceros" | null;
+      franchise?: number | string | null;
     } | null;
     status?: LeadStatus;
     notes?: string | null;
@@ -263,6 +267,18 @@ export async function POST(request: Request) {
     // 2. Resolver o crear vehicle (con el customer ya asegurado)
     let finalVehicleId: string | null = vehicleId ?? null;
     if (!finalVehicleId && newVehicle && finalCustomerId) {
+      const cov =
+        newVehicle.coverageType === "todo_riesgo" ||
+        newVehicle.coverageType === "terceros"
+          ? newVehicle.coverageType
+          : null;
+      const fr =
+        cov === "todo_riesgo" &&
+        newVehicle.franchise !== null &&
+        newVehicle.franchise !== undefined &&
+        newVehicle.franchise !== ""
+          ? Number(newVehicle.franchise)
+          : null;
       const createdVehicle = await tx.customerVehicle.create({
         data: {
           customerId: finalCustomerId,
@@ -270,8 +286,12 @@ export async function POST(request: Request) {
           model: newVehicle.model,
           year: newVehicle.year,
           domain: newVehicle.domain,
+          chassis: newVehicle.chassis?.trim() || null,
+          perladoTricapa: Boolean(newVehicle.perladoTricapa),
           secure: newVehicle.secure ?? "",
           thirdPartySecure: newVehicle.thirdPartySecure ?? "",
+          coverageType: cov,
+          franchise: fr,
         },
       });
       finalVehicleId = createdVehicle.id;
