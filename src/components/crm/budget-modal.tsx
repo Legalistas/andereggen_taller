@@ -478,7 +478,7 @@ export default function BudgetModal({
   return (
     <>
     {!minimized && (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} modal={false}>
       {!hideTrigger && (
         <DialogTrigger asChild>
           <Button
@@ -494,6 +494,11 @@ export default function BudgetModal({
 
       <DialogContent
         showCloseButton={false}
+        // Con modal=false en el Dialog, click afuera por defecto cierra.
+        // Lo prevenimos: cerrar es vía botón X o minimizar — así un click
+        // accidental en el margen no hace perder lo que se está editando.
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
         className="max-w-[98vw] sm:max-w-[98vw] w-[98vw] h-[95vh] p-0 gap-0 flex flex-col sm:rounded-xl overflow-hidden"
       >
         {/* DialogTitle + Description para a11y (el header visual está abajo). */}
