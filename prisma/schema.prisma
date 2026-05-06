@@ -848,6 +848,11 @@ enum RepairStatus {
 model Repair {
   id     String       @id @default(uuid())
   status RepairStatus @default(turno_asignado)
+  /** Nº interno del taller — correlativo único, auto-asignado al crear
+   *  (max+1), editable después. Se usa en Ficha Técnica y para
+   *  identificar la reparación visualmente. Nullable para repairs
+   *  importados antes de que existiera este campo. */
+  internalNumber Int? @unique
 
   // Origen (opcional — null si fue Nueva Reparación directa)
   leadId    String?

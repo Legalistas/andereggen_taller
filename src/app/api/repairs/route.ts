@@ -1,7 +1,21 @@
 import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
-import type { RepairStatus } from "../../../../generated/prisma/client";
+import type {
+  Prisma,
+  RepairStatus,
+} from "../../../../generated/prisma/client";
+
+/**
+ * Próximo Nº interno para una nueva Repair (max+1, global).
+ * Acepta `tx` para usarlo dentro de una transacción y mantener atomicidad.
+ */
+async function nextRepairInternalNumber(
+  tx: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<number> {
+  const agg = await tx.repair.aggregate({ _max: { internalNumber: true } });
+  return (agg._max.internalNumber ?? 0) + 1;
+}
 
 const ALL_STATUSES: RepairStatus[] = [
   "turno_asignado",
@@ -155,9 +169,11 @@ export async function POST(request: Request) {
       );
     }
 
+    const internalNumber = await nextRepairInternalNumber();
     const repair = await prisma.repair.create({
       data: {
         status: "turno_asignado",
+        internalNumber,
         budgetId,
         leadId: budget.leadId,
         directCreation: false,
@@ -380,9 +396,11 @@ export async function POST(request: Request) {
       }
 
       // 3. Crear la Repair
+      const internalNumber = await nextRepairInternalNumber(tx);
       return tx.repair.create({
         data: {
           status: "turno_asignado",
+          internalNumber,
           directCreation: true,
           customerId: resolvedCustomerId,
           vehicleId: resolvedVehicleId,

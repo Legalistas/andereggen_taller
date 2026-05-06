@@ -48,6 +48,9 @@ type UserLite = {
 type RepairDetail = {
   id: string;
   status: RepairStatus;
+  /** Nº interno del taller — correlativo único, sale en la Ficha Técnica.
+   *  Nullable porque las repairs anteriores a este campo no lo tienen. */
+  internalNumber: number | null;
   customerId: string | null;
   vehicleId: string | null;
   customerName: string;
@@ -285,8 +288,13 @@ export function RepairCanvas({
                   <Wrench className="h-6 w-6" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <SheetTitle className="text-white text-lg truncate">
+                  <SheetTitle className="text-white text-lg truncate flex items-center gap-2">
                     {repair.customerName}
+                    {repair.internalNumber !== null && (
+                      <span className="font-mono bg-white text-[#003b73] px-2 py-0.5 rounded text-[11px] font-bold tracking-wider">
+                        INT #{repair.internalNumber}
+                      </span>
+                    )}
                   </SheetTitle>
                   <SheetDescription className="text-white/80 flex items-center gap-1.5 mt-1 text-xs">
                     <Car className="h-3.5 w-3.5 shrink-0" />
@@ -313,6 +321,11 @@ export function RepairCanvas({
             </SheetHeader>
 
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+              <InternalNumberSection
+                value={repair.internalNumber}
+                onSave={(n) => patchRepair({ internalNumber: n })}
+              />
+
               <MechanicSection
                 current={repair.assignedMechanic}
                 onPick={(userId) => patchRepair({ assignedMechanicId: userId })}
@@ -434,6 +447,84 @@ function StatusPicker({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function InternalNumberSection({
+  value,
+  onSave,
+}: {
+  value: number | null;
+  onSave: (n: number | null) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(value === null ? "" : String(value));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Si el valor del server cambia (otro usuario lo editó, etc.) sincronizamos.
+  useEffect(() => {
+    setDraft(value === null ? "" : String(value));
+  }, [value]);
+
+  const commit = async () => {
+    setError(null);
+    const trimmed = draft.trim();
+    if (trimmed === "" && value === null) return; // nada que cambiar
+    if (trimmed === String(value ?? "")) return;
+    let parsed: number | null = null;
+    if (trimmed !== "") {
+      const n = Number(trimmed);
+      if (!Number.isInteger(n) || n <= 0) {
+        setError("Debe ser un entero positivo");
+        return;
+      }
+      parsed = n;
+    }
+    setSaving(true);
+    try {
+      await onSave(parsed);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al guardar");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      icon={Hash}
+      title="Nº interno"
+      iconTint="text-[#003b73]"
+      iconBg="bg-[#003b73]/10"
+    >
+      <div className="space-y-1.5">
+        <Input
+          type="number"
+          min="1"
+          step="1"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          placeholder="Sin asignar"
+          disabled={saving}
+          className="font-mono text-base font-semibold"
+        />
+        <p className="text-[10px] text-muted-foreground">
+          Correlativo del taller. Aparece en la Ficha Técnica.
+          {error && (
+            <span className="block text-destructive font-medium mt-0.5">
+              {error}
+            </span>
+          )}
+        </p>
+      </div>
+    </SectionCard>
   );
 }
 

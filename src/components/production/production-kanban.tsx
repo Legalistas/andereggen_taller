@@ -39,6 +39,8 @@ export type RepairStatus =
 export type KanbanRepair = {
   id: string;
   status: RepairStatus;
+  /** Nº interno del taller — sale en la card del kanban, repair canvas y Ficha Técnica */
+  internalNumber: number | null;
   customerName: string;
   customerPhone: string;
   customerEmail: string;
@@ -336,9 +338,16 @@ function RepairCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-slate-900 truncate">
-            {repair.customerName}
-          </p>
+          <div className="flex items-center gap-1.5">
+            {repair.internalNumber !== null && (
+              <span className="font-mono bg-[#003b73] text-white px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider shrink-0">
+                #{repair.internalNumber}
+              </span>
+            )}
+            <p className="text-sm font-semibold text-slate-900 truncate">
+              {repair.customerName}
+            </p>
+          </div>
           {repair.customerPhone && (
             <p className="text-[11px] text-slate-500 truncate">
               {repair.customerPhone}

@@ -75,6 +75,11 @@ export async function POST(request: Request, ctx: RouteContext) {
       lead: {
         select: { vehicle: { select: { color: true } } },
       },
+      // Nº interno del taller — sale en el badge de la Ficha Técnica.
+      // El Repair se crea cuando el budget pasa a Producción; si todavía
+      // no existe, internalNumber queda null y mostramos solo el Nº de
+      // presupuesto como fallback.
+      repair: { select: { internalNumber: true } },
     },
   });
 
@@ -111,6 +116,7 @@ export async function POST(request: Request, ctx: RouteContext) {
 
   const data: FichaTecnicaData = {
     number: budget.number,
+    internalNumber: budget.repair?.internalNumber ?? null,
     vehicle: {
       brand: budget.vehicleBrand,
       model: budget.vehicleModel,

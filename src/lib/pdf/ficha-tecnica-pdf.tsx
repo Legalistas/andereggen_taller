@@ -22,7 +22,10 @@ export type FichaTecnicaSection = {
 };
 
 export type FichaTecnicaData = {
+  /** Nº de presupuesto (referencia cruzada con CRM) */
   number: number;
+  /** Nº interno del taller (correlativo de Producción). Sale en el badge. */
+  internalNumber: number | null;
   vehicle: {
     brand: string;
     model: string;
@@ -226,9 +229,17 @@ export function FichaTecnicaPdf({ data }: { data: FichaTecnicaData }) {
             </Text>
           </View>
           <View style={s.badge}>
-            <Text style={s.badgeTitle}>Ficha Técnica</Text>
-            <Text style={s.badgeNumber}>#{data.number}</Text>
-            <Text style={s.badgeDate}>Emitida: {fmtDate(new Date())}</Text>
+            <Text style={s.badgeTitle}>
+              {data.internalNumber !== null ? "Nº Interno" : "Ficha Técnica"}
+            </Text>
+            <Text style={s.badgeNumber}>
+              #{data.internalNumber ?? data.number}
+            </Text>
+            <Text style={s.badgeDate}>
+              {data.internalNumber !== null
+                ? `Pres. #${data.number} · ${fmtDate(new Date())}`
+                : `Emitida: ${fmtDate(new Date())}`}
+            </Text>
           </View>
         </View>
 

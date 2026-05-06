@@ -85,7 +85,39 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     deliveredAt,
     notes,
     reason,
+    internalNumber,
   } = body as Record<string, unknown>;
+
+  // Si viene un internalNumber distinto al actual, validar que sea entero
+  // positivo y que no choque con otra Repair (uniqueness manual antes del
+  // update para devolver mejor error que el constraint de Postgres).
+  let parsedInternalNumber: number | null | undefined;
+  if (internalNumber !== undefined) {
+    if (internalNumber === null || internalNumber === "") {
+      parsedInternalNumber = null;
+    } else {
+      const n = Number(internalNumber);
+      if (!Number.isInteger(n) || n <= 0) {
+        return NextResponse.json(
+          { error: "El Nº interno debe ser un entero positivo" },
+          { status: 400 },
+        );
+      }
+      if (n !== existing.internalNumber) {
+        const dupe = await prisma.repair.findUnique({
+          where: { internalNumber: n },
+          select: { id: true },
+        });
+        if (dupe && dupe.id !== id) {
+          return NextResponse.json(
+            { error: `Ya existe una reparación con el Nº interno ${n}.` },
+            { status: 409 },
+          );
+        }
+      }
+      parsedInternalNumber = n;
+    }
+  }
 
   // Validar mecánico si viene un id (debe tener rol "mecanico" o ser INTERNAL)
   if (assignedMechanicId) {
@@ -119,6 +151,9 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   const updated = await prisma.repair.update({
     where: { id },
     data: {
+      ...(parsedInternalNumber !== undefined && {
+        internalNumber: parsedInternalNumber,
+      }),
       ...(assignedMechanicId !== undefined && {
         assignedMechanicId: (assignedMechanicId as string) || null,
       }),
