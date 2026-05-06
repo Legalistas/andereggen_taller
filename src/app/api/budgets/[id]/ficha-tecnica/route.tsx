@@ -17,13 +17,10 @@
 import { renderToBuffer } from "@react-pdf/renderer";
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
+import { CATEGORY_BY_KEY, subdetailLabel } from "@/lib/budget-catalog";
 import {
-  CATEGORY_BY_KEY,
-  subdetailLabel,
-} from "@/lib/budget-catalog";
-import {
-  FichaTecnicaPdf,
   type FichaTecnicaData,
+  FichaTecnicaPdf,
   type FichaTecnicaSection,
 } from "@/lib/pdf/ficha-tecnica-pdf";
 import { resolvePdfLogo } from "@/lib/pdf/logo";
@@ -66,9 +63,7 @@ export async function POST(request: Request, ctx: RouteContext) {
   if (authError) return authError;
   const { id } = await ctx.params;
 
-  const overrides = (await request
-    .json()
-    .catch(() => ({}))) as {
+  const overrides = (await request.json().catch(() => ({}))) as {
     color?: string;
     sections?: FichaTecnicaSection[];
   };
@@ -127,7 +122,13 @@ export async function POST(request: Request, ctx: RouteContext) {
           : (budget.lead.vehicle?.color ?? null),
     },
     sections,
-    company: { name: settings.companyName, logoUrl },
+    company: {
+      name: settings.companyName,
+      address: settings.companyAddress,
+      phone: settings.companyPhone ?? "—",
+      email: settings.companyEmail ?? "",
+      logoUrl,
+    },
   };
 
   let pdfBuffer: Buffer;
