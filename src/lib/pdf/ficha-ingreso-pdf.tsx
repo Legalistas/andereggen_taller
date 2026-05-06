@@ -6,6 +6,8 @@
  *
  * Los campos resaltados en amarillo son los que la UI permite editar antes
  * de imprimir (seguro, seg. técnico, monto franquicia).
+ *
+ * Estilo: mismo header/typography que budget-pdf para mantener look-and-feel.
  */
 
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
@@ -42,57 +44,114 @@ export type FichaIngresoData = {
 };
 
 const C = {
-  ink: "#000",
-  slate700: "#374151",
-  slate500: "#6b7280",
-  slate200: "#e5e7eb",
-  highlight: "#fff4a3", // amarillo tipo marcador
+  brand: "#003b73",
+  ink: "#0f172a",
+  slate700: "#334155",
+  slate500: "#64748b",
+  slate200: "#e2e8f0",
+  slate50: "#f8fafc",
+  highlight: "#fff4a3", // amarillo marcador
 } as const;
 
 const s = StyleSheet.create({
   page: {
-    padding: 32,
+    padding: 36,
     fontSize: 10,
     fontFamily: "Helvetica",
-    color: C.ink,
+    color: C.slate700,
     lineHeight: 1.4,
   },
-  // Header
+  // ─── Header con logo + contacto + badge ──────────────────────────
   header: {
     flexDirection: "row",
-    alignItems: "flex-start",
     justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingBottom: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: C.brand,
     marginBottom: 14,
   },
-  logo: { width: 165, height: 56, objectFit: "contain" },
-  contactBlock: { textAlign: "right", fontSize: 9 },
-  title: {
-    fontSize: 14,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 14,
+  companyBlock: { flexDirection: "column", maxWidth: 360 },
+  logo: { width: 138, height: 48, marginBottom: 8, objectFit: "contain" },
+  companyLine: { fontSize: 8, color: C.slate500 },
+  badge: {
+    alignSelf: "flex-start",
+    backgroundColor: C.brand,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 4,
+    minWidth: 150,
+  },
+  badgeTitle: {
+    fontSize: 8,
+    textTransform: "uppercase",
     letterSpacing: 1,
-  },
-  // Datos cliente/vehículo
-  metaRow: {
-    flexDirection: "row",
+    color: "white",
+    opacity: 0.85,
     marginBottom: 4,
   },
-  metaLabel: { fontWeight: "bold", marginRight: 4 },
+  badgeNumber: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "white",
+    lineHeight: 1,
+    marginBottom: 6,
+  },
+  badgeDate: { fontSize: 8, color: "white", opacity: 0.9 },
+
+  // ─── Datos cliente/vehículo (estilo budget) ──────────────────────
+  sectionTitle: {
+    fontSize: 9,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    color: C.brand,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  twoCol: { flexDirection: "row", gap: 16 },
+  col: { flex: 1 },
+  box: {
+    padding: 8,
+    backgroundColor: C.slate50,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.slate200,
+  },
+  row: {
+    flexDirection: "row",
+    marginBottom: 2,
+  },
+  label: {
+    fontSize: 8,
+    fontWeight: "bold",
+    color: C.slate500,
+    width: 65,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  value: { fontSize: 9, color: C.ink, flex: 1 },
   highlight: {
     backgroundColor: C.highlight,
     paddingHorizontal: 3,
-    paddingVertical: 1,
+    paddingVertical: 0,
+    fontWeight: "bold",
   },
-  divider: {
-    borderBottomWidth: 1,
-    borderBottomColor: C.ink,
-    marginVertical: 14,
+
+  // ─── Manifiesto y firmas ─────────────────────────────────────────
+  manifiestoBlock: { marginTop: 12, marginBottom: 8 },
+  paragraph: { marginBottom: 5, lineHeight: 1.45 },
+  paragraphLast: { marginBottom: 5 },
+  franchiseRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 4,
+    marginBottom: 6,
   },
-  paragraph: { marginBottom: 4 },
+  franchiseLabel: { fontWeight: "bold" },
   signatureRow: {
     flexDirection: "row",
-    marginTop: 28,
+    marginTop: 22,
     gap: 24,
   },
   signatureField: {
@@ -100,24 +159,36 @@ const s = StyleSheet.create({
     alignItems: "flex-end",
     flex: 1,
   },
-  signatureLabel: { fontWeight: "bold", marginRight: 6 },
+  signatureLabel: {
+    fontWeight: "bold",
+    marginRight: 6,
+    fontSize: 9,
+  },
   signatureLine: {
     flex: 1,
     borderBottomWidth: 1,
-    borderBottomColor: C.ink,
+    borderBottomColor: C.slate700,
     height: 1,
   },
-  sectionTitle: {
-    fontSize: 12,
+
+  // ─── Sección Conformidad ─────────────────────────────────────────
+  divider: {
+    borderBottomWidth: 1,
+    borderBottomColor: C.slate200,
+    marginVertical: 14,
+  },
+  conformidadTitle: {
+    fontSize: 11,
     fontWeight: "bold",
+    color: C.brand,
     textAlign: "center",
-    marginBottom: 8,
-    marginTop: 4,
+    marginBottom: 6,
     letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
 });
 
-/** Field con label en negrita seguido de valor inline */
+/** Field con label en negrita seguido de valor (con o sin highlight) */
 function Field({
   label,
   value,
@@ -128,18 +199,18 @@ function Field({
   highlight?: boolean;
 }) {
   return (
-    <View style={s.metaRow}>
-      <Text style={s.metaLabel}>{label}</Text>
+    <View style={s.row}>
+      <Text style={s.label}>{label}</Text>
       {highlight ? (
-        <Text style={s.highlight}>{value}</Text>
+        <Text style={[s.value, s.highlight]}>{value}</Text>
       ) : (
-        <Text>{value}</Text>
+        <Text style={s.value}>{value}</Text>
       )}
     </View>
   );
 }
 
-/** Campo de firma: label + línea horizontal */
+/** Línea horizontal con label en negrita para firmar */
 function SignField({ label, flex = 1 }: { label: string; flex?: number }) {
   return (
     <View style={[s.signatureField, { flex }]}>
@@ -151,47 +222,60 @@ function SignField({ label, flex = 1 }: { label: string; flex?: number }) {
 
 export function FichaIngresoPdf({ data }: { data: FichaIngresoData }) {
   return (
-    <Document title={`Ficha Ingreso #${data.budgetNumber}`}>
+    <Document
+      title={`Ficha Ingreso #${data.budgetNumber}`}
+      author={data.company.name}
+      subject={`Ficha de Ingreso/Egreso #${data.budgetNumber} — ${data.customer.name}`}
+    >
       <Page size="A4" style={s.page}>
-        {/* Header con logo y contacto */}
+        {/* Header — mismo estilo que el presupuesto */}
         <View style={s.header}>
-          {data.company.logoUrl ? (
-            <Image src={data.company.logoUrl} style={s.logo} />
-          ) : (
-            <View />
-          )}
-          <View style={s.contactBlock}>
-            <Text>{data.company.address}</Text>
-            <Text>Tel.: {data.company.phone}</Text>
-            <Text>E-mail: {data.company.email}</Text>
+          <View style={s.companyBlock}>
+            {data.company.logoUrl ? (
+              <Image src={data.company.logoUrl} style={s.logo} />
+            ) : null}
+            <Text style={s.companyLine}>{data.company.address}</Text>
+            <Text style={s.companyLine}>
+              Tel: {data.company.phone} · {data.company.email}
+            </Text>
+          </View>
+          <View style={s.badge}>
+            <Text style={s.badgeTitle}>Ficha Ingreso</Text>
+            <Text style={s.badgeNumber}>#{data.budgetNumber}</Text>
+            <Text style={s.badgeDate}>Fecha: {data.date}</Text>
           </View>
         </View>
 
-        <Text style={s.title}>FICHA INGRESO</Text>
-
-        {/* Datos cliente / vehículo en dos columnas */}
-        <View style={{ flexDirection: "row", gap: 16, marginBottom: 6 }}>
-          <View style={{ flex: 1 }}>
-            <Field label="Fecha:" value={data.date} />
-            <Field label="Titular:" value={data.customer.name.toUpperCase()} />
-            <Field label="Direc.:" value={data.customer.address} />
-            <Field label="Loc.:" value={data.customer.locality.toUpperCase()} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Field label="Vehículo:" value={data.vehicle.brandModel} />
-            <View style={{ flexDirection: "row", gap: 14 }}>
-              <Field label="Dominio:" value={data.vehicle.domain} />
-              <Field label="Año:" value={data.vehicle.year} />
-            </View>
-            <Field label="Teléfono:" value={data.customer.phone} />
-            <View style={{ flexDirection: "row", gap: 14 }}>
+        {/* Cliente + Vehículo en dos boxes con sectionTitle (estilo budget) */}
+        <View style={s.twoCol}>
+          <View style={s.col}>
+            <Text style={s.sectionTitle}>Cliente</Text>
+            <View style={s.box}>
+              <Field label="Titular" value={data.customer.name.toUpperCase()} />
+              <Field label="Dirección" value={data.customer.address} />
               <Field
-                label="Seguro:"
+                label="Localidad"
+                value={data.customer.locality.toUpperCase()}
+              />
+              <Field label="Teléfono" value={data.customer.phone} />
+              {data.customer.dni ? (
+                <Field label="DNI" value={data.customer.dni} />
+              ) : null}
+            </View>
+          </View>
+          <View style={s.col}>
+            <Text style={s.sectionTitle}>Vehículo</Text>
+            <View style={s.box}>
+              <Field label="Vehículo" value={data.vehicle.brandModel} />
+              <Field label="Dominio" value={data.vehicle.domain} />
+              <Field label="Año" value={data.vehicle.year} />
+              <Field
+                label="Seguro"
                 value={data.highlights.insurance || "—"}
                 highlight
               />
               <Field
-                label="Seg. Tec.:"
+                label="Seg. Tec."
                 value={data.highlights.technicalInsurance || "—"}
                 highlight
               />
@@ -199,11 +283,14 @@ export function FichaIngresoPdf({ data }: { data: FichaIngresoData }) {
           </View>
         </View>
 
-        <View style={{ marginTop: 10 }}>
+        {/* Manifiesto */}
+        <View style={s.manifiestoBlock}>
           <Text style={s.paragraph}>
             Manifiesto aceptación para la realización del trabajo conforme al
             presupuesto N°{" "}
-            <Text style={{ fontWeight: "bold" }}>{data.budgetNumber}</Text>{" "}
+            <Text style={{ fontWeight: "bold", color: C.ink }}>
+              {data.budgetNumber}
+            </Text>{" "}
             enviado y aprobado por mi compañía de seguros.
           </Text>
           <Text style={s.paragraph}>
@@ -212,9 +299,9 @@ export function FichaIngresoPdf({ data }: { data: FichaIngresoData }) {
           <Text style={s.paragraph}>
             Condición de pago: {data.paymentCondition}.
           </Text>
-          <View style={s.metaRow}>
-            <Text style={s.metaLabel}>
-              Monto de franquicia a abonar en efectivo al retirar el rodado:
+          <View style={s.franchiseRow}>
+            <Text style={s.franchiseLabel}>
+              Monto de franquicia a abonar en efectivo al retirar el rodado:{" "}
             </Text>
             <Text style={s.highlight}>
               {data.highlights.franchiseAmount || "-"}
@@ -236,7 +323,7 @@ export function FichaIngresoPdf({ data }: { data: FichaIngresoData }) {
         <View style={s.divider} />
 
         {/* Conformidad de Reparaciones */}
-        <Text style={s.sectionTitle}>CONFORMIDAD DE REPARACIONES</Text>
+        <Text style={s.conformidadTitle}>Conformidad de Reparaciones</Text>
 
         <Text style={s.paragraph}>
           Por medio del presente manifiesto conformidad con las reparaciones

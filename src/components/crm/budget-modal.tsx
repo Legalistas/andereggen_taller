@@ -20,7 +20,6 @@ import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
@@ -175,15 +174,11 @@ export default function BudgetModal({
   const open = openProp ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
 
-  // Minimizar: al activarlo, el Dialog se cierra visualmente pero el form
-  // queda mounteado (state intacto). Aparece una barra flotante con
-  // botón "Restaurar". Permite usar otros modales (p.ej. Administrativa)
-  // sin perder lo que se está editando.
+  // Minimizar: desmonta el Dialog (libera el body lock de Radix y deja
+  // interactuar con el lead canvas / Administrativa) pero el form queda
+  // mounteado en BudgetModal con todo el state intacto. Aparece una barra
+  // flotante; al restaurar se vuelve a montar el Dialog.
   const [minimized, setMinimized] = useState(false);
-  // Ref para distinguir "el usuario cerró el modal" vs "minimicé yo".
-  // Cuando minimizo, Dialog.open va a false y dispara onOpenChange — lo
-  // ignoramos en ese caso.
-  const isMinimizingRef = useRef(false);
 
   const [concepts, setConcepts] = useState<ConceptDraft[]>([]);
   const [parts, setParts] = useState<PartDraft[]>([]);
@@ -471,28 +466,19 @@ export default function BudgetModal({
     }
   }, [open, resetForm]);
 
-  // Handler de cierre del Dialog que distingue minimizar vs cerrar real.
-  // Cuando seteamos minimized=true, Dialog.open va de true→false y dispara
-  // este callback con `false`. Lo ignoramos vía el ref para no propagar
-  // un cierre no querido al parent.
-  const handleDialogOpenChange = (newOpen: boolean) => {
-    if (!newOpen && isMinimizingRef.current) {
-      isMinimizingRef.current = false;
-      return;
-    }
-    setOpen(newOpen);
-  };
-
-  const minimize = () => {
-    isMinimizingRef.current = true;
-    setMinimized(true);
-  };
-
+  const minimize = () => setMinimized(true);
   const restore = () => setMinimized(false);
 
+  // Si el modal nunca se abrió (open=false) → mostramos solo el trigger.
+  // Si está abierto pero minimized → no renderizamos el Dialog (lo desmontamos
+  //   completamente para liberar el body lock de Radix y permitir interactuar
+  //   con el lead canvas / abrir Administrativa). En su lugar mostramos la
+  //   barra flotante.
+  // Si está abierto y NO minimized → renderizamos el Dialog normal.
   return (
     <>
-    <Dialog open={open && !minimized} onOpenChange={handleDialogOpenChange}>
+    {!minimized && (
+    <Dialog open={open} onOpenChange={setOpen}>
       {!hideTrigger && (
         <DialogTrigger asChild>
           <Button
@@ -941,6 +927,7 @@ export default function BudgetModal({
         </div>
       </DialogContent>
     </Dialog>
+    )}
     {/* Barra flotante cuando está minimizado — permite usar otros modales
         encima (Administrativa, etc.) sin perder el form. Click → restaura. */}
     {open && minimized && (
