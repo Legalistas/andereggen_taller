@@ -12,6 +12,7 @@ import {
   Loader2,
   Mail,
   Phone,
+  Printer,
   Smile,
   Star,
   User as UserIcon,
@@ -34,6 +35,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { FichasDialog } from "../crm/fichas-dialog";
 import type { RepairStatus } from "./production-kanban";
 
 type UserLite = {
@@ -737,36 +739,57 @@ function BudgetSection({
   budget: NonNullable<RepairDetail["budget"]>;
   leadId: string | undefined;
 }) {
+  // Dialog "Fichas" — Ficha Técnica + Ficha Ingreso/Egreso. Se abre desde acá
+  // (Producción) porque el flujo es: turno asignado → imprimir fichas para
+  // pegar en el auto y hacer firmar al cliente.
+  const [fichasOpen, setFichasOpen] = useState(false);
+
   return (
-    <SectionCard
-      icon={FileText}
-      title="Presupuesto vinculado"
-      iconTint="text-emerald-600"
-      iconBg="bg-emerald-50"
-    >
-      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-xs font-semibold text-slate-700">
-            #{budget.number}
-          </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider font-medium bg-emerald-100 text-emerald-700">
-            {budget.status}
-          </span>
-        </div>
-        <p className="font-semibold text-base text-slate-900 mt-1 tabular-nums">
-          {ARS.format(Number(budget.grandTotal))}
-        </p>
-        {leadId && (
-          <a
-            href={`/crm/leads`}
-            className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
+    <>
+      <SectionCard
+        icon={FileText}
+        title="Presupuesto vinculado"
+        iconTint="text-emerald-600"
+        iconBg="bg-emerald-50"
+      >
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-xs font-semibold text-slate-700">
+              #{budget.number}
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider font-medium bg-emerald-100 text-emerald-700">
+              {budget.status}
+            </span>
+          </div>
+          <p className="font-semibold text-base text-slate-900 mt-1 tabular-nums">
+            {ARS.format(Number(budget.grandTotal))}
+          </p>
+          <button
+            type="button"
+            onClick={() => setFichasOpen(true)}
+            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+            title="Imprimir Ficha Técnica y Ficha de Ingreso/Egreso"
           >
-            <span>Ver en CRM</span>
-            <ArrowRight className="h-3 w-3" />
-          </a>
-        )}
-      </div>
-    </SectionCard>
+            <Printer className="h-3 w-3" />
+            Imprimir fichas
+          </button>
+          {leadId && (
+            <a
+              href={`/crm/leads`}
+              className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
+            >
+              <span>Ver en CRM</span>
+              <ArrowRight className="h-3 w-3" />
+            </a>
+          )}
+        </div>
+      </SectionCard>
+      <FichasDialog
+        budgetId={fichasOpen ? budget.id : null}
+        open={fichasOpen}
+        onOpenChange={setFichasOpen}
+      />
+    </>
   );
 }
 

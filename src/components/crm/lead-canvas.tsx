@@ -57,7 +57,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { BudgetAdminDialog } from "./budget-admin-dialog";
 import { BudgetHistoryButton } from "./budget-history-button";
-import { FichasDialog } from "./fichas-dialog";
 import { SendBudgetDialog } from "./send-budget-dialog";
 import { BrandField, ModelField, YearField } from "./vehicle-fields";
 
@@ -1615,8 +1614,6 @@ function BudgetsSection({
     id: string;
     number: number;
   } | null>(null);
-  // Modal "Fichas" (Ficha Técnica + Ficha Ingreso/Egreso) para un budget.
-  const [fichasOpenFor, setFichasOpenFor] = useState<string | null>(null);
 
   const STATUS_STYLES: Record<string, string> = {
     draft: "bg-slate-100 text-slate-700",
@@ -1709,15 +1706,6 @@ function BudgetsSection({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFichasOpenFor(b.id)}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
-                  title="Imprimir Ficha Técnica y Ficha de Ingreso/Egreso"
-                >
-                  <FileText className="h-3 w-3" />
-                  Fichas
-                </button>
-                <button
-                  type="button"
                   onClick={() => onDeleteBudget?.(b)}
                   className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50 transition-colors"
                   title="Eliminar presupuesto"
@@ -1745,13 +1733,6 @@ function BudgetsSection({
       open={adminOpenFor !== null}
       onOpenChange={(o) => {
         if (!o) setAdminOpenFor(null);
-      }}
-    />
-    <FichasDialog
-      budgetId={fichasOpenFor}
-      open={fichasOpenFor !== null}
-      onOpenChange={(o) => {
-        if (!o) setFichasOpenFor(null);
       }}
     />
     </>
