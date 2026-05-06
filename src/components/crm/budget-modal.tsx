@@ -6,6 +6,8 @@ import {
   ChevronsUpDown,
   FileText,
   Mail,
+  Maximize2,
+  Minus,
   Package,
   Phone,
   Plus,
@@ -13,7 +15,14 @@ import {
   User,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -165,6 +174,16 @@ export default function BudgetModal({
   const [internalOpen, setInternalOpen] = useState(false);
   const open = openProp ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
+
+  // Minimizar: al activarlo, el Dialog se cierra visualmente pero el form
+  // queda mounteado (state intacto). Aparece una barra flotante con
+  // botón "Restaurar". Permite usar otros modales (p.ej. Administrativa)
+  // sin perder lo que se está editando.
+  const [minimized, setMinimized] = useState(false);
+  // Ref para distinguir "el usuario cerró el modal" vs "minimicé yo".
+  // Cuando minimizo, Dialog.open va a false y dispara onOpenChange — lo
+  // ignoramos en ese caso.
+  const isMinimizingRef = useRef(false);
 
   const [concepts, setConcepts] = useState<ConceptDraft[]>([]);
   const [parts, setParts] = useState<PartDraft[]>([]);
@@ -444,13 +463,36 @@ export default function BudgetModal({
   };
 
   // Limpiar el form cuando el modal se cierra (sino al reabrir queda con
-  // los datos del último presupuesto editado).
+  // los datos del último presupuesto editado). Tambien resetea minimized.
   useEffect(() => {
-    if (!open) resetForm();
+    if (!open) {
+      resetForm();
+      setMinimized(false);
+    }
   }, [open, resetForm]);
 
+  // Handler de cierre del Dialog que distingue minimizar vs cerrar real.
+  // Cuando seteamos minimized=true, Dialog.open va de true→false y dispara
+  // este callback con `false`. Lo ignoramos vía el ref para no propagar
+  // un cierre no querido al parent.
+  const handleDialogOpenChange = (newOpen: boolean) => {
+    if (!newOpen && isMinimizingRef.current) {
+      isMinimizingRef.current = false;
+      return;
+    }
+    setOpen(newOpen);
+  };
+
+  const minimize = () => {
+    isMinimizingRef.current = true;
+    setMinimized(true);
+  };
+
+  const restore = () => setMinimized(false);
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <>
+    <Dialog open={open && !minimized} onOpenChange={handleDialogOpenChange}>
       {!hideTrigger && (
         <DialogTrigger asChild>
           <Button
@@ -511,15 +553,27 @@ export default function BudgetModal({
               )}
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 w-9 p-0"
-            onClick={() => setOpen(false)}
-            aria-label="Cerrar"
-          >
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={minimize}
+              aria-label="Minimizar"
+              title="Minimizar (libera la pantalla para usar otros modales)"
+            >
+              <Minus className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={() => setOpen(false)}
+              aria-label="Cerrar"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </header>
 
         {/* Body: 2 columnas (main + sidebar sticky) */}
@@ -887,6 +941,50 @@ export default function BudgetModal({
         </div>
       </DialogContent>
     </Dialog>
+    {/* Barra flotante cuando está minimizado — permite usar otros modales
+        encima (Administrativa, etc.) sin perder el form. Click → restaura. */}
+    {open && minimized && (
+      <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
+        <FileText className="h-4 w-4 text-[#003b73] shrink-0" />
+        <button
+          type="button"
+          onClick={restore}
+          className="text-sm font-medium text-slate-800 hover:text-[#003b73] transition-colors"
+          title="Restaurar"
+        >
+          {isEditing ? "Editando presupuesto" : "Nuevo presupuesto"}
+          {leadInfo?.customer?.name && (
+            <span className="text-xs text-slate-500 ml-1.5">
+              · {leadInfo.customer.name}
+            </span>
+          )}
+        </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={restore}
+          aria-label="Restaurar"
+          title="Restaurar"
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0 text-destructive"
+          onClick={() => {
+            setMinimized(false);
+            setOpen(false);
+          }}
+          aria-label="Cerrar"
+          title="Cerrar"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    )}
+    </>
   );
 }
 
