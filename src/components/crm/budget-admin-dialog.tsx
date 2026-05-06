@@ -11,7 +11,16 @@
  * NUNCA aparece en el PDF que se le envía al cliente.
  */
 
-import { Camera, ClipboardList, Lock, Plus, Trash2, X } from "lucide-react";
+import {
+  Camera,
+  ClipboardList,
+  Lock,
+  Maximize2,
+  Minus,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -62,6 +71,9 @@ type Props = {
   budgetNumber?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Notifica cambios en el flag de minimizado para que el padre pueda
+   *  ajustar otros componentes (ej: dejar de suprimir el lead canvas). */
+  onMinimizedChange?: (minimized: boolean) => void;
 };
 
 export function BudgetAdminDialog({
@@ -69,11 +81,29 @@ export function BudgetAdminDialog({
   budgetNumber,
   open,
   onOpenChange,
+  onMinimizedChange,
 }: Props) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [newItemDescription, setNewItemDescription] = useState("");
+  // Minimizar — mismo patrón que BudgetModal: desmonta el Dialog para
+  // liberar el body lock de Radix; aparece una barra flotante.
+  const [minimized, setMinimized] = useState(false);
+
+  // Notificamos al padre cuando cambia minimized (para que pueda ajustar
+  // suppression de otros componentes — ej: lead canvas).
+  useEffect(() => {
+    onMinimizedChange?.(minimized);
+  }, [minimized, onMinimizedChange]);
+
+  // Reset minimized cuando se cierra el modal de verdad
+  useEffect(() => {
+    if (!open) setMinimized(false);
+  }, [open]);
+
+  const minimize = () => setMinimized(true);
+  const restore = () => setMinimized(false);
 
   const refresh = useCallback(async () => {
     if (!budgetId) return;
@@ -132,9 +162,13 @@ export function BudgetAdminDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+    {!minimized && (
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogContent
         showCloseButton={false}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
         className="max-w-5xl w-[95vw] h-[90vh] p-0 gap-0 flex flex-col sm:rounded-xl overflow-hidden"
       >
         <DialogTitle className="sr-only">
@@ -165,15 +199,27 @@ export function BudgetAdminDialog({
               </p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 w-9 p-0"
-            onClick={() => onOpenChange(false)}
-            aria-label="Cerrar"
-          >
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={minimize}
+              aria-label="Minimizar"
+              title="Minimizar (libera la pantalla para ver el lead u otros modales)"
+            >
+              <Minus className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={() => onOpenChange(false)}
+              aria-label="Cerrar"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-muted/20">
@@ -271,6 +317,51 @@ export function BudgetAdminDialog({
         </div>
       </DialogContent>
     </Dialog>
+    )}
+    {/* Barra flotante cuando está minimizado — permite usar el lead canvas
+        u otros modales sin perder los items que se están editando. */}
+    {open && minimized && (
+      <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 shadow-lg">
+        <ClipboardList className="h-4 w-4 text-amber-600 shrink-0" />
+        <button
+          type="button"
+          onClick={restore}
+          className="text-sm font-medium text-slate-800 hover:text-amber-700 transition-colors"
+          title="Restaurar"
+        >
+          Administrativa
+          {budgetNumber !== undefined && (
+            <span className="text-xs text-slate-500 ml-1.5">
+              · #{budgetNumber}
+            </span>
+          )}
+        </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={restore}
+          aria-label="Restaurar"
+          title="Restaurar"
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0 text-destructive"
+          onClick={() => {
+            setMinimized(false);
+            onOpenChange(false);
+          }}
+          aria-label="Cerrar"
+          title="Cerrar"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    )}
+    </>
   );
 }
 

@@ -173,6 +173,11 @@ export default function LeadsSection() {
   const [canvasLeadId, setCanvasLeadId] = useState<string | null>(null);
   // Contador para forzar refetch del canvas sin cerrarlo (ej: después de guardar presupuesto)
   const [canvasReloadNonce, setCanvasReloadNonce] = useState(0);
+  // Si el BudgetModal está minimizado, no debemos suprimir el canvas
+  // — al contrario, queremos que el usuario pueda interactuar con todo
+  // (cards del kanban, sheet del lead, etc.) mientras el budget está en
+  // modo "barra flotante".
+  const [budgetMinimized, setBudgetMinimized] = useState(false);
 
   const fetchLeads = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -789,6 +794,7 @@ export default function LeadsSection() {
         onOpenChange={(v) => {
           if (!v) setBudgetFor(null);
         }}
+        onMinimizedChange={setBudgetMinimized}
         onSaved={() => {
           setBudgetFor(null);
           fetchLeads();
@@ -798,15 +804,16 @@ export default function LeadsSection() {
         }}
       />
 
-      {/* Canvas lateral de detalle. Mientras el BudgetModal está abierto lo
-          suprimimos (Sheet hidden) para que el dialog fullscreen tenga todo
-          el ancho disponible. Al cerrar el modal el canvas vuelve. */}
+      {/* Canvas lateral de detalle. Suprimimos solo cuando el BudgetModal
+          está abierto Y NO minimizado (en modo fullscreen necesita todo
+          el ancho). Si el budget está minimizado, el canvas debe estar
+          interactivo para que el usuario pueda navegar. */}
       <LeadCanvas
         leadId={canvasLeadId}
         onClose={() => setCanvasLeadId(null)}
         onChanged={() => fetchLeads()}
         reloadNonce={canvasReloadNonce}
-        suppressed={budgetFor !== null}
+        suppressed={budgetFor !== null && !budgetMinimized}
         onOpenBudget={(leadId, budgetId) => setBudgetFor({ leadId, budgetId })}
       />
     </div>

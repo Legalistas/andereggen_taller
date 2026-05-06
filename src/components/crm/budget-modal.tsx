@@ -128,6 +128,9 @@ type Props = {
   hideTrigger?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Notifica cambios en el flag de minimizado para que el padre pueda
+   *  ajustar otros componentes (ej: dejar de suprimir el lead canvas). */
+  onMinimizedChange?: (minimized: boolean) => void;
 };
 
 const ARS = new Intl.NumberFormat("es-AR", {
@@ -168,6 +171,7 @@ export default function BudgetModal({
   hideTrigger,
   open: openProp,
   onOpenChange,
+  onMinimizedChange,
 }: Props) {
   const isEditing = !!budgetId;
   const [internalOpen, setInternalOpen] = useState(false);
@@ -179,6 +183,12 @@ export default function BudgetModal({
   // mounteado en BudgetModal con todo el state intacto. Aparece una barra
   // flotante; al restaurar se vuelve a montar el Dialog.
   const [minimized, setMinimized] = useState(false);
+
+  // Notificamos al padre cada vez que cambia el flag — el padre necesita
+  // saber para no suprimir el lead canvas cuando estamos minimizados.
+  useEffect(() => {
+    onMinimizedChange?.(minimized);
+  }, [minimized, onMinimizedChange]);
 
   const [concepts, setConcepts] = useState<ConceptDraft[]>([]);
   const [parts, setParts] = useState<PartDraft[]>([]);
