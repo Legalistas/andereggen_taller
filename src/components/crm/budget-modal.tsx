@@ -176,6 +176,8 @@ export default function BudgetModal({
   const [observations, setObservations] = useState("");
   // Aclaración libre sobre los repuestos a proveer — sale en el PDF al cliente.
   const [partsNote, setPartsNote] = useState("");
+  // Pintura perlada tricapa — flag por presupuesto (no por vehículo).
+  const [perladoTricapa, setPerladoTricapa] = useState(false);
   const [newCategory, setNewCategory] = useState<ConceptCategory | "">("");
   // IVA rate del budget — al crear se usa el default; al editar se carga
   // el valor guardado (algunos presupuestos importados están con 0).
@@ -244,6 +246,7 @@ export default function BudgetModal({
           paymentCondition: string;
           observations: string | null;
           partsNote: string | null;
+          vehiclePerladoTricapa: boolean;
           concepts: Array<{
             type: ConceptType;
             category: ConceptCategory;
@@ -269,6 +272,7 @@ export default function BudgetModal({
         setPaymentCondition(b.paymentCondition ?? "Contado contra entrega");
         setObservations(b.observations ?? "");
         setPartsNote(b.partsNote ?? "");
+        setPerladoTricapa(Boolean(b.vehiclePerladoTricapa));
         setConcepts(
           b.concepts.map((c) => ({
             localId: uid(),
@@ -356,6 +360,7 @@ export default function BudgetModal({
     setPaymentCondition("Contado contra entrega");
     setObservations("");
     setPartsNote("");
+    setPerladoTricapa(false);
     setIvaRate(DEFAULT_IVA_RATE);
     setBudgetNumber("");
     setSuggestedNumber(null);
@@ -392,6 +397,7 @@ export default function BudgetModal({
         paymentCondition,
         observations: observations || null,
         partsNote: partsNote.trim() || null,
+        perladoTricapa,
         concepts: concepts.map((c, idx) => ({
           type: c.type,
           category: c.category,
@@ -786,6 +792,21 @@ export default function BudgetModal({
                         ? `Sugerido (max+1): #${suggestedNumber}. Podés sobrescribirlo.`
                         : "Calculando próximo correlativo..."}
                   </p>
+                </div>
+                {/* Perlado tricapa: flag por presupuesto. Se ve en el PDF
+                    del cliente como "PERLADO TRICAPA" en bold uppercase. */}
+                <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 px-3 py-2">
+                  <Checkbox
+                    id="perladoTricapa"
+                    checked={perladoTricapa}
+                    onCheckedChange={(c) => setPerladoTricapa(Boolean(c))}
+                  />
+                  <Label
+                    htmlFor="perladoTricapa"
+                    className="text-xs font-bold uppercase tracking-wider text-amber-800 cursor-pointer"
+                  >
+                    Perlado tricapa
+                  </Label>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-1.5">

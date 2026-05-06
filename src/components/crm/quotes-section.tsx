@@ -93,6 +93,8 @@ type QuoteLite = {
 type BudgetDetail = QuoteLite & {
   customerDni: string | null;
   customerAddress: string | null;
+  vehicleChassis: string | null;
+  vehiclePerladoTricapa: boolean;
   vehicleInsurance: string | null;
   observations: string | null;
   paymentCondition: string;
@@ -798,239 +800,294 @@ export default function QuotesSection() {
           if (!v) setDetailId(null);
         }}
       >
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-[#003b73]" />
-              Cotización #{detail?.number ?? "…"}
-            </DialogTitle>
-            <DialogDescription>
-              Detalle read-only del presupuesto.
-            </DialogDescription>
-          </DialogHeader>
-
-          {detailLoading && (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 inline animate-spin mr-2" /> Cargando…
-            </div>
-          )}
-
-          {!detailLoading && detail && (
-            <div className="space-y-5">
-              {/* Header snapshot */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div className="space-y-1">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Cliente
-                  </div>
-                  <div className="font-medium flex items-center gap-1">
-                    <User className="h-3 w-3" /> {detail.customerName}
-                  </div>
-                  <div className="text-xs flex items-center gap-1 text-muted-foreground">
-                    <Mail className="h-3 w-3" /> {detail.customerEmail}
-                  </div>
-                  <div className="text-xs flex items-center gap-1 text-muted-foreground">
-                    <Phone className="h-3 w-3" /> {detail.customerPhone}
-                  </div>
-                  {detail.customerDni && (
-                    <div className="text-xs text-muted-foreground">
-                      DNI: {detail.customerDni}
-                    </div>
-                  )}
+        <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] p-0 gap-0 flex flex-col overflow-hidden">
+          {/* Header con status + fechas en una sola fila */}
+          <DialogHeader className="px-6 py-4 border-b bg-card shrink-0 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <div className="h-9 w-9 rounded-lg bg-[#003b73]/10 flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-[#003b73]" />
                 </div>
-                <div className="space-y-1">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Vehículo
-                  </div>
-                  <div className="font-medium flex items-center gap-1">
-                    <Car className="h-3 w-3" /> {detail.vehicleBrand}{" "}
-                    {detail.vehicleModel} {detail.vehicleYear}
-                  </div>
-                  <div className="text-xs text-muted-foreground font-mono">
-                    {detail.vehicleDomain}
-                  </div>
-                  {detail.vehicleInsurance && (
-                    <div className="text-xs text-muted-foreground">
-                      Seguro: {detail.vehicleInsurance}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge
-                  variant="outline"
-                  className={`gap-1 ${STATUS_CONFIG[detail.status].color}`}
-                >
-                  {STATUS_CONFIG[detail.status].label}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  Creada: {new Date(detail.createdAt).toLocaleString("es-AR")}
-                </span>
-                {detail.sentAt && (
-                  <span className="text-xs text-muted-foreground">
-                    Enviada: {new Date(detail.sentAt).toLocaleString("es-AR")}
-                  </span>
-                )}
-                {detail.acceptedAt && (
-                  <span className="text-xs text-green-600">
-                    Aceptada:{" "}
-                    {new Date(detail.acceptedAt).toLocaleString("es-AR")}
-                  </span>
-                )}
-                {detail.rejectedAt && (
-                  <span className="text-xs text-destructive">
-                    Rechazada:{" "}
-                    {new Date(detail.rejectedAt).toLocaleString("es-AR")}
-                  </span>
-                )}
-              </div>
-
-              {/* Historial de envíos */}
-              <BudgetHistoryButton
-                budgetId={detail.id}
-                budgetNumber={detail.number}
-                variant="label"
-              />
-
-              {/* Conceptos */}
-              <div className="space-y-2">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">
-                  Conceptos ({detail.concepts.length})
-                </div>
-                {detail.concepts.length === 0 ? (
-                  <div className="text-xs italic text-muted-foreground">
-                    Sin conceptos.
-                  </div>
-                ) : (
-                  <div className="rounded-md border divide-y">
-                    {detail.concepts.map((c) => (
-                      <div
-                        key={c.id}
-                        className="p-3 flex items-center justify-between gap-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-medium text-sm">
-                            {c.category.replaceAll("_", " ")}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {c.type === "DESCRIPTIVO" &&
-                              (c.subdetails.length > 0
-                                ? `${c.subdetails.length} subdetalles`
-                                : "sin subdetalles")}
-                            {c.type === "UNIDADES" &&
-                              `${INT.format(Number(c.units))} × ${ARS_PRECISE.format(Number(c.unitValue))}`}
-                            {c.type === "FIJO" &&
-                              (c.fixedDescription ?? "Importe fijo")}
-                          </div>
-                        </div>
-                        {c.type !== "DESCRIPTIVO" && (
-                          <div className="text-sm font-medium">
-                            {ARS_PRECISE.format(Number(c.subtotal))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Repuestos */}
-              <div className="space-y-2">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">
-                  Repuestos ({detail.parts.length})
-                </div>
-                {detail.parts.length === 0 ? (
-                  <div className="text-xs italic text-muted-foreground">
-                    Sin repuestos.
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-20">Cant.</TableHead>
-                        <TableHead>Descripción</TableHead>
-                        <TableHead className="w-32 text-right">
-                          P. unitario
-                        </TableHead>
-                        <TableHead className="w-32 text-right">
-                          Subtotal
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {detail.parts.map((p) => (
-                        <TableRow key={p.id}>
-                          <TableCell className="text-sm">
-                            {INT.format(Number(p.quantity))}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {p.description}
-                          </TableCell>
-                          <TableCell className="text-right text-sm">
-                            {ARS_PRECISE.format(Number(p.unitPrice))}
-                          </TableCell>
-                          <TableCell className="text-right text-sm font-medium">
-                            {ARS_PRECISE.format(Number(p.subtotal))}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </div>
-
-              {/* Totales */}
-              <Card className="p-4">
-                <dl className="space-y-1 text-sm max-w-sm ml-auto">
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Subtotal MO</dt>
-                    <dd>{ARS_PRECISE.format(Number(detail.laborSubtotal))}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">
-                      IVA {Number(detail.ivaRate)}%
-                    </dt>
-                    <dd>{ARS_PRECISE.format(Number(detail.ivaAmount))}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">MO con IVA</dt>
-                    <dd>{ARS_PRECISE.format(Number(detail.laborTotal))}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Repuestos</dt>
-                    <dd>{ARS_PRECISE.format(Number(detail.partsSubtotal))}</dd>
-                  </div>
-                  <div className="border-t pt-2 mt-2 flex justify-between items-baseline">
-                    <dt className="font-bold">TOTAL</dt>
-                    <dd className="font-bold text-lg text-[#003b73]">
-                      {ARS_PRECISE.format(Number(detail.grandTotal))}
-                    </dd>
-                  </div>
-                </dl>
-              </Card>
-
-              {/* Observaciones */}
-              <div className="text-xs text-muted-foreground border-t pt-3 space-y-0.5">
-                <div>
-                  Validez: {detail.validityDays} días · Entrega estimada:{" "}
-                  {detail.deliveryDays} días · Pago: {detail.paymentCondition}
-                </div>
-                {detail.observations && (
-                  <div className="italic mt-1">{detail.observations}</div>
-                )}
-              </div>
-
-              {statusError && (
-                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />{" "}
-                  <span>{statusError}</span>
+                Cotización #{detail?.number ?? "…"}
+              </DialogTitle>
+              {detail && (
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`gap-1 ${STATUS_CONFIG[detail.status].color}`}
+                  >
+                    {STATUS_CONFIG[detail.status].label}
+                  </Badge>
+                  <BudgetHistoryButton
+                    budgetId={detail.id}
+                    budgetNumber={detail.number}
+                    variant="label"
+                  />
                 </div>
               )}
             </div>
-          )}
+            <DialogDescription className="text-xs flex flex-wrap gap-x-3 gap-y-0.5">
+              {detail && (
+                <>
+                  <span>
+                    Creada:{" "}
+                    {new Date(detail.createdAt).toLocaleString("es-AR")}
+                  </span>
+                  {detail.sentAt && (
+                    <span>
+                      · Enviada:{" "}
+                      {new Date(detail.sentAt).toLocaleString("es-AR")}
+                    </span>
+                  )}
+                  {detail.acceptedAt && (
+                    <span className="text-green-600">
+                      · Aceptada:{" "}
+                      {new Date(detail.acceptedAt).toLocaleString("es-AR")}
+                    </span>
+                  )}
+                  {detail.rejectedAt && (
+                    <span className="text-destructive">
+                      · Rechazada:{" "}
+                      {new Date(detail.rejectedAt).toLocaleString("es-AR")}
+                    </span>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
 
-          <DialogFooter className="flex-wrap gap-2">
+          {/* Body scrolleable */}
+          <div className="flex-1 overflow-y-auto px-6 py-5 bg-muted/20">
+            {detailLoading && (
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 inline animate-spin mr-2" /> Cargando…
+              </div>
+            )}
+
+            {!detailLoading && detail && (
+              <div className="space-y-5">
+                {/* Cliente + Vehículo en cards prolijas */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="rounded-lg border bg-white p-4 space-y-2">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                      <User className="h-3 w-3" /> Cliente
+                    </div>
+                    <div className="font-semibold text-slate-900">
+                      {detail.customerName}
+                    </div>
+                    <div className="space-y-1 text-xs text-slate-600">
+                      <div className="flex items-center gap-1.5">
+                        <Mail className="h-3 w-3 shrink-0 text-slate-400" />
+                        <span className="break-all">
+                          {detail.customerEmail}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Phone className="h-3 w-3 shrink-0 text-slate-400" />
+                        {detail.customerPhone}
+                      </div>
+                      {detail.customerDni && (
+                        <div className="text-slate-500">
+                          DNI: {detail.customerDni}
+                        </div>
+                      )}
+                      {detail.customerAddress &&
+                        detail.customerAddress !== "-" && (
+                          <div className="text-slate-500">
+                            Dirección: {detail.customerAddress}
+                          </div>
+                        )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-white p-4 space-y-2">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                      <Car className="h-3 w-3" /> Vehículo
+                    </div>
+                    <div className="font-semibold text-slate-900">
+                      {detail.vehicleBrand} {detail.vehicleModel}{" "}
+                      {detail.vehicleYear}
+                    </div>
+                    <div className="space-y-1 text-xs text-slate-600">
+                      <div className="font-mono text-slate-700">
+                        {detail.vehicleDomain}
+                      </div>
+                      {detail.vehicleChassis && (
+                        <div className="font-mono text-slate-500">
+                          Chasis: {detail.vehicleChassis}
+                        </div>
+                      )}
+                      {detail.vehiclePerladoTricapa && (
+                        <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-100 border border-amber-200 text-amber-800 font-bold uppercase tracking-wider text-[11px]">
+                          PERLADO TRICAPA
+                        </div>
+                      )}
+                      {detail.vehicleInsurance && (
+                        <div className="text-slate-500">
+                          Seguro: {detail.vehicleInsurance}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Conceptos */}
+                <div className="space-y-2">
+                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                    Conceptos ({detail.concepts.length})
+                  </div>
+                  {detail.concepts.length === 0 ? (
+                    <div className="text-xs italic text-muted-foreground">
+                      Sin conceptos.
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border bg-white divide-y">
+                      {detail.concepts.map((c) => (
+                        <div
+                          key={c.id}
+                          className="px-4 py-3 flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-sm text-slate-900">
+                              {c.category.replaceAll("_", " ")}
+                            </div>
+                            <div className="text-xs text-slate-500 mt-0.5">
+                              {c.type === "DESCRIPTIVO" &&
+                                (c.subdetails.length > 0
+                                  ? `${c.subdetails.length} subdetalles seleccionados`
+                                  : "sin subdetalles")}
+                              {c.type === "UNIDADES" &&
+                                `${INT.format(Number(c.units))} × ${ARS_PRECISE.format(Number(c.unitValue))}`}
+                              {c.type === "FIJO" &&
+                                (c.fixedDescription ?? "Importe fijo")}
+                            </div>
+                          </div>
+                          {c.type !== "DESCRIPTIVO" && (
+                            <div className="text-sm font-semibold text-slate-900 tabular-nums shrink-0">
+                              {ARS_PRECISE.format(Number(c.subtotal))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Repuestos */}
+                <div className="space-y-2">
+                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                    Repuestos ({detail.parts.length})
+                  </div>
+                  {detail.parts.length === 0 ? (
+                    <div className="text-xs italic text-muted-foreground">
+                      Sin repuestos.
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border bg-white overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-20">Cant.</TableHead>
+                            <TableHead>Descripción</TableHead>
+                            <TableHead className="w-32 text-right">
+                              P. unitario
+                            </TableHead>
+                            <TableHead className="w-32 text-right">
+                              Subtotal
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {detail.parts.map((p) => (
+                            <TableRow key={p.id}>
+                              <TableCell className="text-sm tabular-nums">
+                                {INT.format(Number(p.quantity))}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {p.description}
+                              </TableCell>
+                              <TableCell className="text-right text-sm tabular-nums">
+                                {ARS_PRECISE.format(Number(p.unitPrice))}
+                              </TableCell>
+                              <TableCell className="text-right text-sm font-semibold tabular-nums">
+                                {ARS_PRECISE.format(Number(p.subtotal))}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Totales: card alineada a la derecha */}
+                <div className="flex justify-end">
+                  <div className="w-full sm:w-auto sm:min-w-[320px] rounded-lg border bg-white p-4">
+                    <dl className="space-y-1 text-sm">
+                      <div className="flex justify-between gap-6">
+                        <dt className="text-slate-500">Subtotal MO</dt>
+                        <dd className="tabular-nums">
+                          {ARS_PRECISE.format(Number(detail.laborSubtotal))}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-6">
+                        <dt className="text-slate-500">
+                          IVA {Number(detail.ivaRate)}%
+                        </dt>
+                        <dd className="tabular-nums">
+                          {ARS_PRECISE.format(Number(detail.ivaAmount))}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-6">
+                        <dt className="text-slate-500">MO con IVA</dt>
+                        <dd className="tabular-nums">
+                          {ARS_PRECISE.format(Number(detail.laborTotal))}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-6">
+                        <dt className="text-slate-500">Repuestos</dt>
+                        <dd className="tabular-nums">
+                          {ARS_PRECISE.format(Number(detail.partsSubtotal))}
+                        </dd>
+                      </div>
+                      <div className="border-t pt-2 mt-2 flex justify-between items-baseline gap-6">
+                        <dt className="font-bold">TOTAL</dt>
+                        <dd className="font-bold text-lg text-[#003b73] tabular-nums">
+                          {ARS_PRECISE.format(Number(detail.grandTotal))}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </div>
+
+                {/* Observaciones */}
+                <div className="rounded-lg border bg-white px-4 py-3 text-xs text-slate-600 space-y-1">
+                  <div>
+                    <span className="font-medium text-slate-700">Validez:</span>{" "}
+                    {detail.validityDays} días ·{" "}
+                    <span className="font-medium text-slate-700">Entrega:</span>{" "}
+                    {detail.deliveryDays} días ·{" "}
+                    <span className="font-medium text-slate-700">Pago:</span>{" "}
+                    {detail.paymentCondition}
+                  </div>
+                  {detail.observations && (
+                    <div className="italic mt-1 text-slate-500 border-t pt-1.5">
+                      {detail.observations}
+                    </div>
+                  )}
+                </div>
+
+                {statusError && (
+                  <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />{" "}
+                    <span>{statusError}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex-wrap gap-2 px-6 py-3 border-t bg-card shrink-0">
             <Button variant="outline" onClick={() => setDetailId(null)}>
               Cerrar
             </Button>

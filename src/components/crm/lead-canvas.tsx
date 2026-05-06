@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -1404,19 +1403,6 @@ function VehicleSection({
           mono
           onSave={(v) => onPatch({ chassis: v.trim().toUpperCase() || null })}
         />
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="perladoTricapa"
-            checked={vehicle.perladoTricapa}
-            onCheckedChange={(c) => onPatch({ perladoTricapa: Boolean(c) })}
-          />
-          <Label
-            htmlFor="perladoTricapa"
-            className="text-xs font-medium text-slate-700 cursor-pointer"
-          >
-            Pintura perlada tricapa
-          </Label>
-        </div>
         <div className="h-px bg-slate-100 my-1" />
         <div className="grid grid-cols-2 gap-2">
           <InsuranceField

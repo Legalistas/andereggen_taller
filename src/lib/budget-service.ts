@@ -49,6 +49,9 @@ export type BudgetPayload = {
   observations?: string | null;
   /** Aclaración libre sobre los repuestos a proveer — sale en el PDF al cliente. */
   partsNote?: string | null;
+  /** Pintura perlada tricapa — se setea por presupuesto (un mismo auto
+   *  puede tener distintos budgets con o sin tricapa). */
+  perladoTricapa?: boolean;
   concepts: ConceptPayload[];
   parts: PartPayload[];
 };
@@ -123,6 +126,8 @@ export function validateBudgetPayload(p: unknown): BudgetPayload {
     observations:
       typeof body.observations === "string" ? body.observations : null,
     partsNote: typeof body.partsNote === "string" ? body.partsNote : null,
+    perladoTricapa:
+      typeof body.perladoTricapa === "boolean" ? body.perladoTricapa : undefined,
     concepts,
     parts,
   };
@@ -244,7 +249,9 @@ export async function createBudgetForLead(params: {
         vehicleYear: lead.vehicle.year,
         vehicleDomain: lead.vehicle.domain,
         vehicleChassis: lead.vehicle.chassis,
-        vehiclePerladoTricapa: lead.vehicle.perladoTricapa,
+        // Si el payload lo trae, gana; si no, fallback al flag del vehículo (compatibilidad).
+        vehiclePerladoTricapa:
+          payload.perladoTricapa ?? lead.vehicle.perladoTricapa,
         vehicleInsurance: lead.vehicle.secure,
         insuranceCoverageType: lead.vehicle.coverageType,
         insuranceFranchise: lead.vehicle.franchise,
@@ -330,6 +337,8 @@ export async function updateBudget(params: {
         paymentCondition: payload.paymentCondition ?? existing.paymentCondition,
         observations: payload.observations ?? existing.observations,
         partsNote: payload.partsNote ?? existing.partsNote,
+        vehiclePerladoTricapa:
+          payload.perladoTricapa ?? existing.vehiclePerladoTricapa,
         laborSubtotal: totals.laborSubtotal,
         ivaRate: totals.ivaRate,
         ivaAmount: totals.ivaAmount,

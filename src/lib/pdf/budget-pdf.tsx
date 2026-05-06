@@ -332,9 +332,9 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
                 <Text style={s.label}>Tel</Text>
                 <Text style={s.value}>{data.customer.phone}</Text>
               </View>
-              {data.customer.address ? (
+              {data.customer.address && data.customer.address !== "-" ? (
                 <View style={s.row}>
-                  <Text style={s.label}>Dir.</Text>
+                  <Text style={s.label}>Dirección</Text>
                   <Text style={s.value}>{data.customer.address}</Text>
                 </View>
               ) : null}
@@ -368,7 +368,14 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
               {data.vehicle.perladoTricapa ? (
                 <View style={s.row}>
                   <Text style={s.label}>Pintura</Text>
-                  <Text style={s.value}>Perlada tricapa</Text>
+                  <Text
+                    style={[
+                      s.value,
+                      { fontWeight: "bold", letterSpacing: 0.5 },
+                    ]}
+                  >
+                    PERLADO TRICAPA
+                  </Text>
                 </View>
               ) : null}
               {data.vehicle.insurance ? (
