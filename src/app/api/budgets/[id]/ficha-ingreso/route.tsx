@@ -9,6 +9,7 @@
  *     insurance?: string         // resaltado amarillo (compañía de seguros)
  *     technicalInsurance?: string // resaltado amarillo (seg. técnico / tercero)
  *     franchiseAmount?: string   // resaltado amarillo, ya formateado o "-"
+ *     franchiseLabel?: string    // texto editable: "Monto de franquicia a abonar..." o "Monto a abonar..." (particular)
  *     paymentCondition?: string
  *     customerName?: string
  *     customerAddress?: string
@@ -88,6 +89,15 @@ export async function POST(request: Request, ctx: RouteContext) {
       ? ARS.format(Number(budget.insuranceFranchise))
       : "-";
 
+  // Si el presupuesto tiene seguro o franquicia cargados, asumimos caso por
+  // seguro y mantenemos "de franquicia" en el texto. Si no, lo sacamos
+  // (caso particular). El operador puede editar libremente desde la UI.
+  const isFranchiseCase =
+    !!budget.vehicleInsurance || budget.insuranceFranchise !== null;
+  const defaultFranchiseLabel = isFranchiseCase
+    ? "Monto de franquicia a abonar en efectivo al retirar el rodado:"
+    : "Monto a abonar en efectivo al retirar el rodado:";
+
   const data: FichaIngresoData = {
     date: pickStr(overrides.date) ?? fmtToday(),
     budgetNumber: budget.number,
@@ -116,6 +126,8 @@ export async function POST(request: Request, ctx: RouteContext) {
         (budget.lead.vehicle?.thirdPartySecure ?? ""),
       franchiseAmount: pickStr(overrides.franchiseAmount) ?? defaultFranchise,
     },
+    franchiseLabel:
+      pickStr(overrides.franchiseLabel) ?? defaultFranchiseLabel,
     paymentCondition:
       pickStr(overrides.paymentCondition) ?? budget.paymentCondition,
     company: {

@@ -15,6 +15,7 @@ import {
   Pencil,
   Phone,
   Plus,
+  Printer,
   Send,
   Shield,
   Trash2,
@@ -55,6 +56,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { parseWebLeadNotes } from "@/lib/parse-web-lead-notes";
 import { BudgetAdminDialog } from "./budget-admin-dialog";
 import { BudgetHistoryButton } from "./budget-history-button";
 import { SendBudgetDialog } from "./send-budget-dialog";
@@ -153,6 +155,7 @@ type RepairLite = {
 type LeadDetail = {
   id: string;
   status: LeadStatus;
+  source: string | null;
   notes: string | null;
   lostReason: LeadLostReason | null;
   lostNotes: string | null;
@@ -488,8 +491,18 @@ export function LeadCanvas({
                 }}
               />
 
-              {lead.vehicle && (
+              {lead.vehicle ? (
                 <VehicleSection vehicle={lead.vehicle} onPatch={patchVehicle} />
+              ) : (
+                <WebLeadVehicleStub
+                  leadId={lead.id}
+                  notes={lead.notes}
+                  source={lead.source}
+                  onAttached={() => {
+                    setInternalReload((n) => n + 1);
+                    onChanged?.();
+                  }}
+                />
               )}
 
               <CustomerSection
@@ -1706,6 +1719,36 @@ function BudgetsSection({
                 </button>
                 <button
                   type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(
+                        `/api/budgets/${b.id}/ficha-oscar`,
+                        { method: "POST" },
+                      );
+                      if (!res.ok) {
+                        const j = await res.json().catch(() => ({}));
+                        throw new Error(j?.error ?? `HTTP ${res.status}`);
+                      }
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      window.open(url, "_blank");
+                      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    } catch (e) {
+                      alert(
+                        e instanceof Error
+                          ? e.message
+                          : "No se pudo generar la Ficha Oscar",
+                      );
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                  title="Ficha Oscar (interno) — para que Oscar/Alfredo finalicen el ppto antes de enviar"
+                >
+                  <Printer className="h-3 w-3" />
+                  Ficha Oscar
+                </button>
+                <button
+                  type="button"
                   onClick={() => onDeleteBudget?.(b)}
                   className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50 transition-colors"
                   title="Eliminar presupuesto"
@@ -2205,6 +2248,239 @@ function InsuranceField({
         </PopoverContent>
       </Popover>
     </div>
+  );
+}
+
+/**
+ * Cuando un lead vino del formulario web (source=web) y todavía no tiene un
+ * `CustomerVehicle` asignado (porque el form no pide patente), mostramos esta
+ * tarjeta con los datos que el cliente cargó en el form (parseados desde
+ * `notes`) y un botón para cargar el vehículo formal — lo único nuevo que
+ * pide es la patente.
+ */
+function WebLeadVehicleStub({
+  leadId,
+  notes,
+  source,
+  onAttached,
+}: {
+  leadId: string;
+  notes: string | null;
+  source: string | null;
+  onAttached: () => void;
+}) {
+  const parsed = parseWebLeadNotes(notes);
+  const isWeb = source === "web" || parsed.isWebForm;
+  const [open, setOpen] = useState(false);
+  const [brand, setBrand] = useState(parsed.brand);
+  const [model, setModel] = useState(parsed.model);
+  const [year, setYear] = useState(parsed.year);
+  const [domain, setDomain] = useState("");
+  const [insurance, setInsurance] = useState(parsed.insurance);
+  const [thirdPartyInsurance, setThirdPartyInsurance] = useState(
+    parsed.thirdPartyInsurance,
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isWeb) {
+    return (
+      <SectionCard
+        icon={Car}
+        title="Vehículo"
+        iconTint="text-slate-400"
+        iconBg="bg-slate-100"
+      >
+        <p className="text-sm text-slate-500">
+          Sin vehículo asignado.
+        </p>
+      </SectionCard>
+    );
+  }
+
+  const handleSubmit = async () => {
+    setError(null);
+    if (!brand.trim() || !model.trim() || !year.trim() || !domain.trim()) {
+      setError("Marca, modelo, año y patente son obligatorios.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/crm/leads/${leadId}/attach-vehicle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand: brand.trim(),
+          model: model.trim(),
+          year: year.trim(),
+          domain: domain.trim().toUpperCase(),
+          insurance: insurance.trim(),
+          thirdPartyInsurance: thirdPartyInsurance.trim(),
+          clearWebNotes: true,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      setOpen(false);
+      onAttached();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al cargar el vehículo");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      icon={Car}
+      title="Vehículo (del formulario web)"
+      iconTint="text-amber-600"
+      iconBg="bg-amber-50"
+    >
+      <div className="space-y-3">
+        <div className="rounded-md border border-amber-200 bg-amber-50/50 p-3 text-xs text-slate-700 space-y-1">
+          {parsed.brand && (
+            <div>
+              <span className="font-semibold">Marca:</span> {parsed.brand}
+            </div>
+          )}
+          {parsed.model && (
+            <div>
+              <span className="font-semibold">Modelo:</span> {parsed.model}
+            </div>
+          )}
+          {parsed.year && (
+            <div>
+              <span className="font-semibold">Año:</span> {parsed.year}
+            </div>
+          )}
+          {parsed.insurance && (
+            <div>
+              <span className="font-semibold">Seguro propio:</span>{" "}
+              {parsed.insurance}
+            </div>
+          )}
+          {parsed.thirdPartyInsurance && (
+            <div>
+              <span className="font-semibold">Seguro del tercero:</span>{" "}
+              {parsed.thirdPartyInsurance}
+            </div>
+          )}
+          <p className="pt-1 text-[11px] text-amber-800">
+            Falta la patente para crear el vehículo.
+          </p>
+        </div>
+
+        <Button
+          size="sm"
+          onClick={() => setOpen(true)}
+          className="w-full"
+        >
+          <Plus className="h-3.5 w-3.5 mr-1" /> Cargar vehículo
+        </Button>
+      </div>
+
+      <Dialog open={open} onOpenChange={(v) => !submitting && setOpen(v)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cargar vehículo</DialogTitle>
+            <DialogDescription>
+              Completá los datos para crear el vehículo y vincularlo al lead.
+              Lo que vino del formulario ya está pre-cargado.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 py-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-1">
+                <Label className="text-xs">Marca *</Label>
+                <Input
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  disabled={submitting}
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label className="text-xs">Modelo *</Label>
+                <Input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  disabled={submitting}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-1">
+                <Label className="text-xs">Año *</Label>
+                <Input
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  disabled={submitting}
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label className="text-xs">Patente *</Label>
+                <Input
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value.toUpperCase())}
+                  className="font-mono uppercase"
+                  placeholder="AB123CD"
+                  disabled={submitting}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-1">
+                <Label className="text-xs">Seguro propio</Label>
+                <Input
+                  value={insurance}
+                  onChange={(e) => setInsurance(e.target.value)}
+                  disabled={submitting}
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label className="text-xs">Seguro del tercero</Label>
+                <Input
+                  value={thirdPartyInsurance}
+                  onChange={(e) => setThirdPartyInsurance(e.target.value)}
+                  disabled={submitting}
+                />
+              </div>
+            </div>
+
+            {error && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={submitting}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Guardando…
+                </>
+              ) : (
+                "Crear y vincular"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </SectionCard>
   );
 }
 

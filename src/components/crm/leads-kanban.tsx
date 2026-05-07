@@ -384,8 +384,12 @@ function LeadCard({
         }
       }}
       className={`group rounded-md border bg-white p-3 shadow-xs cursor-pointer active:cursor-grabbing transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#003b73]/40 ${
-        dragging ? "opacity-40" : "hover:border-[#003b73]/40 hover:shadow-sm"
-      } ${moving ? "opacity-60 pointer-events-none" : ""}`}
+        lead.source === "web" && !lead.vehicle
+          ? "border-amber-400 border-l-4 hover:border-amber-500 hover:shadow-sm"
+          : dragging
+            ? "opacity-40"
+            : "hover:border-[#003b73]/40 hover:shadow-sm"
+      } ${dragging ? "opacity-40" : ""} ${moving ? "opacity-60 pointer-events-none" : ""}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">

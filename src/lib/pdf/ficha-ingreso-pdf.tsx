@@ -32,6 +32,7 @@ export type FichaIngresoData = {
     technicalInsurance: string;
     franchiseAmount: string;
   };
+  franchiseLabel: string;
   paymentCondition: string;
   company: {
     name: string;
@@ -44,7 +45,6 @@ export type FichaIngresoData = {
 
 const C = {
   ink: "#000",
-  highlight: "#fff4a3",
 } as const;
 
 const s = StyleSheet.create({
@@ -81,10 +81,7 @@ const s = StyleSheet.create({
   dataCol: { flexDirection: "row", flex: 1, alignItems: "flex-start" },
   dataLabel: { fontWeight: "bold", marginRight: 4 },
   dataValue: {},
-  highlight: {
-    backgroundColor: C.highlight,
-    paddingHorizontal: 3,
-  },
+  highlight: {},
 
   // Manifiesto en texto plano
   paragraph: { marginBottom: 4, lineHeight: 1.45 },
@@ -227,9 +224,7 @@ export function FichaIngresoPdf({ data }: { data: FichaIngresoData }) {
           Condición de pago: {data.paymentCondition}.
         </Text>
         <View style={[s.dataRow, { flexWrap: "wrap" }]}>
-          <Text style={s.inlineLabel}>
-            Monto de franquicia a abonar en efectivo al retirar el rodado:{" "}
-          </Text>
+          <Text style={s.inlineLabel}>{data.franchiseLabel}{" "}</Text>
           <Text style={s.highlight}>
             {data.highlights.franchiseAmount || "-"}
           </Text>

@@ -87,6 +87,7 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
   const [insurance, setInsurance] = useState("");
   const [techInsurance, setTechInsurance] = useState("");
   const [franchiseAmount, setFranchiseAmount] = useState("");
+  const [franchiseLabel, setFranchiseLabel] = useState("");
   const [paymentCondition, setPaymentCondition] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
@@ -142,6 +143,15 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
           b.insuranceFranchise !== null
             ? ARS.format(Number(b.insuranceFranchise))
             : "-",
+        );
+        // Default del label: si hay seguro o franquicia cargados, asumimos
+        // caso por seguro. Si no, caso particular (sin "de franquicia").
+        const isFranchiseCase =
+          !!b.vehicleInsurance || b.insuranceFranchise !== null;
+        setFranchiseLabel(
+          isFranchiseCase
+            ? "Monto de franquicia a abonar en efectivo al retirar el rodado:"
+            : "Monto a abonar en efectivo al retirar el rodado:",
         );
         setPaymentCondition(b.paymentCondition);
         setCustomerName(b.customerName);
@@ -207,6 +217,7 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
       insurance: insurance.trim(),
       technicalInsurance: techInsurance.trim(),
       franchiseAmount: franchiseAmount.trim(),
+      franchiseLabel: franchiseLabel.trim(),
       paymentCondition: paymentCondition.trim(),
       customerName: customerName.trim(),
       customerAddress: customerAddress.trim(),
@@ -506,6 +517,46 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
                         value={franchiseAmount}
                         onChange={(e) => setFranchiseAmount(e.target.value)}
                         placeholder="$ 250.000,00 o '-' si no aplica"
+                      />
+                    </div>
+                    <div className="grid gap-1.5 col-span-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">
+                          Texto del monto (franquicia / particular)
+                        </Label>
+                        <div className="flex gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[10px]"
+                            onClick={() =>
+                              setFranchiseLabel(
+                                "Monto de franquicia a abonar en efectivo al retirar el rodado:",
+                              )
+                            }
+                          >
+                            Franquicia
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[10px]"
+                            onClick={() =>
+                              setFranchiseLabel(
+                                "Monto a abonar en efectivo al retirar el rodado:",
+                              )
+                            }
+                          >
+                            Particular
+                          </Button>
+                        </div>
+                      </div>
+                      <Input
+                        value={franchiseLabel}
+                        onChange={(e) => setFranchiseLabel(e.target.value)}
+                        placeholder="Texto que precede al monto"
                       />
                     </div>
                   </div>
