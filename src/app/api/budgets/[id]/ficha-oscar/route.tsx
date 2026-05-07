@@ -133,11 +133,25 @@ export async function POST(request: Request, ctx: RouteContext) {
     parts: budget.adminItems.map((it) => ({
       description: it.description,
       notes: it.notes,
-      quotes: it.quotes.map((q) => ({
-        supplierName: q.supplierName,
-        price: ARS.format(Number(q.price)),
-        notes: q.notes,
-      })),
+      quotes: it.quotes.map((q) => {
+        const priceNum = Number(q.price);
+        const discountNum =
+          q.discount === null ? null : Number(q.discount);
+        const net =
+          discountNum !== null && discountNum > 0
+            ? priceNum * (1 - discountNum / 100)
+            : priceNum;
+        return {
+          supplierName: q.supplierName,
+          price: ARS.format(priceNum),
+          netPrice: ARS.format(net),
+          discount: discountNum,
+          partCode: q.partCode,
+          availability: q.availability,
+          photos: q.photos,
+          notes: q.notes,
+        };
+      }),
     })),
     company: {
       name: settings.companyName,

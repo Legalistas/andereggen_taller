@@ -418,6 +418,14 @@ model BudgetAdminQuote {
   item         BudgetAdminItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
   supplierName String
   price        Decimal         @db.Decimal(14, 2)
+  /** Código de repuesto que da el proveedor (puede repetirse entre proveedores) */
+  partCode     String?
+  /** Descuento en porcentaje 0–100 — el neto se calcula price * (1 - discount/100) */
+  discount     Decimal?        @db.Decimal(5, 2)
+  /** Disponibilidad declarada por el proveedor (texto libre: "En stock", "3 días", etc.) */
+  availability String?
+  /** URLs de fotos asociadas a esta cotización (Drive, etc.) */
+  photos       String[]
   notes        String?         @db.Text
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt

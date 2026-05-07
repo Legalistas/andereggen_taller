@@ -44,8 +44,22 @@ type Quote = {
   id: string;
   supplierName: string;
   price: string | number;
+  partCode: string | null;
+  /** Porcentaje 0–100 (null si no se cargó) */
+  discount: string | number | null;
+  availability: string | null;
+  photos: string[];
   notes: string | null;
 };
+
+/** Precio neto = price * (1 - discount/100). Sin descuento ⇒ price. */
+function netPrice(q: Pick<Quote, "price" | "discount">): number {
+  const p = Number(q.price);
+  const d = q.discount === null || q.discount === undefined ? 0 : Number(q.discount);
+  if (!Number.isFinite(p)) return 0;
+  if (!Number.isFinite(d) || d <= 0) return p;
+  return p * (1 - d / 100);
+}
 
 type Purchase = {
   id: string;
@@ -133,10 +147,10 @@ export function BudgetAdminDialog({
   }, 0);
 
   const totalQuoted = (items ?? []).reduce((sum, it) => {
-    // Para items sin compra todavía, sumamos la cotización más baja como estimado.
+    // Para items sin compra todavía, sumamos la cotización más baja (neta) como estimado.
     if (it.purchase) return sum;
     if (it.quotes.length === 0) return sum;
-    const min = Math.min(...it.quotes.map((q) => Number(q.price)));
+    const min = Math.min(...it.quotes.map((q) => netPrice(q)));
     return sum + min;
   }, 0);
 
@@ -384,7 +398,7 @@ function ItemCard({
 
   const minQuote =
     item.quotes.length > 0
-      ? Math.min(...item.quotes.map((q) => Number(q.price)))
+      ? Math.min(...item.quotes.map((q) => netPrice(q)))
       : null;
 
   const saveItem = async () => {
@@ -583,26 +597,56 @@ function QuotesBlock({
 }) {
   const [supplier, setSupplier] = useState("");
   const [price, setPrice] = useState("");
+  const [partCode, setPartCode] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [availability, setAvailability] = useState("");
   const [notes, setNotes] = useState("");
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [newPhoto, setNewPhoto] = useState("");
+
+  const resetForm = () => {
+    setSupplier("");
+    setPrice("");
+    setPartCode("");
+    setDiscount("");
+    setAvailability("");
+    setNotes("");
+    setPhotos([]);
+    setNewPhoto("");
+  };
+
+  const addPhotoUrl = () => {
+    const url = newPhoto.trim();
+    if (!url) return;
+    setPhotos((prev) => [...prev, url]);
+    setNewPhoto("");
+  };
 
   const addQuote = async () => {
     if (!supplier.trim() || !price.trim()) return;
-    const res = await fetch(
-      `/api/budget-admin-items/${item.id}/quotes`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          supplierName: supplier.trim(),
-          price: Number(price),
-          notes: notes.trim() || undefined,
-        }),
-      },
-    );
+    const discountTrim = discount.trim();
+    if (discountTrim !== "") {
+      const d = Number(discountTrim);
+      if (!Number.isFinite(d) || d < 0 || d > 100) {
+        alert("El descuento debe estar entre 0 y 100");
+        return;
+      }
+    }
+    const res = await fetch(`/api/budget-admin-items/${item.id}/quotes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        supplierName: supplier.trim(),
+        price: Number(price),
+        partCode: partCode.trim() || undefined,
+        discount: discountTrim !== "" ? Number(discountTrim) : undefined,
+        availability: availability.trim() || undefined,
+        photos,
+        notes: notes.trim() || undefined,
+      }),
+    });
     if (res.ok) {
-      setSupplier("");
-      setPrice("");
-      setNotes("");
+      resetForm();
       onChanged();
     } else {
       const body = await res.json().catch(() => ({}));
@@ -624,78 +668,209 @@ function QuotesBlock({
         Cotizaciones de proveedores ({item.quotes.length})
       </div>
       {item.quotes.length > 0 && (
-        <ul className="space-y-1">
+        <ul className="space-y-1.5">
           {item.quotes.map((q) => {
-            const isMin = minQuote !== null && Number(q.price) === minQuote;
+            const net = netPrice(q);
+            const isMin = minQuote !== null && net === minQuote;
+            const hasDiscount =
+              q.discount !== null &&
+              q.discount !== undefined &&
+              Number(q.discount) > 0;
             return (
               <li
                 key={q.id}
-                className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${
-                  isMin ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50"
+                className={`text-xs px-2.5 py-2 rounded-md space-y-1 ${
+                  isMin
+                    ? "bg-emerald-50 border border-emerald-200"
+                    : "bg-slate-50 border border-transparent"
                 }`}
               >
-                <span className="font-medium text-slate-800 min-w-[120px] truncate">
-                  {q.supplierName}
-                </span>
-                <span
-                  className={`font-mono ${isMin ? "text-emerald-700 font-bold" : "text-slate-700"}`}
-                >
-                  {ARS.format(Number(q.price))}
-                </span>
-                {isMin && item.quotes.length > 1 && (
-                  <span className="text-[9px] uppercase font-semibold text-emerald-700">
-                    Mejor
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-slate-800 truncate">
+                    {q.supplierName}
                   </span>
+                  {q.partCode && (
+                    <span className="font-mono text-[10px] text-slate-600 bg-white border px-1.5 py-0.5 rounded">
+                      cód. {q.partCode}
+                    </span>
+                  )}
+                  {q.availability && (
+                    <span className="text-[10px] text-slate-700 bg-white border px-1.5 py-0.5 rounded">
+                      {q.availability}
+                    </span>
+                  )}
+                  <div className="ml-auto flex items-center gap-2">
+                    {hasDiscount ? (
+                      <span className="flex items-baseline gap-1.5">
+                        <span className="text-[10px] text-slate-400 line-through font-mono">
+                          {ARS.format(Number(q.price))}
+                        </span>
+                        <span className="text-[10px] text-amber-700 font-semibold">
+                          -{Number(q.discount)}%
+                        </span>
+                        <span
+                          className={`font-mono ${isMin ? "text-emerald-700 font-bold" : "text-slate-800 font-semibold"}`}
+                        >
+                          {ARS.format(net)}
+                        </span>
+                      </span>
+                    ) : (
+                      <span
+                        className={`font-mono ${isMin ? "text-emerald-700 font-bold" : "text-slate-700"}`}
+                      >
+                        {ARS.format(net)}
+                      </span>
+                    )}
+                    {isMin && item.quotes.length > 1 && (
+                      <span className="text-[9px] uppercase font-semibold text-emerald-700">
+                        Mejor
+                      </span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-destructive"
+                      onClick={() => deleteQuote(q.id)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+                {(q.notes || q.photos.length > 0) && (
+                  <div className="flex items-center gap-2 flex-wrap pl-0.5">
+                    {q.notes && (
+                      <span className="text-[10px] text-slate-500 italic">
+                        {q.notes}
+                      </span>
+                    )}
+                    {q.photos.map((url) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:underline bg-white border px-1.5 py-0.5 rounded"
+                      >
+                        <Camera className="h-2.5 w-2.5" />
+                        {url.length > 32 ? `${url.slice(0, 32)}…` : url}
+                      </a>
+                    ))}
+                  </div>
                 )}
-                {q.notes && (
-                  <span className="text-[10px] text-slate-500 italic flex-1 truncate">
-                    {q.notes}
-                  </span>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 w-6 p-0 ml-auto text-destructive"
-                  onClick={() => deleteQuote(q.id)}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
               </li>
             );
           })}
         </ul>
       )}
-      <div className="grid grid-cols-[1fr_120px_1fr_auto] gap-1.5">
-        <Input
-          placeholder="Proveedor"
-          value={supplier}
-          onChange={(e) => setSupplier(e.target.value)}
-          className="text-xs h-8"
-        />
-        <Input
-          placeholder="$ Precio"
-          type="number"
-          min="0"
-          step="0.01"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          className="text-xs h-8"
-        />
-        <Input
-          placeholder="Notas (opcional)"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="text-xs h-8"
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={addQuote}
-          disabled={!supplier.trim() || !price.trim()}
-          className="h-8 gap-1"
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
+
+      {/* Formulario para agregar nueva cotización */}
+      <div className="rounded-md border border-dashed border-slate-300 p-2.5 space-y-2 bg-white/60">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+          <Input
+            placeholder="Proveedor"
+            value={supplier}
+            onChange={(e) => setSupplier(e.target.value)}
+            className="text-xs h-8"
+          />
+          <Input
+            placeholder="Código repuesto"
+            value={partCode}
+            onChange={(e) => setPartCode(e.target.value)}
+            className="text-xs h-8"
+          />
+          <Input
+            placeholder="Disponibilidad (ej: en stock, 3 días)"
+            value={availability}
+            onChange={(e) => setAvailability(e.target.value)}
+            className="text-xs h-8"
+          />
+          <Input
+            placeholder="$ Precio"
+            type="number"
+            min="0"
+            step="0.01"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            className="text-xs h-8"
+          />
+          <Input
+            placeholder="Descuento %"
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            value={discount}
+            onChange={(e) => setDiscount(e.target.value)}
+            className="text-xs h-8"
+          />
+          <Input
+            placeholder="Notas (opcional)"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="text-xs h-8"
+          />
+        </div>
+
+        {/* Fotos (URLs) */}
+        <div className="space-y-1">
+          {photos.length > 0 && (
+            <ul className="flex flex-wrap gap-1">
+              {photos.map((url, idx) => (
+                <li
+                  // biome-ignore lint/suspicious/noArrayIndexKey: orden estable mientras se carga el form
+                  key={`${url}-${idx}`}
+                  className="inline-flex items-center gap-1 text-[10px] bg-white border px-1.5 py-0.5 rounded"
+                >
+                  <Camera className="h-2.5 w-2.5 text-slate-400" />
+                  <span className="truncate max-w-[180px]">{url}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPhotos((prev) => prev.filter((_, i) => i !== idx))
+                    }
+                    className="text-destructive hover:text-destructive/80"
+                    aria-label="Quitar foto"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex gap-1.5">
+            <Input
+              placeholder="URL de foto (Drive, etc.)"
+              value={newPhoto}
+              onChange={(e) => setNewPhoto(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addPhotoUrl();
+                }
+              }}
+              className="flex-1 text-xs h-8"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={addPhotoUrl}
+              disabled={!newPhoto.trim()}
+              className="h-8 gap-1 text-xs"
+            >
+              <Camera className="h-3 w-3" />
+              Foto
+            </Button>
+            <Button
+              size="sm"
+              onClick={addQuote}
+              disabled={!supplier.trim() || !price.trim()}
+              className="h-8 gap-1 text-xs"
+            >
+              <Plus className="h-3 w-3" />
+              Cotización
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

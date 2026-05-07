@@ -24,7 +24,15 @@ export type FichaOscarSection = {
 
 export type FichaOscarQuote = {
   supplierName: string;
+  /** Precio bruto formateado en ARS */
   price: string;
+  /** Precio neto formateado en ARS — igual a price si no hay descuento */
+  netPrice: string;
+  /** Porcentaje 0–100 (null si no se cargó) */
+  discount: number | null;
+  partCode: string | null;
+  availability: string | null;
+  photos: string[];
   notes: string | null;
 };
 
@@ -172,6 +180,23 @@ const s = StyleSheet.create({
   quoteDash: { marginRight: 5 },
   quoteSupplier: { flex: 1, fontSize: 9 },
   quotePrice: { fontSize: 9, fontWeight: "bold", marginLeft: 6 },
+  quotePriceStrike: {
+    fontSize: 8,
+    color: C.slate500,
+    textDecoration: "line-through",
+    marginLeft: 6,
+  },
+  quoteDiscount: {
+    fontSize: 8,
+    color: C.slate500,
+    marginLeft: 4,
+  },
+  quoteMeta: {
+    fontSize: 8,
+    color: C.slate500,
+    paddingLeft: 22,
+    marginTop: 1,
+  },
   quoteNotes: { fontSize: 8, color: C.slate500, marginLeft: 12 },
 
   empty: {
@@ -320,20 +345,48 @@ export function FichaOscarPdf({ data }: { data: FichaOscarData }) {
                   <Text style={s.partNotes}>{p.notes}</Text>
                 ) : null}
                 {p.quotes.length > 0 ? (
-                  p.quotes.map((q, qi) => (
-                    <View
-                      // biome-ignore lint/suspicious/noArrayIndexKey: orden estable
-                      key={`q-${idx}-${qi}`}
-                      style={s.quoteRow}
-                    >
-                      <Text style={s.quoteDash}>—</Text>
-                      <Text style={s.quoteSupplier}>{q.supplierName}</Text>
-                      <Text style={s.quotePrice}>{q.price}</Text>
-                      {q.notes ? (
-                        <Text style={s.quoteNotes}>({q.notes})</Text>
-                      ) : null}
-                    </View>
-                  ))
+                  p.quotes.map((q, qi) => {
+                    const supplierLine = [
+                      q.supplierName,
+                      q.partCode ? `cód. ${q.partCode}` : null,
+                      q.availability ?? null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    const hasDiscount =
+                      q.discount !== null && q.discount > 0;
+                    const metaLine = [
+                      q.notes ? `(${q.notes})` : null,
+                      q.photos.length > 0
+                        ? `Fotos: ${q.photos.join(" | ")}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join("   ");
+                    return (
+                      <View
+                        // biome-ignore lint/suspicious/noArrayIndexKey: orden estable
+                        key={`q-${idx}-${qi}`}
+                      >
+                        <View style={s.quoteRow}>
+                          <Text style={s.quoteDash}>—</Text>
+                          <Text style={s.quoteSupplier}>{supplierLine}</Text>
+                          {hasDiscount && (
+                            <>
+                              <Text style={s.quotePriceStrike}>{q.price}</Text>
+                              <Text style={s.quoteDiscount}>
+                                -{q.discount}%
+                              </Text>
+                            </>
+                          )}
+                          <Text style={s.quotePrice}>{q.netPrice}</Text>
+                        </View>
+                        {metaLine !== "" && (
+                          <Text style={s.quoteMeta}>{metaLine}</Text>
+                        )}
+                      </View>
+                    );
+                  })
                 ) : (
                   <Text style={s.empty}>Sin cotizaciones.</Text>
                 )}
