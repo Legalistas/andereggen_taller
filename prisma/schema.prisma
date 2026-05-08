@@ -281,6 +281,8 @@ model Lead {
   lostReason  LeadLostReason?
   lostNotes   String?         @db.Text
   source      String? // web, whatsapp, manual, etc.
+  /** Path de la carpeta en el bucket S3/MinIO donde el cliente subió fotos desde el form web (ej: "andereggen/juan-perez"). Se usa en el panel del presupuesto para listar las imágenes. */
+  photosFolder String?        @db.VarChar(255)
   createdById String?
 
   // Actores externos de la cotización (spec 4.3 + 8.1)

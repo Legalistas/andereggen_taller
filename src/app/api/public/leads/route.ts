@@ -34,6 +34,7 @@ interface LeadPublicBody {
   insurance?: string;
   thirdPartyInsurance?: string;
   description?: string;
+  photosFolder?: string;
 }
 
 function buildNotes(body: LeadPublicBody): string {
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
   const phone = body.phone?.trim() ?? "";
   const brand = body.brand?.trim() ?? "";
   const description = body.description?.trim() ?? "";
+  const photosFolder = body.photosFolder?.trim() || null;
 
   if (!name || !email || !phone || !brand || !description) {
     return NextResponse.json(
@@ -129,8 +131,15 @@ export async function POST(request: Request) {
           status: "solicitud",
           source: "web",
           notes: buildNotes(body),
+          photosFolder,
         },
-        select: { id: true, status: true, source: true, createdAt: true },
+        select: {
+          id: true,
+          status: true,
+          source: true,
+          photosFolder: true,
+          createdAt: true,
+        },
       });
     });
 

@@ -562,12 +562,24 @@ export function computeConceptSubtotal(c: ConceptInput): number {
   if (c.type === "UNIDADES") {
     const u = Number(c.units ?? 0);
     const v = Number(c.unitValue ?? 0);
-    return round2(u * v);
+    if (u > 0 && v > 0) return round2(u * v);
+    // Modo "importe directo" — el usuario carga el total sin desglose por
+    // unidades. Ej: CHAPA/PINTURA cobrados como suma fija.
+    return round2(Number(c.fixedAmount ?? 0));
   }
   if (c.type === "FIJO") {
     return round2(Number(c.fixedAmount ?? 0));
   }
   return 0; // DESCRIPTIVO no suma
+}
+
+/** Detecta si un concepto UNIDADES está cargado como importe directo
+ *  (sin desglose unidades × valor). */
+export function isUnidadesFlatAmount(c: ConceptInput): boolean {
+  if (c.type !== "UNIDADES") return false;
+  const u = Number(c.units ?? 0);
+  const v = Number(c.unitValue ?? 0);
+  return !(u > 0 && v > 0) && Number(c.fixedAmount ?? 0) > 0;
 }
 
 export function computePartSubtotal(p: PartInput): number {

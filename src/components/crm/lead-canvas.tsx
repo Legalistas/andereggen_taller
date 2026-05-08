@@ -10,6 +10,7 @@ import {
   ClipboardList,
   FileText,
   Hash,
+  ImageIcon,
   Loader2,
   Mail,
   Pencil,
@@ -159,6 +160,7 @@ type LeadDetail = {
   notes: string | null;
   lostReason: LeadLostReason | null;
   lostNotes: string | null;
+  photosFolder: string | null;
   customer: CustomerDetail;
   vehicle: VehicleDetail | null;
   inspector: UserLite | null;
@@ -502,6 +504,13 @@ export function LeadCanvas({
                     setInternalReload((n) => n + 1);
                     onChanged?.();
                   }}
+                />
+              )}
+
+              {lead.photosFolder && (
+                <LeadPhotosSection
+                  leadId={lead.id}
+                  folder={lead.photosFolder}
                 />
               )}
 
@@ -2251,6 +2260,169 @@ function InsuranceField({
   );
 }
 
+type LeadPhoto = {
+  key: string;
+  url: string;
+  size: number;
+  lastModified: string | null;
+};
+
+/**
+ * Lista las fotos que el cliente subió desde el formulario web del landing.
+ * Las imágenes viven en MinIO (static.legalistas.com.ar) bajo el folder
+ * `lead.photosFolder`. Click en una thumbnail abre un lightbox.
+ */
+function LeadPhotosSection({
+  leadId,
+  folder,
+}: {
+  leadId: string;
+  folder: string;
+}) {
+  const [photos, setPhotos] = useState<LeadPhoto[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPhotos(null);
+    setError(null);
+    fetch(`/api/crm/leads/${leadId}/photos`)
+      .then(async (r) => {
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
+        return body as { photos: LeadPhoto[] };
+      })
+      .then((body) => {
+        if (!cancelled) setPhotos(body.photos);
+      })
+      .catch((e) => {
+        if (!cancelled)
+          setError(e instanceof Error ? e.message : "Error al cargar fotos");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [leadId]);
+
+  return (
+    <SectionCard
+      icon={ImageIcon}
+      title={`Fotos del cliente${photos ? ` (${photos.length})` : ""}`}
+      iconTint="text-fuchsia-600"
+      iconBg="bg-fuchsia-50"
+    >
+      <p className="text-[11px] text-slate-500 mb-3 truncate">
+        Carpeta:{" "}
+        <span className="font-mono text-slate-700">{folder}</span>
+      </p>
+
+      {photos === null && !error && (
+        <div className="flex items-center justify-center py-6 text-xs text-slate-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Cargando
+          fotos…
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-start gap-2">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {photos && photos.length === 0 && !error && (
+        <p className="text-sm text-slate-500 italic">
+          El cliente no subió fotos.
+        </p>
+      )}
+
+      {photos && photos.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {photos.map((photo, i) => (
+            <button
+              key={photo.key}
+              type="button"
+              onClick={() => setOpenIndex(i)}
+              className="group relative aspect-square overflow-hidden rounded-md border border-slate-200 bg-slate-100 hover:border-[#003b73] focus:outline-none focus:ring-2 focus:ring-[#003b73]/40"
+            >
+              {/** biome-ignore lint/performance/noImgElement: external host (MinIO) sin loader configurado */}
+              <img
+                src={photo.url}
+                alt={photo.key.split("/").pop() ?? "foto"}
+                loading="lazy"
+                className="h-full w-full object-cover transition-transform group-hover:scale-105"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {openIndex !== null && photos && photos[openIndex] && (
+        <Dialog
+          open
+          onOpenChange={(v) => {
+            if (!v) setOpenIndex(null);
+          }}
+        >
+          <DialogContent className="max-w-4xl p-0 bg-black/95 border-0">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Foto del cliente</DialogTitle>
+              <DialogDescription>
+                {photos[openIndex].key.split("/").pop() ?? ""}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="relative flex items-center justify-center min-h-[60vh]">
+              {/** biome-ignore lint/performance/noImgElement: lightbox externa */}
+              <img
+                src={photos[openIndex].url}
+                alt={photos[openIndex].key.split("/").pop() ?? "foto"}
+                className="max-h-[85vh] max-w-full object-contain"
+              />
+              {photos.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Anterior"
+                    onClick={() =>
+                      setOpenIndex((i) =>
+                        i === null ? null : (i - 1 + photos.length) % photos.length,
+                      )
+                    }
+                    className="absolute left-2 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-white/15 hover:bg-white/30 text-white flex items-center justify-center"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Siguiente"
+                    onClick={() =>
+                      setOpenIndex((i) =>
+                        i === null ? null : (i + 1) % photos.length,
+                      )
+                    }
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-white/15 hover:bg-white/30 text-white flex items-center justify-center"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
+              <a
+                href={photos[openIndex].url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute bottom-3 right-3 text-[11px] text-white/80 hover:text-white underline"
+              >
+                Abrir en pestaña nueva
+              </a>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </SectionCard>
+  );
+}
+
 /**
  * Cuando un lead vino del formulario web (source=web) y todavía no tiene un
  * `CustomerVehicle` asignado (porque el form no pide patente), mostramos esta
@@ -2300,8 +2472,19 @@ function WebLeadVehicleStub({
 
   const handleSubmit = async () => {
     setError(null);
-    if (!brand.trim() || !model.trim() || !year.trim() || !domain.trim()) {
-      setError("Marca, modelo, año y patente son obligatorios.");
+    const missing: string[] = [];
+    if (!brand.trim()) missing.push("marca");
+    if (!model.trim()) missing.push("modelo");
+    if (!year.trim()) missing.push("año");
+    if (!domain.trim()) missing.push("patente");
+    if (missing.length > 0) {
+      const list =
+        missing.length === 1
+          ? missing[0]
+          : `${missing.slice(0, -1).join(", ")} y ${missing[missing.length - 1]}`;
+      setError(
+        `Falta completar: ${list}. ${missing.length === 1 ? "Es obligatorio." : "Son obligatorios."}`,
+      );
       return;
     }
     setSubmitting(true);

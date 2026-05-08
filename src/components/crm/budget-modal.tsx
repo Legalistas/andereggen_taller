@@ -90,6 +90,10 @@ type ConceptDraft = {
   unitValue: string;
   fixedAmount: string;
   fixedDescription: string;
+  /** Solo aplica a type === "UNIDADES" (CHAPA / PINTURA). Cuando está en
+   *  true el usuario carga el total directamente en `fixedAmount` y se
+   *  ignoran units/unitValue (caso "importe directo" sin desglose). */
+  flatAmount: boolean;
 };
 
 type PartDraft = {
@@ -161,7 +165,24 @@ function emptyConcept(category: ConceptCategory): ConceptDraft {
     unitValue: "",
     fixedAmount: "",
     fixedDescription: "",
+    flatAmount: false,
   };
+}
+
+// Orden canónico del catálogo: el detalle del presupuesto siempre se muestra
+// en el mismo orden que el desplegable, sin importar cuándo se agregó cada
+// concepto. Array.prototype.sort es estable, así que dos conceptos de la
+// misma categoría preservan su orden de inserción.
+const CATEGORY_ORDER: Record<ConceptCategory, number> = Object.fromEntries(
+  CATEGORIES.map((c, i) => [c.key, i]),
+) as Record<ConceptCategory, number>;
+
+function sortByCatalogOrder<T extends { category: ConceptCategory }>(
+  items: T[],
+): T[] {
+  return [...items].sort(
+    (a, b) => CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category],
+  );
 }
 
 export default function BudgetModal({
@@ -298,17 +319,30 @@ export default function BudgetModal({
         setPartsNote(b.partsNote ?? "");
         setPerladoTricapa(Boolean(b.vehiclePerladoTricapa));
         setConcepts(
-          b.concepts.map((c) => ({
-            localId: uid(),
-            type: c.type,
-            category: c.category,
-            subdetails: c.subdetails ?? [],
-            additionalDetail: c.additionalDetail ?? "",
-            units: c.units !== null ? String(c.units) : "",
-            unitValue: c.unitValue !== null ? String(c.unitValue) : "",
-            fixedAmount: c.fixedAmount !== null ? String(c.fixedAmount) : "",
-            fixedDescription: c.fixedDescription ?? "",
-          })),
+          sortByCatalogOrder(
+            b.concepts.map((c) => {
+              // Detectamos modo "importe directo" para UNIDADES: sin desglose
+              // pero con fixedAmount cargado.
+              const u = Number(c.units ?? 0);
+              const v = Number(c.unitValue ?? 0);
+              const fa = Number(c.fixedAmount ?? 0);
+              const flatAmount =
+                c.type === "UNIDADES" && !(u > 0 && v > 0) && fa > 0;
+              return {
+                localId: uid(),
+                type: c.type,
+                category: c.category,
+                subdetails: c.subdetails ?? [],
+                additionalDetail: c.additionalDetail ?? "",
+                units: c.units !== null ? String(c.units) : "",
+                unitValue: c.unitValue !== null ? String(c.unitValue) : "",
+                fixedAmount:
+                  c.fixedAmount !== null ? String(c.fixedAmount) : "",
+                fixedDescription: c.fixedDescription ?? "",
+                flatAmount,
+              };
+            }),
+          ),
         );
         setParts(
           b.parts.map((p) => ({
@@ -330,12 +364,19 @@ export default function BudgetModal({
 
   const totals = useMemo(() => {
     return computeBudgetTotals({
-      concepts: concepts.map((c) => ({
-        type: c.type,
-        units: num(c.units),
-        unitValue: num(c.unitValue),
-        fixedAmount: num(c.fixedAmount),
-      })),
+      concepts: concepts.map((c) => {
+        // UNIDADES en modo "importe directo": ignoramos units/unitValue para
+        // que computeConceptSubtotal use fixedAmount. En modo desglose,
+        // ignoramos un fixedAmount stale que pueda haber quedado del toggle.
+        const flat = c.type === "UNIDADES" && c.flatAmount;
+        return {
+          type: c.type,
+          units: c.type === "UNIDADES" && !flat ? num(c.units) : 0,
+          unitValue: c.type === "UNIDADES" && !flat ? num(c.unitValue) : 0,
+          fixedAmount:
+            c.type === "FIJO" || flat ? num(c.fixedAmount) : 0,
+        };
+      }),
       parts: parts.map((p) => ({
         quantity: num(p.quantity),
         unitPrice: num(p.unitPrice),
@@ -346,7 +387,9 @@ export default function BudgetModal({
 
   const addConcept = useCallback(() => {
     if (!newCategory) return;
-    setConcepts((prev) => [...prev, emptyConcept(newCategory)]);
+    setConcepts((prev) =>
+      sortByCatalogOrder([...prev, emptyConcept(newCategory)]),
+    );
     setNewCategory("");
   }, [newCategory]);
 
@@ -422,18 +465,22 @@ export default function BudgetModal({
         observations: observations || null,
         partsNote: partsNote.trim() || null,
         perladoTricapa,
-        concepts: concepts.map((c, idx) => ({
-          type: c.type,
-          category: c.category,
-          order: idx,
-          subdetails: c.type === "DESCRIPTIVO" ? c.subdetails : [],
-          additionalDetail: c.additionalDetail || null,
-          units: c.type === "UNIDADES" ? num(c.units) : null,
-          unitValue: c.type === "UNIDADES" ? num(c.unitValue) : null,
-          fixedAmount: c.type === "FIJO" ? num(c.fixedAmount) : null,
-          fixedDescription:
-            c.type === "FIJO" ? c.fixedDescription || null : null,
-        })),
+        concepts: concepts.map((c, idx) => {
+          const flat = c.type === "UNIDADES" && c.flatAmount;
+          return {
+            type: c.type,
+            category: c.category,
+            order: idx,
+            subdetails: c.type === "DESCRIPTIVO" ? c.subdetails : [],
+            additionalDetail: c.additionalDetail || null,
+            units: c.type === "UNIDADES" && !flat ? num(c.units) : null,
+            unitValue: c.type === "UNIDADES" && !flat ? num(c.unitValue) : null,
+            fixedAmount:
+              c.type === "FIJO" || flat ? num(c.fixedAmount) : null,
+            fixedDescription:
+              c.type === "FIJO" ? c.fixedDescription || null : null,
+          };
+        }),
         parts: parts.map((p, idx) => ({
           order: idx,
           partId: p.partId,
@@ -1014,11 +1061,13 @@ function ConceptBlock({
   onRemove: () => void;
 }) {
   const def = CATEGORY_BY_KEY[concept.category];
+  const flat = concept.type === "UNIDADES" && concept.flatAmount;
   const subtotal = computeConceptSubtotal({
     type: concept.type,
-    units: num(concept.units),
-    unitValue: num(concept.unitValue),
-    fixedAmount: num(concept.fixedAmount),
+    units: flat ? 0 : num(concept.units),
+    unitValue: flat ? 0 : num(concept.unitValue),
+    fixedAmount:
+      concept.type === "FIJO" || flat ? num(concept.fixedAmount) : 0,
   });
 
   const typeBadgeClass =
@@ -1074,35 +1123,82 @@ function ConceptBlock({
         <DescriptiveFields concept={concept} onChange={onChange} />
       )}
       {concept.type === "UNIDADES" && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t">
-          <div className="grid gap-1.5">
-            <Label className="text-xs">Unidades</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={concept.units}
-              onChange={(e) => onChange({ units: e.target.value })}
+        <div className="space-y-3 pt-2 border-t">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={`flat-${concept.localId}`}
+              checked={flat}
+              onCheckedChange={(v) =>
+                onChange({
+                  flatAmount: v === true,
+                  // Limpiamos el campo opuesto al togglear, así no quedan
+                  // valores stale que confundan al recalcular o re-abrir.
+                  ...(v === true
+                    ? { units: "", unitValue: "" }
+                    : { fixedAmount: "" }),
+                })
+              }
             />
-          </div>
-          <div className="grid gap-1.5">
-            <Label className="text-xs">Valor unitario</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={concept.unitValue}
-              onChange={(e) => onChange({ unitValue: e.target.value })}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">
-              Total calculado
+            <Label
+              htmlFor={`flat-${concept.localId}`}
+              className="text-xs text-muted-foreground cursor-pointer select-none"
+            >
+              Importe directo (sin desglose por unidades)
             </Label>
-            <div className="h-9 px-3 rounded-md border bg-muted/40 flex items-center font-medium">
-              {ARS.format(subtotal)}
-            </div>
           </div>
+          {flat ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Importe</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={concept.fixedAmount}
+                  onChange={(e) => onChange({ fixedAmount: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Subtotal
+                </Label>
+                <div className="h-9 px-3 rounded-md border bg-muted/40 flex items-center font-medium">
+                  {ARS.format(subtotal)}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Unidades</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={concept.units}
+                  onChange={(e) => onChange({ units: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Valor unitario</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={concept.unitValue}
+                  onChange={(e) => onChange({ unitValue: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Total calculado
+                </Label>
+                <div className="h-9 px-3 rounded-md border bg-muted/40 flex items-center font-medium">
+                  {ARS.format(subtotal)}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {concept.type === "FIJO" && (

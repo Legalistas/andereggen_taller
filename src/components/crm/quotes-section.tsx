@@ -957,7 +957,9 @@ export default function QuotesSection() {
                                   ? `${c.subdetails.length} subdetalles seleccionados`
                                   : "sin subdetalles")}
                               {c.type === "UNIDADES" &&
-                                `${INT.format(Number(c.units))} × ${ARS_PRECISE.format(Number(c.unitValue))}`}
+                                (Number(c.units) > 0 && Number(c.unitValue) > 0
+                                  ? `${INT.format(Number(c.units))} × ${ARS_PRECISE.format(Number(c.unitValue))}`
+                                  : "Importe directo")}
                               {c.type === "FIJO" &&
                                 (c.fixedDescription ?? "Importe fijo")}
                             </div>

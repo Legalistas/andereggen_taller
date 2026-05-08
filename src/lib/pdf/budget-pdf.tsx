@@ -431,9 +431,17 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
                 </Text>
               </View>
               {data.concepts.map((c, idx) => {
+                const u = toNum(c.units);
+                const v = toNum(c.unitValue);
+                // UNIDADES en "importe directo" — sin desglose, total en
+                // fixedAmount. Detectamos por la ausencia de u×v.
+                const unidadesFlat =
+                  c.type === "UNIDADES" && !(u > 0 && v > 0);
                 const subtotal =
                   c.type === "UNIDADES"
-                    ? toNum(c.units) * toNum(c.unitValue)
+                    ? unidadesFlat
+                      ? toNum(c.fixedAmount)
+                      : u * v
                     : c.type === "FIJO"
                       ? toNum(c.fixedAmount)
                       : 0;
@@ -460,11 +468,11 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
                       ) : null}
                     </View>
                     <Text style={[s.td, { width: 60, textAlign: "right" }]}>
-                      {c.type === "UNIDADES" ? toNum(c.units) : "—"}
+                      {c.type === "UNIDADES" && !unidadesFlat ? u : "—"}
                     </Text>
                     <Text style={[s.td, { width: 80, textAlign: "right" }]}>
-                      {c.type === "UNIDADES"
-                        ? ARS.format(toNum(c.unitValue))
+                      {c.type === "UNIDADES" && !unidadesFlat
+                        ? ARS.format(v)
                         : "—"}
                     </Text>
                     <Text

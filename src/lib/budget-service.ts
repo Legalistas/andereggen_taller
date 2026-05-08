@@ -77,9 +77,14 @@ export function validateBudgetPayload(p: unknown): BudgetPayload {
     if (!c.category)
       throw new BudgetValidationError(`concepts[${idx}].category required`);
     if (c.type === "UNIDADES") {
-      if (c.units == null || c.unitValue == null) {
+      // Aceptamos dos modos:
+      //  - desglose: units + unitValue
+      //  - importe directo: fixedAmount (CHAPA/PINTURA cobrados como total)
+      const hasBreakdown = c.units != null && c.unitValue != null;
+      const hasFlat = c.fixedAmount != null;
+      if (!hasBreakdown && !hasFlat) {
         throw new BudgetValidationError(
-          `concepts[${idx}] requires units and unitValue`,
+          `concepts[${idx}] requires units+unitValue or fixedAmount`,
         );
       }
     }
@@ -162,23 +167,33 @@ function computedSubtotals(payload: BudgetPayload) {
 }
 
 function mapConceptsForCreate(payload: BudgetPayload) {
-  return payload.concepts.map((c, idx) => ({
-    type: c.type,
-    category: c.category,
-    order: c.order ?? idx,
-    subdetails: c.type === "DESCRIPTIVO" ? (c.subdetails ?? []) : [],
-    additionalDetail: c.additionalDetail ?? null,
-    units: c.type === "UNIDADES" ? (c.units ?? 0) : null,
-    unitValue: c.type === "UNIDADES" ? (c.unitValue ?? 0) : null,
-    fixedAmount: c.type === "FIJO" ? (c.fixedAmount ?? 0) : null,
-    fixedDescription: c.type === "FIJO" ? (c.fixedDescription ?? null) : null,
-    subtotal: computeConceptSubtotal({
+  return payload.concepts.map((c, idx) => {
+    // UNIDADES en modo "importe directo": units/unitValue van null y el total
+    // se guarda en fixedAmount. Detectamos por la ausencia de desglose.
+    const flatUnidades =
+      c.type === "UNIDADES" &&
+      !((c.units ?? 0) > 0 && (c.unitValue ?? 0) > 0) &&
+      (c.fixedAmount ?? 0) > 0;
+    return {
       type: c.type,
-      units: c.units,
-      unitValue: c.unitValue,
-      fixedAmount: c.fixedAmount,
-    }),
-  }));
+      category: c.category,
+      order: c.order ?? idx,
+      subdetails: c.type === "DESCRIPTIVO" ? (c.subdetails ?? []) : [],
+      additionalDetail: c.additionalDetail ?? null,
+      units: c.type === "UNIDADES" && !flatUnidades ? (c.units ?? 0) : null,
+      unitValue:
+        c.type === "UNIDADES" && !flatUnidades ? (c.unitValue ?? 0) : null,
+      fixedAmount:
+        c.type === "FIJO" || flatUnidades ? (c.fixedAmount ?? 0) : null,
+      fixedDescription: c.type === "FIJO" ? (c.fixedDescription ?? null) : null,
+      subtotal: computeConceptSubtotal({
+        type: c.type,
+        units: c.units,
+        unitValue: c.unitValue,
+        fixedAmount: c.fixedAmount,
+      }),
+    };
+  });
 }
 
 function mapPartsForCreate(payload: BudgetPayload) {
