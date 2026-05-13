@@ -207,6 +207,9 @@ export async function PATCH(request: Request, ctx: RouteContext) {
             model: true,
             year: true,
             domain: true,
+            // `secure` se usa abajo para snapshotear la compañía aseguradora
+            // en el Repair que se crea automáticamente al ganar el lead.
+            secure: true,
           },
         },
         inspector: { select: ACTOR_SELECT },
