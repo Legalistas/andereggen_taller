@@ -12,6 +12,10 @@ import { CATEGORY_BY_KEY, subdetailLabel } from "@/lib/budget-catalog";
 
 export type BudgetPdfData = {
   number: number;
+  /** 0 para originales; 1, 2… para ampliaciones (A1, A2…). */
+  extensionSuffix?: number;
+  /** Número del presupuesto padre para mostrar "Ampliación del #3576". */
+  parentDisplayNumber?: string | null;
   createdAt: string | Date;
   customer: {
     name: string;
@@ -278,11 +282,24 @@ function conceptLineLabel(c: BudgetPdfData["concepts"][number]): string {
 // ─────────────────────────────────────────────────────────────
 
 export function BudgetPdf({ data }: { data: BudgetPdfData }) {
+  const suffix = data.extensionSuffix ?? 0;
+  const isExtension = suffix > 0;
+  const displayNumber = isExtension
+    ? `${data.number}-A${suffix}`
+    : `${data.number}`;
   return (
     <Document
-      title={`Presupuesto #${data.number}`}
+      title={
+        isExtension
+          ? `Ampliación A${suffix} del Presupuesto #${data.number}`
+          : `Presupuesto #${data.number}`
+      }
       author={data.company.name}
-      subject={`Presupuesto #${data.number} — ${data.customer.name}`}
+      subject={
+        isExtension
+          ? `Ampliación A${suffix} del #${data.number} — ${data.customer.name}`
+          : `Presupuesto #${data.number} — ${data.customer.name}`
+      }
     >
       <Page size="A4" style={s.page}>
         {/* Header */}
@@ -301,11 +318,20 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
             ) : null}
           </View>
           <View style={s.badge}>
-            <Text style={s.badgeTitle}>Presupuesto</Text>
-            <Text style={s.badgeNumber}>#{data.number}</Text>
-            <Text style={s.badgeDate}>
-              Emitido: {formatDate(data.createdAt)}
+            <Text style={s.badgeTitle}>
+              {isExtension ? `Ampliación A${suffix}` : "Presupuesto"}
             </Text>
+            <Text style={s.badgeNumber}>#{displayNumber}</Text>
+            <Text style={s.badgeDate}>
+              {isExtension
+                ? `Del Pres. #${data.parentDisplayNumber ?? data.number}`
+                : `Emitido: ${formatDate(data.createdAt)}`}
+            </Text>
+            {isExtension && (
+              <Text style={s.badgeDate}>
+                Emitida: {formatDate(data.createdAt)}
+              </Text>
+            )}
           </View>
         </View>
 

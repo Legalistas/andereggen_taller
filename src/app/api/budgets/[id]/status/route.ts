@@ -78,13 +78,17 @@ export async function POST(request: Request, ctx: RouteContext) {
       },
     });
 
-    // Sincronizar estado del lead con la transición del presupuesto
-    if (status === "sent") {
+    const isExtension = updated.extensionSuffix > 0;
+
+    // Sincronizar estado del lead con la transición del presupuesto.
+    // Las ampliaciones NO cambian el estado del lead (ya está en "ganado"
+    // desde que se aceptó el original) ni regeneran reparación.
+    if (status === "sent" && !isExtension) {
       await tx.lead.update({
         where: { id: updated.leadId },
         data: { status: "enviado" },
       });
-    } else if (status === "accepted") {
+    } else if (status === "accepted" && !isExtension) {
       await tx.lead.update({
         where: { id: updated.leadId },
         data: { status: "ganado" },
@@ -151,11 +155,14 @@ export async function POST(request: Request, ctx: RouteContext) {
             vehicleModel: updated.vehicleModel,
             vehicleYear: updated.vehicleYear,
             vehicleDomain: updated.vehicleDomain,
+            // Snapshot del seguro al aceptar el presupuesto. El budget ya
+            // copió `vehicleInsurance` del vehículo en su propio snapshot.
+            insuranceCompany: updated.vehicleInsurance,
             createdById: session?.user?.id ?? null,
           },
         });
       }
-    } else if (status === "rejected") {
+    } else if (status === "rejected" && !isExtension) {
       await tx.lead.update({
         where: { id: updated.leadId },
         data: {
@@ -164,6 +171,33 @@ export async function POST(request: Request, ctx: RouteContext) {
           ...(lostNotes !== undefined && { lostNotes }),
         },
       });
+    }
+
+    // Side-effect específico de ampliación: al aceptarse, sumar su grandTotal
+    // al bucket de "Importes Aprobados" del Repair padre, según extensionPayer.
+    // Así el taller no tiene que sumar a mano cuando el seguro aprueba un extra.
+    if (status === "accepted" && isExtension && updated.parentBudgetId) {
+      const parentRepair = await tx.repair.findUnique({
+        where: { budgetId: updated.parentBudgetId },
+      });
+      if (parentRepair) {
+        const inc = Number(updated.grandTotal);
+        const bucket =
+          updated.extensionPayer === "SEGURO"
+            ? "approvedInsurance"
+            : updated.extensionPayer === "FRANQUICIA"
+              ? "approvedFranchise"
+              : "approvedCustomer";
+        const prev = Number(parentRepair[bucket] ?? 0);
+        await tx.repair.update({
+          where: { id: parentRepair.id },
+          data: {
+            [bucket]: prev + inc,
+            // Si no había fecha de aprobación previa, dejamos la de hoy.
+            ...(parentRepair.approvedAt === null && { approvedAt: now }),
+          },
+        });
+      }
     }
 
     return updated;

@@ -186,6 +186,7 @@ export async function POST(request: Request) {
         vehicleModel: budget.vehicleModel,
         vehicleYear: budget.vehicleYear,
         vehicleDomain: budget.vehicleDomain,
+        insuranceCompany: budget.vehicleInsurance,
         reason: null,
         assignedMechanicId: assignedMechanicId ?? null,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
@@ -331,6 +332,7 @@ export async function POST(request: Request) {
         model: string;
         year: string;
         domain: string;
+        secure: string | null;
       };
 
       if (newVehicle) {
@@ -367,6 +369,7 @@ export async function POST(request: Request) {
           model: createdV.model,
           year: createdV.year,
           domain: createdV.domain,
+          secure: createdV.secure || null,
         };
       } else {
         // Cliente existente con vehicleId opcional
@@ -392,6 +395,7 @@ export async function POST(request: Request) {
           model: existingV.model,
           year: existingV.year,
           domain: existingV.domain,
+          secure: existingV.secure || null,
         };
       }
 
@@ -411,6 +415,7 @@ export async function POST(request: Request) {
           vehicleModel: vehicleSnapshot.model,
           vehicleYear: vehicleSnapshot.year,
           vehicleDomain: vehicleSnapshot.domain,
+          insuranceCompany: vehicleSnapshot.secure,
           reason: reason?.trim() || null,
           assignedMechanicId: assignedMechanicId ?? null,
           scheduledAt: scheduledAt ? new Date(scheduledAt) : null,

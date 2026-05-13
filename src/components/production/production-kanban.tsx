@@ -10,6 +10,7 @@ import {
   MoreVertical,
   Package,
   Paintbrush,
+  Shield,
   Smile,
   Star,
   Wrench,
@@ -48,6 +49,9 @@ export type KanbanRepair = {
   vehicleModel: string;
   vehicleYear: string;
   vehicleDomain: string;
+  /** Compañía de seguros que paga — snapshot al crear el repair. Aparece
+   *  en la card del kanban mientras el auto está en taller. */
+  insuranceCompany: string | null;
   reason: string | null;
   directCreation: boolean;
   scheduledAt: string | null;
@@ -116,19 +120,22 @@ const COLUMNS: Array<{
     headerClass: "bg-cyan-50 text-cyan-700 border-cyan-200",
     ringClass: "ring-cyan-400",
   },
-  {
-    id: "pendientes_cobro",
-    label: "Pendientes de Cobro",
-    icon: DollarSign,
-    headerClass: "bg-amber-50 text-amber-800 border-amber-200",
-    ringClass: "ring-amber-400",
-  },
+  // Experiencia del Cliente va ANTES de Pendientes de Cobro: la encuesta se
+  // dispara al retirarse el vehículo (deliveredAt) — esperar al cobro del
+  // seguro (30/40 días) demora demasiado el envío del rating.
   {
     id: "experiencia_cliente",
     label: "Experiencia del Cliente",
     icon: Smile,
     headerClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
     ringClass: "ring-emerald-400",
+  },
+  {
+    id: "pendientes_cobro",
+    label: "Pendientes de Cobro",
+    icon: DollarSign,
+    headerClass: "bg-amber-50 text-amber-800 border-amber-200",
+    ringClass: "ring-amber-400",
   },
   {
     id: "archivado",
@@ -410,6 +417,16 @@ function RepairCard({
           </p>
         </div>
       </div>
+
+      {/* Compañía aseguradora: visible mientras el vehículo está en taller
+          y durante Pendientes de Cobro. Ayuda al taller a saber rápido quién
+          paga (cliente particular vs aseguradora) sin abrir el detalle. */}
+      {repair.insuranceCompany && repair.status !== "archivado" && (
+        <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-sky-50 border border-sky-200 text-sky-800 px-1.5 py-0.5 text-[10px] font-medium max-w-full">
+          <Shield className="h-3 w-3 shrink-0" />
+          <span className="truncate">{repair.insuranceCompany}</span>
+        </div>
+      )}
 
       {/* Badge prominente para reparaciones en "Pendientes de Repuestos".
           Punto de dolor clave para aseguradoras: visibilidad sobre el momento

@@ -67,6 +67,9 @@ export async function POST(request: Request, ctx: RouteContext) {
           customer: { select: { dni: true, address: true } },
         },
       },
+      parentBudget: {
+        select: { number: true, extensionSuffix: true },
+      },
     },
   });
 
@@ -81,8 +84,15 @@ export async function POST(request: Request, ctx: RouteContext) {
   const settings = await getAppSettings();
 
   // Armar snapshot para el PDF
+  const parentDisplay = budget.parentBudget
+    ? budget.parentBudget.extensionSuffix > 0
+      ? `${budget.parentBudget.number}-A${budget.parentBudget.extensionSuffix}`
+      : `${budget.parentBudget.number}`
+    : null;
   const pdfData: BudgetPdfData = {
     number: budget.number,
+    extensionSuffix: budget.extensionSuffix,
+    parentDisplayNumber: parentDisplay,
     createdAt: budget.createdAt,
     customer: {
       name: budget.customerName,

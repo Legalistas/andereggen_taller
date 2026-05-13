@@ -117,16 +117,28 @@ type CustomerDetail = {
   dni: string | null;
   dniType: string | null;
   address: string | null;
+  city: string | null;
 };
 
 type BudgetLite = {
   id: string;
   number: number;
+  /** 0 para originales; 1, 2… para ampliaciones (A1, A2…). */
+  extensionSuffix?: number;
+  /** Solo presente en ampliaciones. */
+  parentBudgetId?: string | null;
   status: string;
   grandTotal: string | number;
   updatedAt: string;
   sentAt: string | null;
 };
+
+/** "#3576" o "#3576-A1" según corresponda. */
+function budgetDisplay(b: { number: number; extensionSuffix?: number | null }): string {
+  return (b.extensionSuffix ?? 0) > 0
+    ? `${b.number}-A${b.extensionSuffix}`
+    : `${b.number}`;
+}
 
 type RepairStatusLite =
   | "turno_asignado"
@@ -214,6 +226,8 @@ type Props = {
   /** Llamada cuando piden abrir un presupuesto del lead.
    *  Si `budgetId` viene → modo edición; sin él → nuevo presupuesto. */
   onOpenBudget?: (leadId: string, budgetId?: string) => void;
+  /** Llamada cuando piden ampliar un presupuesto aceptado. */
+  onExtendBudget?: (leadId: string, parentBudgetId: string) => void;
   /**
    * Incrementá este valor desde afuera para forzar un refetch del detalle
    * (ej: después de guardar un presupuesto sin cerrar el canvas).
@@ -232,6 +246,7 @@ export function LeadCanvas({
   onClose,
   onChanged,
   onOpenBudget,
+  onExtendBudget,
   reloadNonce,
   suppressed = false,
 }: Props) {
@@ -486,6 +501,7 @@ export function LeadCanvas({
                 leadId={lead.id}
                 budgets={lead.budgets}
                 onOpenBudget={onOpenBudget}
+                onExtendBudget={onExtendBudget}
                 onSendBudget={(b) => setSendingBudget(b)}
                 onDeleteBudget={(b) => {
                   setDeleteError(null);
@@ -1565,6 +1581,11 @@ function CustomerSection({
           value={customer.address ?? ""}
           onSave={(v) => onPatch({ address: v.trim() })}
         />
+        <BlurField
+          label="Localidad"
+          value={customer.city ?? ""}
+          onSave={(v) => onPatch({ city: v.trim() })}
+        />
       </div>
     </SectionCard>
   );
@@ -1621,6 +1642,7 @@ function BudgetsSection({
   leadId,
   budgets,
   onOpenBudget,
+  onExtendBudget,
   onSendBudget,
   onDeleteBudget,
 }: {
@@ -1628,6 +1650,7 @@ function BudgetsSection({
   budgets: BudgetLite[];
   /** Si se pasa budgetId → modo edición. Sin budgetId → nuevo presupuesto. */
   onOpenBudget?: (leadId: string, budgetId?: string) => void;
+  onExtendBudget?: (leadId: string, parentBudgetId: string) => void;
   onSendBudget?: (budget: BudgetLite) => void;
   onDeleteBudget?: (budget: BudgetLite) => void;
 }) {
@@ -1679,7 +1702,12 @@ function BudgetsSection({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-xs font-semibold text-slate-700">
-                  #{b.number}
+                  #{budgetDisplay(b)}
+                  {(b.extensionSuffix ?? 0) > 0 && (
+                    <span className="ml-1.5 text-[9px] uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded">
+                      Ampliación
+                    </span>
+                  )}
                 </span>
                 <span
                   className={`text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider font-medium ${
@@ -1706,6 +1734,19 @@ function BudgetsSection({
                 >
                   <Pencil className="h-3 w-3" /> Editar
                 </button>
+                {/* Ampliar — solo aparece sobre presupuestos ORIGINALES aceptados
+                    (no sobre ampliaciones existentes). La ampliación se ata
+                    siempre al original raíz. */}
+                {b.status === "accepted" && (b.extensionSuffix ?? 0) === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onExtendBudget?.(leadId, b.id)}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+                    title="Crear una ampliación del presupuesto para enviar al seguro"
+                  >
+                    <Plus className="h-3 w-3" /> Ampliar
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => onSendBudget?.(b)}

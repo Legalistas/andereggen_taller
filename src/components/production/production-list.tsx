@@ -69,8 +69,8 @@ const ALL_STATUSES: RepairStatus[] = [
   "chapa",
   "pintura",
   "calidad",
-  "pendientes_cobro",
   "experiencia_cliente",
+  "pendientes_cobro",
 ];
 
 export default function ProductionList() {

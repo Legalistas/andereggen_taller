@@ -164,10 +164,12 @@ export default function LeadsSection() {
   }, []);
 
   // Estado del BudgetModal por fila — guarda leadId y opcionalmente budgetId
-  // (cuando se está editando un presupuesto existente).
+  // (cuando se está editando un presupuesto existente) o extendingFromBudgetId
+  // (cuando se ampliará un presupuesto aceptado).
   const [budgetFor, setBudgetFor] = useState<{
     leadId: string;
     budgetId?: string;
+    extendingFromBudgetId?: string;
   } | null>(null);
   // Canvas lateral: leadId abierto (null = cerrado)
   const [canvasLeadId, setCanvasLeadId] = useState<string | null>(null);
@@ -789,6 +791,7 @@ export default function LeadsSection() {
       <BudgetModal
         leadId={budgetFor?.leadId}
         budgetId={budgetFor?.budgetId}
+        extendingFromBudgetId={budgetFor?.extendingFromBudgetId}
         hideTrigger
         open={budgetFor !== null}
         onOpenChange={(v) => {
@@ -815,6 +818,9 @@ export default function LeadsSection() {
         reloadNonce={canvasReloadNonce}
         suppressed={budgetFor !== null && !budgetMinimized}
         onOpenBudget={(leadId, budgetId) => setBudgetFor({ leadId, budgetId })}
+        onExtendBudget={(leadId, parentId) =>
+          setBudgetFor({ leadId, extendingFromBudgetId: parentId })
+        }
       />
     </div>
   );

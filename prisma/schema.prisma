@@ -57,6 +57,8 @@ model User {
   paymentsCreated     Payment[]        @relation("PaymentCreatedBy")
   repairsCreated      Repair[]         @relation("RepairCreatedBy")
   repairsAssigned     Repair[]         @relation("RepairMechanic")
+  repairInvoicesCreated         RepairInvoice[]        @relation("RepairInvoiceCreatedBy")
+  repairInvoicePaymentsCreated  RepairInvoicePayment[] @relation("RepairInvoicePaymentCreatedBy")
 }
 
 model Session {
@@ -325,8 +327,26 @@ enum BudgetStatus {
 model Budget {
   id     String       @id @default(uuid())
   leadId String
-  number Int          @unique // correlativo global incremental
+  /** Correlativo global del presupuesto. Las ampliaciones HEREDAN este
+   *  número del padre y se diferencian por `extensionSuffix`. La unicidad
+   *  real es el compuesto (number, extensionSuffix). */
+  number Int
   status BudgetStatus @default(draft)
+
+  /** 0 = presupuesto original; 1, 2, 3… = ampliaciones (A1, A2…) creadas
+   *  durante la reparación cuando aparece trabajo extra que el seguro
+   *  no había contemplado. */
+  extensionSuffix Int     @default(0)
+  /** FK al presupuesto padre del que esta fila es ampliación. null si es
+   *  el original. onDelete Cascade: si borran el original, caen las
+   *  ampliaciones también. */
+  parentBudgetId  String?
+  parentBudget    Budget?  @relation("BudgetExtensions", fields: [parentBudgetId], references: [id], onDelete: Cascade)
+  extensions      Budget[] @relation("BudgetExtensions")
+  /** Quién paga la ampliación cuando se acepta — define a qué bucket de
+   *  importes aprobados del repair se suma el grandTotal. Solo aplica si
+   *  extensionSuffix > 0. */
+  extensionPayer  ExtensionPayer?
 
   // Snapshot de cliente/vehículo al emitir (inmutable para PDF histórico)
   customerName     String
@@ -384,6 +404,18 @@ model Budget {
   @@index([leadId])
   @@index([status])
   @@index([createdById])
+  @@index([parentBudgetId])
+  @@unique([number, extensionSuffix])
+}
+
+/**
+ * Quién paga una ampliación cuando se acepta. Define a qué bucket de los
+ * "Importes Aprobados" del Repair se suma el grandTotal de la ampliación.
+ */
+enum ExtensionPayer {
+  SEGURO
+  FRANQUICIA
+  PARTICULAR
 }
 
 /**
@@ -901,6 +933,23 @@ model Repair {
   deliveredAt        DateTime?
   archivedAt         DateTime?
 
+  // Compañía de seguro que paga — snapshot al crear el repair. Visible en
+  // la card del kanban mientras el auto está en taller. Texto libre porque
+  // en directCreation puede no haber FK a InsuranceCompany.
+  insuranceCompany String?
+
+  // Importes aprobados por el seguro / acordados con el cliente. Pueden
+  // diferir del grandTotal del presupuesto cuando el seguro recorta.
+  approvedInsurance  Decimal?  @db.Decimal(14, 2)
+  approvedFranchise  Decimal?  @db.Decimal(14, 2)
+  approvedCustomer   Decimal?  @db.Decimal(14, 2)
+  approvedAt         DateTime?
+  approvedNotes      String?   @db.Text
+
+  // Facturación + cobros (varias facturas por reparación: cliente/seguro
+  // separadas, cada una con sus pagos parciales).
+  invoices RepairInvoice[]
+
   // Meta
   notes String? @db.Text
 
@@ -978,4 +1027,64 @@ model Payment {
   @@index([paidAt])
   @@index([method])
   @@index([createdById])
+}
+
+// =====================================================
+// Facturación por reparación
+// =====================================================
+// El flujo real del taller: una vez que el auto se retira y queda en
+// "pendientes de cobro", se emiten una o varias facturas (típico: una
+// al cliente por la franquicia y otra al seguro por el resto). Cada
+// factura puede cobrarse en N pagos parciales y tener un saldo pendiente
+// que se calcula como `amount - sum(payments.amount)`.
+
+enum InvoiceRecipient {
+  CLIENTE
+  SEGURO
+  OTRO
+}
+
+model RepairInvoice {
+  id            String           @id @default(uuid())
+  repairId      String
+  repair        Repair           @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  /** Número/identificador de la factura (texto libre: "FACT 5187", "A-001-0042"). */
+  number        String
+  issuedAt      DateTime
+  recipient     InvoiceRecipient @default(CLIENTE)
+  /** Nombre legible del destinatario — la compañía de seguro o nombre del cliente. */
+  recipientName String?
+  /** Importe total facturado (sin descontar pagos). */
+  amount        Decimal          @db.Decimal(14, 2)
+  notes         String?          @db.Text
+
+  payments      RepairInvoicePayment[]
+
+  createdById String?
+  createdBy   User?    @relation("RepairInvoiceCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([repairId])
+  @@index([issuedAt])
+}
+
+model RepairInvoicePayment {
+  id          String        @id @default(uuid())
+  invoiceId   String
+  invoice     RepairInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount      Decimal       @db.Decimal(14, 2)
+  paidAt      DateTime      @default(now())
+  method      PaymentMethod @default(EFECTIVO)
+  reference   String?
+  notes       String?       @db.Text
+
+  createdById String?
+  createdBy   User?    @relation("RepairInvoicePaymentCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([paidAt])
 }

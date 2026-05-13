@@ -128,6 +128,10 @@ type Props = {
   leadId?: string;
   /** Si está, el modal carga el budget existente y al guardar hace PATCH (modo edición). */
   budgetId?: string;
+  /** Si está, el modal abre en "modo ampliación": carga el padre para mostrar
+   *  contexto, requiere extensionPayer (Seguro/Franquicia/Particular), y al
+   *  guardar hace POST a /api/budgets/[parent]/extend. */
+  extendingFromBudgetId?: string;
   onSaved?: () => void;
   hideTrigger?: boolean;
   open?: boolean;
@@ -136,6 +140,8 @@ type Props = {
    *  ajustar otros componentes (ej: dejar de suprimir el lead canvas). */
   onMinimizedChange?: (minimized: boolean) => void;
 };
+
+type ExtensionPayer = "SEGURO" | "FRANQUICIA" | "PARTICULAR";
 
 const ARS = new Intl.NumberFormat("es-AR", {
   style: "currency",
@@ -188,6 +194,7 @@ function sortByCatalogOrder<T extends { category: ConceptCategory }>(
 export default function BudgetModal({
   leadId,
   budgetId,
+  extendingFromBudgetId,
   onSaved,
   hideTrigger,
   open: openProp,
@@ -195,6 +202,14 @@ export default function BudgetModal({
   onMinimizedChange,
 }: Props) {
   const isEditing = !!budgetId;
+  const isExtending = !!extendingFromBudgetId;
+  const [extensionPayer, setExtensionPayer] = useState<ExtensionPayer>("SEGURO");
+  const [parentInfo, setParentInfo] = useState<{
+    displayNumber: string;
+    grandTotal: number;
+    customerName: string;
+    vehicleDomain: string;
+  } | null>(null);
   const [internalOpen, setInternalOpen] = useState(false);
   const open = openProp ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
@@ -237,8 +252,9 @@ export default function BudgetModal({
 
   // Al abrir en modo crear, sugerir el próximo correlativo (max+1) para
   // pre-poblar el input. Si el admin lo cambia, respetamos lo que escribió.
+  // En modo ampliación NO se elige número — se hereda del padre.
   useEffect(() => {
-    if (!open || isEditing) return;
+    if (!open || isEditing || isExtending) return;
     let cancelled = false;
     fetch("/api/budgets/next-number")
       .then((r) => r.json())
@@ -251,7 +267,34 @@ export default function BudgetModal({
     return () => {
       cancelled = true;
     };
-  }, [open, isEditing]);
+  }, [open, isEditing, isExtending]);
+
+  // En modo ampliación, cargamos info del padre para mostrar contexto en el
+  // header (Nº del padre, cliente, dominio). Solo display — no se edita.
+  useEffect(() => {
+    if (!open || !extendingFromBudgetId) return;
+    let cancelled = false;
+    fetch(`/api/budgets/${extendingFromBudgetId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !data?.budget) return;
+        const b = data.budget;
+        const display =
+          b.extensionSuffix > 0
+            ? `${b.number}-A${b.extensionSuffix}`
+            : `${b.number}`;
+        setParentInfo({
+          displayNumber: display,
+          grandTotal: Number(b.grandTotal ?? 0),
+          customerName: b.customerName,
+          vehicleDomain: b.vehicleDomain,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, extendingFromBudgetId]);
 
   // Fetch info del lead cuando se abre, para mostrar header contextual
   useEffect(() => {
@@ -489,14 +532,22 @@ export default function BudgetModal({
           unitPrice: num(p.unitPrice),
         })),
       };
-      // En modo edición → PATCH al budget; en modo nuevo → POST a leads/{id}/budgets.
+      // Ruta según modo:
+      //  - edición:    PATCH /api/budgets/{id}
+      //  - ampliación: POST  /api/budgets/{parent}/extend   (con extensionPayer)
+      //  - nuevo:      POST  /api/crm/leads/{lead}/budgets
       const url = isEditing
         ? `/api/budgets/${budgetId}`
-        : `/api/crm/leads/${leadId}/budgets`;
+        : isExtending
+          ? `/api/budgets/${extendingFromBudgetId}/extend`
+          : `/api/crm/leads/${leadId}/budgets`;
+      const body = isExtending
+        ? { ...payload, extensionPayer, number: undefined }
+        : payload;
       const res = await fetch(url, {
         method: isEditing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const body = await res
@@ -560,7 +611,11 @@ export default function BudgetModal({
       >
         {/* DialogTitle + Description para a11y (el header visual está abajo). */}
         <DialogTitle className="sr-only">
-          {isEditing ? "Editar presupuesto" : "Nuevo presupuesto"}
+          {isEditing
+            ? "Editar presupuesto"
+            : isExtending
+              ? "Ampliar presupuesto"
+              : "Nuevo presupuesto"}
         </DialogTitle>
         <DialogDescription className="sr-only">
           Editor de presupuesto con conceptos, repuestos y condiciones.
@@ -569,13 +624,31 @@ export default function BudgetModal({
         {/* Header ancho */}
         <header className="flex items-center justify-between px-6 py-4 border-b bg-card shrink-0">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-[#003b73]/10 flex items-center justify-center">
-              <FileText className="h-5 w-5 text-[#003b73]" />
+            <div
+              className={`h-10 w-10 rounded-lg flex items-center justify-center ${
+                isExtending ? "bg-amber-500/10" : "bg-[#003b73]/10"
+              }`}
+            >
+              <FileText
+                className={`h-5 w-5 ${
+                  isExtending ? "text-amber-700" : "text-[#003b73]"
+                }`}
+              />
             </div>
             <div>
               <h2 className="text-xl font-bold leading-tight">
-                {isEditing ? "Editar presupuesto" : "Nuevo presupuesto"}
+                {isEditing
+                  ? "Editar presupuesto"
+                  : isExtending
+                    ? `Ampliación de #${parentInfo?.displayNumber ?? "…"}`
+                    : "Nuevo presupuesto"}
               </h2>
+              {isExtending && parentInfo && (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Solo cargá los conceptos/repuestos EXTRA — el cliente, vehículo
+                  y datos del padre se heredan.
+                </p>
+              )}
               {leadInfo && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
                   <span className="flex items-center gap-1">
@@ -870,31 +943,71 @@ export default function BudgetModal({
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   Condiciones
                 </h3>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="budgetNumber" className="text-xs">
-                    Nº de presupuesto
-                  </Label>
-                  <Input
-                    id="budgetNumber"
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={budgetNumber}
-                    onChange={(e) => setBudgetNumber(e.target.value)}
-                    placeholder={
-                      !isEditing && suggestedNumber !== null
-                        ? String(suggestedNumber)
-                        : ""
-                    }
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    {isEditing
-                      ? "Podés cambiar el número; debe ser único."
-                      : suggestedNumber !== null
-                        ? `Sugerido (max+1): #${suggestedNumber}. Podés sobrescribirlo.`
-                        : "Calculando próximo correlativo..."}
-                  </p>
-                </div>
+                {isExtending ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50/40 px-3 py-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="font-semibold uppercase tracking-wider text-amber-800">
+                        Ampliación de #{parentInfo?.displayNumber ?? "…"}
+                      </span>
+                      {parentInfo && (
+                        <span className="text-amber-700">
+                          {parentInfo.customerName} ·{" "}
+                          <span className="font-mono uppercase">
+                            {parentInfo.vehicleDomain}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">¿Quién paga la ampliación?</Label>
+                      <Select
+                        value={extensionPayer}
+                        onValueChange={(v) =>
+                          setExtensionPayer(v as ExtensionPayer)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="SEGURO">Seguro</SelectItem>
+                          <SelectItem value="FRANQUICIA">Franquicia</SelectItem>
+                          <SelectItem value="PARTICULAR">Particular</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-amber-700">
+                        Al aceptarse, el total se suma al bucket correspondiente
+                        de Importes Aprobados de la reparación.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="budgetNumber" className="text-xs">
+                      Nº de presupuesto
+                    </Label>
+                    <Input
+                      id="budgetNumber"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={budgetNumber}
+                      onChange={(e) => setBudgetNumber(e.target.value)}
+                      placeholder={
+                        !isEditing && suggestedNumber !== null
+                          ? String(suggestedNumber)
+                          : ""
+                      }
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      {isEditing
+                        ? "Podés cambiar el número; debe ser único."
+                        : suggestedNumber !== null
+                          ? `Sugerido (max+1): #${suggestedNumber}. Podés sobrescribirlo.`
+                          : "Calculando próximo correlativo..."}
+                    </p>
+                  </div>
+                )}
                 {/* Perlado tricapa: flag por presupuesto. Se ve en el PDF
                     del cliente como "PERLADO TRICAPA" en bold uppercase. */}
                 <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 px-3 py-2">

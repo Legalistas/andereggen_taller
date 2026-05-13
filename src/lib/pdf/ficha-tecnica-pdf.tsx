@@ -217,7 +217,9 @@ export function FichaTecnicaPdf({ data }: { data: FichaTecnicaData }) {
       author={data.company.name}
     >
       <Page size="A4" style={s.page}>
-        {/* Header — mismo estilo que el presupuesto */}
+        {/* Header — solo el bloque de la empresa. El badge con el Nº de
+            ficha/presupuesto se removió a pedido del taller: gasta tinta y
+            ese espacio se aprovecha para aclaraciones a mano. */}
         <View style={s.header}>
           <View style={s.companyBlock}>
             {data.company.logoUrl ? (
@@ -226,19 +228,6 @@ export function FichaTecnicaPdf({ data }: { data: FichaTecnicaData }) {
             <Text style={s.companyLine}>{data.company.address}</Text>
             <Text style={s.companyLine}>
               Tel: {data.company.phone} · {data.company.email}
-            </Text>
-          </View>
-          <View style={s.badge}>
-            <Text style={s.badgeTitle}>
-              {data.internalNumber !== null ? "Nº Interno" : "Ficha Técnica"}
-            </Text>
-            <Text style={s.badgeNumber}>
-              #{data.internalNumber ?? data.number}
-            </Text>
-            <Text style={s.badgeDate}>
-              {data.internalNumber !== null
-                ? `Pres. #${data.number} · ${fmtDate(new Date())}`
-                : `Emitida: ${fmtDate(new Date())}`}
             </Text>
           </View>
         </View>

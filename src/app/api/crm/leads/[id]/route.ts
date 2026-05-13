@@ -231,9 +231,11 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       });
 
       if (!existingRepair) {
-        // Buscar el último budget del lead para tomar el snapshot
+        // Buscar el último budget ORIGINAL del lead para tomar el snapshot.
+        // Excluimos ampliaciones (extensionSuffix>0) porque no generan
+        // reparación propia: se ligan al repair del padre.
         const lastBudget = await tx.budget.findFirst({
-          where: { leadId: id },
+          where: { leadId: id, extensionSuffix: 0 },
           orderBy: { createdAt: "desc" },
         });
 
@@ -261,6 +263,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
               vehicleModel: lastBudget.vehicleModel,
               vehicleYear: lastBudget.vehicleYear,
               vehicleDomain: lastBudget.vehicleDomain,
+              insuranceCompany: lastBudget.vehicleInsurance,
               createdById: session?.user?.id ?? null,
             },
           });
@@ -280,6 +283,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
               vehicleModel: updated.vehicle.model,
               vehicleYear: updated.vehicle.year,
               vehicleDomain: updated.vehicle.domain,
+              insuranceCompany: updated.vehicle.secure || null,
               createdById: session?.user?.id ?? null,
             },
           });

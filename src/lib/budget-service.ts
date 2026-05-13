@@ -139,14 +139,46 @@ export function validateBudgetPayload(p: unknown): BudgetPayload {
 }
 
 /**
- * Próximo número correlativo global (max + 1).
+ * Próximo número correlativo global (max + 1). Solo considera presupuestos
+ * originales (extensionSuffix=0); las ampliaciones heredan el número del padre.
  * Aceptable para MVP con poca concurrencia; en prod migrar a SEQUENCE de Postgres.
  */
 export async function nextBudgetNumber(
   tx: Prisma.TransactionClient = prisma as unknown as Prisma.TransactionClient,
 ): Promise<number> {
-  const agg = await tx.budget.aggregate({ _max: { number: true } });
+  const agg = await tx.budget.aggregate({
+    _max: { number: true },
+    where: { extensionSuffix: 0 },
+  });
   return (agg._max.number ?? 0) + 1;
+}
+
+/**
+ * Próximo `extensionSuffix` para ampliaciones de un presupuesto dado.
+ * Devuelve 1 si todavía no hay ampliaciones, 2 si ya hay A1, etc.
+ */
+export async function nextExtensionSuffix(
+  parentNumber: number,
+  tx: Prisma.TransactionClient = prisma as unknown as Prisma.TransactionClient,
+): Promise<number> {
+  const agg = await tx.budget.aggregate({
+    _max: { extensionSuffix: true },
+    where: { number: parentNumber },
+  });
+  return (agg._max.extensionSuffix ?? 0) + 1;
+}
+
+/**
+ * Display del número: "#3576" para originales, "#3576-A1" para ampliaciones.
+ * Se usa en UI y PDF.
+ */
+export function formatBudgetDisplayNumber(
+  number: number,
+  extensionSuffix: number,
+): string {
+  return extensionSuffix > 0
+    ? `${number}-A${extensionSuffix}`
+    : `${number}`;
 }
 
 function computedSubtotals(payload: BudgetPayload) {
@@ -230,12 +262,14 @@ export async function createBudgetForLead(params: {
     const ivaRateForCalc = payload.ivaRate ?? Number(settings.defaultIvaRate);
     const totals = computedSubtotals({ ...payload, ivaRate: ivaRateForCalc });
 
-    // Si el usuario pasó un número manual, validamos que no choque con uno
-    // existente; si no, calculamos el correlativo (max+1).
+    // Si el usuario pasó un número manual, validamos que no choque con un
+    // original existente; si no, calculamos el correlativo (max+1).
+    // Solo miramos `extensionSuffix=0` porque las ampliaciones comparten
+    // número con su padre y eso es esperado.
     let number: number;
     if (payload.number !== undefined) {
-      const dupe = await tx.budget.findUnique({
-        where: { number: payload.number },
+      const dupe = await tx.budget.findFirst({
+        where: { number: payload.number, extensionSuffix: 0 },
         select: { id: true },
       });
       if (dupe) {
@@ -323,13 +357,15 @@ export async function updateBudget(params: {
 
     const totals = computedSubtotals(payload);
 
-    // Si el usuario cambió el número, validamos que no choque con otro budget.
+    // Si el usuario cambió el número, validamos que no choque con otro
+    // original. Las ampliaciones no permiten cambiar el número manualmente.
     if (
       payload.number !== undefined &&
-      payload.number !== existing.number
+      payload.number !== existing.number &&
+      existing.extensionSuffix === 0
     ) {
-      const dupe = await tx.budget.findUnique({
-        where: { number: payload.number },
+      const dupe = await tx.budget.findFirst({
+        where: { number: payload.number, extensionSuffix: 0 },
         select: { id: true },
       });
       if (dupe && dupe.id !== id) {
@@ -354,6 +390,93 @@ export async function updateBudget(params: {
         partsNote: payload.partsNote ?? existing.partsNote,
         vehiclePerladoTricapa:
           payload.perladoTricapa ?? existing.vehiclePerladoTricapa,
+        laborSubtotal: totals.laborSubtotal,
+        ivaRate: totals.ivaRate,
+        ivaAmount: totals.ivaAmount,
+        laborTotal: totals.laborTotal,
+        partsSubtotal: totals.partsSubtotal,
+        grandTotal: totals.grandTotal,
+        concepts: { create: mapConceptsForCreate(payload) },
+        parts: { create: mapPartsForCreate(payload) },
+      },
+      include: {
+        concepts: { orderBy: { order: "asc" } },
+        parts: { orderBy: { order: "asc" } },
+      },
+    });
+  });
+}
+
+export type ExtensionPayer = "SEGURO" | "FRANQUICIA" | "PARTICULAR";
+
+/**
+ * Crea una ampliación de un presupuesto existente. Hereda el `number` del
+ * padre, le asigna el próximo `extensionSuffix` (A1, A2…) y copia el
+ * snapshot de cliente/vehículo del padre (mismo lead/auto).
+ *
+ * El payload contiene SOLO los conceptos/partes EXTRA — el seguro recibe
+ * la ampliación como un PDF aparte que se suma al ppto original.
+ */
+export async function extendBudget(params: {
+  parentId: string;
+  payer: ExtensionPayer;
+  payload: BudgetPayload;
+  createdById?: string | null;
+}) {
+  const { parentId, payer, payload, createdById = null } = params;
+  if (!["SEGURO", "FRANQUICIA", "PARTICULAR"].includes(payer)) {
+    throw new BudgetValidationError("extensionPayer inválido");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const parent = await tx.budget.findUnique({ where: { id: parentId } });
+    if (!parent) throw new BudgetValidationError("Presupuesto padre no encontrado");
+    // No permitimos ampliar una ampliación — siempre se ata al original.
+    // Si vienen con un id de ampliación, redirigimos al padre real.
+    const rootId = parent.parentBudgetId ?? parent.id;
+    const root =
+      rootId === parent.id
+        ? parent
+        : await tx.budget.findUnique({ where: { id: rootId } });
+    if (!root)
+      throw new BudgetValidationError("Presupuesto raíz no encontrado");
+
+    const settings = await getAppSettings();
+    const ivaRateForCalc = payload.ivaRate ?? Number(settings.defaultIvaRate);
+    const totals = computedSubtotals({ ...payload, ivaRate: ivaRateForCalc });
+
+    const suffix = await nextExtensionSuffix(root.number, tx);
+
+    return tx.budget.create({
+      data: {
+        leadId: root.leadId,
+        number: root.number,
+        extensionSuffix: suffix,
+        parentBudgetId: root.id,
+        extensionPayer: payer,
+        createdById,
+        // Snapshot heredado del padre — el cliente/vehículo no cambian.
+        customerName: root.customerName,
+        customerEmail: root.customerEmail,
+        customerPhone: root.customerPhone,
+        customerDni: root.customerDni,
+        customerAddress: root.customerAddress,
+        vehicleBrand: root.vehicleBrand,
+        vehicleModel: root.vehicleModel,
+        vehicleYear: root.vehicleYear,
+        vehicleDomain: root.vehicleDomain,
+        vehicleChassis: root.vehicleChassis,
+        vehiclePerladoTricapa:
+          payload.perladoTricapa ?? root.vehiclePerladoTricapa,
+        vehicleInsurance: root.vehicleInsurance,
+        insuranceCoverageType: root.insuranceCoverageType,
+        insuranceFranchise: root.insuranceFranchise,
+        validityDays: payload.validityDays ?? settings.defaultValidityDays,
+        deliveryDays: payload.deliveryDays ?? settings.defaultDeliveryDays,
+        paymentCondition:
+          payload.paymentCondition ?? settings.defaultPaymentCondition,
+        observations: payload.observations,
+        partsNote: payload.partsNote ?? null,
         laborSubtotal: totals.laborSubtotal,
         ivaRate: totals.ivaRate,
         ivaAmount: totals.ivaAmount,

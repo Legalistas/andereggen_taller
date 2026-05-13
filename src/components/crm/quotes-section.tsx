@@ -71,6 +71,8 @@ type QuoteLite = {
   id: string;
   leadId: string;
   number: number;
+  extensionSuffix?: number;
+  parentBudgetId?: string | null;
   status: BudgetStatus;
   customerName: string;
   customerEmail: string;
@@ -203,6 +205,8 @@ export default function QuotesSection() {
   const [newBusy, setNewBusy] = useState(false);
   const [newError, setNewError] = useState<string | null>(null);
   const [budgetLeadId, setBudgetLeadId] = useState<string | null>(null);
+  // Budget que se está ampliando (modo ampliación del BudgetModal).
+  const [extendingFromId, setExtendingFromId] = useState<string | null>(null);
 
   // Detalle
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -568,7 +572,15 @@ export default function QuotesSection() {
               return (
                 <TableRow key={q.id}>
                   <TableCell className="font-mono text-sm">
-                    #{q.number}
+                    #
+                    {(q.extensionSuffix ?? 0) > 0
+                      ? `${q.number}-A${q.extensionSuffix}`
+                      : q.number}
+                    {(q.extensionSuffix ?? 0) > 0 && (
+                      <span className="ml-1.5 text-[9px] uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded font-sans">
+                        Ampliación
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="font-medium">{q.customerName}</div>
@@ -652,6 +664,19 @@ export default function QuotesSection() {
                               Marcar vencido
                             </DropdownMenuItem>
                           )}
+                          {/* Ampliar — solo sobre originales aceptados. La
+                              ampliación se ata al ppto raíz y suma su total al
+                              bucket aprobado del repair vinculado. */}
+                          {q.status === "accepted" &&
+                            (q.extensionSuffix ?? 0) === 0 && (
+                              <DropdownMenuItem
+                                className="gap-2"
+                                onClick={() => setExtendingFromId(q.id)}
+                              >
+                                <Plus className="h-4 w-4 text-amber-600" />
+                                Ampliar
+                              </DropdownMenuItem>
+                            )}
                           <DropdownMenuItem
                             className="gap-2"
                             onClick={() => duplicateQuote(q.id)}
@@ -779,16 +804,23 @@ export default function QuotesSection() {
         </DialogContent>
       </Dialog>
 
-      {/* BudgetModal controlado — se abre después del flow de nueva cotización */}
+      {/* BudgetModal controlado — se abre después del flow de nueva cotización
+          o cuando el operador elige "Ampliar" sobre un ppto aceptado. Los dos
+          modos son mutuamente excluyentes a nivel UX (uno por vez). */}
       <BudgetModal
         leadId={budgetLeadId ?? undefined}
+        extendingFromBudgetId={extendingFromId ?? undefined}
         hideTrigger
-        open={budgetLeadId !== null}
+        open={budgetLeadId !== null || extendingFromId !== null}
         onOpenChange={(v) => {
-          if (!v) setBudgetLeadId(null);
+          if (!v) {
+            setBudgetLeadId(null);
+            setExtendingFromId(null);
+          }
         }}
         onSaved={() => {
           setBudgetLeadId(null);
+          setExtendingFromId(null);
           fetchQuotes();
         }}
       />

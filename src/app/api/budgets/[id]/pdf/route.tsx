@@ -29,6 +29,9 @@ export async function GET(request: Request, ctx: RouteContext) {
           customer: { select: { dni: true, address: true } },
         },
       },
+      parentBudget: {
+        select: { number: true, extensionSuffix: true },
+      },
     },
   });
 
@@ -45,8 +48,16 @@ export async function GET(request: Request, ctx: RouteContext) {
   // del filesystem y devuelve data URI base64 (más confiable que fetch HTTP).
   const logoUrl = await resolvePdfLogo(settings.companyLogoUrl);
 
+  const parentDisplay = budget.parentBudget
+    ? budget.parentBudget.extensionSuffix > 0
+      ? `${budget.parentBudget.number}-A${budget.parentBudget.extensionSuffix}`
+      : `${budget.parentBudget.number}`
+    : null;
+
   const pdfData: BudgetPdfData = {
     number: budget.number,
+    extensionSuffix: budget.extensionSuffix,
+    parentDisplayNumber: parentDisplay,
     createdAt: budget.createdAt,
     customer: {
       name: budget.customerName,
@@ -120,9 +131,14 @@ export async function GET(request: Request, ctx: RouteContext) {
     );
   }
 
-  // Nombre amigable: "Presupuesto-3576-JORGE-SANGALLI.pdf"
+  // Nombre amigable: "Presupuesto-3576-JORGE-SANGALLI.pdf" o
+  // "Presupuesto-3576-A1-JORGE-SANGALLI.pdf" para ampliaciones.
   const safeName = budget.customerName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").slice(0, 40);
-  const filename = `Presupuesto-${budget.number}-${safeName}.pdf`;
+  const numberPart =
+    budget.extensionSuffix > 0
+      ? `${budget.number}-A${budget.extensionSuffix}`
+      : `${budget.number}`;
+  const filename = `Presupuesto-${numberPart}-${safeName}.pdf`;
 
   return new Response(new Uint8Array(pdfBuffer), {
     status: 200,
