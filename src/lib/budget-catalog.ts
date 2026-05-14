@@ -188,6 +188,16 @@ export const SUBDETAILS: SubdetailCatalog = {
           label:
             "Tapizado interior, cerrajería y cristalería de puerta delantera derecha",
         },
+        {
+          key: "puerta_completa_tras_izq",
+          label:
+            "Tapizado interior, cerrajería y cristalería de puerta trasera izquierda",
+        },
+        {
+          key: "puerta_completa_tras_der",
+          label:
+            "Tapizado interior, cerrajería y cristalería de puerta trasera derecha",
+        },
       ],
     },
     {

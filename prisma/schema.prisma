@@ -328,8 +328,11 @@ model Budget {
   id     String       @id @default(uuid())
   leadId String
   /** Correlativo global del presupuesto. Las ampliaciones HEREDAN este
-   *  número del padre y se diferencian por `extensionSuffix`. La unicidad
-   *  real es el compuesto (number, extensionSuffix). */
+   *  número del padre y se diferencian por `extensionSuffix`. NO es único:
+   *  el admin puede repetir el número manualmente si lo necesita (p. ej.,
+   *  para alinear con numeración externa del seguro). La identidad real
+   *  del registro es el `id` (uuid); el par (number, extensionSuffix) es
+   *  solo display. */
   number Int
   status BudgetStatus @default(draft)
 
@@ -354,6 +357,7 @@ model Budget {
   customerPhone    String
   customerDni      String?
   customerAddress  String?
+  customerCity     String?
   vehicleBrand     String
   vehicleModel     String
   vehicleYear      String
@@ -405,7 +409,7 @@ model Budget {
   @@index([status])
   @@index([createdById])
   @@index([parentBudgetId])
-  @@unique([number, extensionSuffix])
+  @@index([number])
 }
 
 /**

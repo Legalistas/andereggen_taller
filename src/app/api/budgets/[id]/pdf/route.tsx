@@ -26,7 +26,7 @@ export async function GET(request: Request, ctx: RouteContext) {
       parts: { orderBy: { order: "asc" } },
       lead: {
         select: {
-          customer: { select: { dni: true, address: true } },
+          customer: { select: { dni: true, address: true, city: true } },
         },
       },
       parentBudget: {
@@ -65,20 +65,15 @@ export async function GET(request: Request, ctx: RouteContext) {
       phone: budget.customerPhone,
       dni: budget.customerDni ?? budget.lead.customer.dni ?? null,
       address: budget.customerAddress ?? budget.lead.customer.address ?? null,
+      city: budget.customerCity ?? budget.lead.customer.city ?? null,
     },
     vehicle: {
       brand: budget.vehicleBrand,
       model: budget.vehicleModel,
       year: budget.vehicleYear,
       domain: budget.vehicleDomain,
-      chassis: budget.vehicleChassis,
       perladoTricapa: budget.vehiclePerladoTricapa,
       insurance: budget.vehicleInsurance,
-      coverageType: budget.insuranceCoverageType,
-      franchise:
-        budget.insuranceFranchise !== null
-          ? Number(budget.insuranceFranchise)
-          : null,
     },
     concepts: budget.concepts.map((c) => ({
       type: c.type as "DESCRIPTIVO" | "UNIDADES" | "FIJO",

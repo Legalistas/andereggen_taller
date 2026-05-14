@@ -23,18 +23,15 @@ export type BudgetPdfData = {
     phone: string;
     dni?: string | null;
     address?: string | null;
+    city?: string | null;
   };
   vehicle: {
     brand: string;
     model: string;
     year: string;
     domain: string;
-    chassis?: string | null;
     perladoTricapa?: boolean;
     insurance?: string | null;
-    /** "todo_riesgo" | "terceros" | null */
-    coverageType?: string | null;
-    franchise?: number | string | null;
   };
   concepts: Array<{
     type: "DESCRIPTIVO" | "UNIDADES" | "FIJO";
@@ -364,6 +361,12 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
                   <Text style={s.value}>{data.customer.address}</Text>
                 </View>
               ) : null}
+              {data.customer.city && data.customer.city !== "-" ? (
+                <View style={s.row}>
+                  <Text style={s.label}>Localidad</Text>
+                  <Text style={s.value}>{data.customer.city}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
           <View style={s.col}>
@@ -385,12 +388,6 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
                 <Text style={s.label}>Dominio</Text>
                 <Text style={s.value}>{data.vehicle.domain}</Text>
               </View>
-              {data.vehicle.chassis ? (
-                <View style={s.row}>
-                  <Text style={s.label}>Chasis</Text>
-                  <Text style={s.value}>{data.vehicle.chassis}</Text>
-                </View>
-              ) : null}
               {data.vehicle.perladoTricapa ? (
                 <View style={s.row}>
                   <Text style={s.label}>Pintura</Text>
@@ -408,31 +405,6 @@ export function BudgetPdf({ data }: { data: BudgetPdfData }) {
                 <View style={s.row}>
                   <Text style={s.label}>Seguro</Text>
                   <Text style={s.value}>{data.vehicle.insurance}</Text>
-                </View>
-              ) : null}
-              {data.vehicle.coverageType ? (
-                <View style={s.row}>
-                  <Text style={s.label}>Cobertura</Text>
-                  <Text style={s.value}>
-                    {data.vehicle.coverageType === "todo_riesgo"
-                      ? "Contra todo riesgo"
-                      : "Contra terceros"}
-                  </Text>
-                </View>
-              ) : null}
-              {data.vehicle.coverageType === "todo_riesgo" &&
-              data.vehicle.franchise !== null &&
-              data.vehicle.franchise !== undefined &&
-              data.vehicle.franchise !== "" ? (
-                <View style={s.row}>
-                  <Text style={s.label}>Franquicia</Text>
-                  <Text style={s.value}>
-                    {new Intl.NumberFormat("es-AR", {
-                      style: "currency",
-                      currency: "ARS",
-                      minimumFractionDigits: 2,
-                    }).format(Number(data.vehicle.franchise))}
-                  </Text>
                 </View>
               ) : null}
             </View>

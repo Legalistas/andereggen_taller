@@ -156,14 +156,17 @@ export async function nextBudgetNumber(
 /**
  * Próximo `extensionSuffix` para ampliaciones de un presupuesto dado.
  * Devuelve 1 si todavía no hay ampliaciones, 2 si ya hay A1, etc.
+ * Mira por `parentBudgetId` (no por `number`) para que el contador siga
+ * funcionando correctamente cuando un mismo número se repite en varios
+ * presupuestos originales.
  */
 export async function nextExtensionSuffix(
-  parentNumber: number,
+  parentId: string,
   tx: Prisma.TransactionClient = prisma as unknown as Prisma.TransactionClient,
 ): Promise<number> {
   const agg = await tx.budget.aggregate({
     _max: { extensionSuffix: true },
-    where: { number: parentNumber },
+    where: { parentBudgetId: parentId },
   });
   return (agg._max.extensionSuffix ?? 0) + 1;
 }
@@ -262,25 +265,11 @@ export async function createBudgetForLead(params: {
     const ivaRateForCalc = payload.ivaRate ?? Number(settings.defaultIvaRate);
     const totals = computedSubtotals({ ...payload, ivaRate: ivaRateForCalc });
 
-    // Si el usuario pasó un número manual, validamos que no choque con un
-    // original existente; si no, calculamos el correlativo (max+1).
-    // Solo miramos `extensionSuffix=0` porque las ampliaciones comparten
-    // número con su padre y eso es esperado.
-    let number: number;
-    if (payload.number !== undefined) {
-      const dupe = await tx.budget.findFirst({
-        where: { number: payload.number, extensionSuffix: 0 },
-        select: { id: true },
-      });
-      if (dupe) {
-        throw new BudgetValidationError(
-          `Ya existe un presupuesto con el número ${payload.number}.`,
-        );
-      }
-      number = payload.number;
-    } else {
-      number = await nextBudgetNumber(tx);
-    }
+    // Si el usuario pasó un número manual, lo respetamos tal cual (puede
+    // repetirse con otro presupuesto si así lo decide el admin). Si no
+    // viene, calculamos el correlativo sugerido (max+1).
+    const number =
+      payload.number !== undefined ? payload.number : await nextBudgetNumber(tx);
 
     const budget = await tx.budget.create({
       data: {
@@ -293,6 +282,7 @@ export async function createBudgetForLead(params: {
         customerPhone: lead.customer.phone,
         customerDni: lead.customer.dni,
         customerAddress: lead.customer.address,
+        customerCity: lead.customer.city,
         vehicleBrand: lead.vehicle.brand,
         vehicleModel: lead.vehicle.model,
         vehicleYear: lead.vehicle.year,
@@ -357,23 +347,10 @@ export async function updateBudget(params: {
 
     const totals = computedSubtotals(payload);
 
-    // Si el usuario cambió el número, validamos que no choque con otro
-    // original. Las ampliaciones no permiten cambiar el número manualmente.
-    if (
-      payload.number !== undefined &&
-      payload.number !== existing.number &&
-      existing.extensionSuffix === 0
-    ) {
-      const dupe = await tx.budget.findFirst({
-        where: { number: payload.number, extensionSuffix: 0 },
-        select: { id: true },
-      });
-      if (dupe && dupe.id !== id) {
-        throw new BudgetValidationError(
-          `Ya existe un presupuesto con el número ${payload.number}.`,
-        );
-      }
-    }
+    // El número se permite repetir entre presupuestos: el admin puede
+    // necesitar alinear con numeración externa (seguro, sistema viejo).
+    // Las ampliaciones siguen heredando el número del padre (no se permite
+    // cambiarlo manualmente desde edición — eso se ignora abajo en el data).
 
     // Estrategia: reemplazar conceptos y partes (los hijos son de identidad del budget).
     await tx.budgetConcept.deleteMany({ where: { budgetId: id } });
@@ -445,7 +422,7 @@ export async function extendBudget(params: {
     const ivaRateForCalc = payload.ivaRate ?? Number(settings.defaultIvaRate);
     const totals = computedSubtotals({ ...payload, ivaRate: ivaRateForCalc });
 
-    const suffix = await nextExtensionSuffix(root.number, tx);
+    const suffix = await nextExtensionSuffix(root.id, tx);
 
     return tx.budget.create({
       data: {
@@ -461,6 +438,7 @@ export async function extendBudget(params: {
         customerPhone: root.customerPhone,
         customerDni: root.customerDni,
         customerAddress: root.customerAddress,
+        customerCity: root.customerCity,
         vehicleBrand: root.vehicleBrand,
         vehicleModel: root.vehicleModel,
         vehicleYear: root.vehicleYear,
