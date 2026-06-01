@@ -339,11 +339,9 @@ export async function updateBudget(params: {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.budget.findUnique({ where: { id } });
     if (!existing) throw new BudgetValidationError("Budget not found");
-    if (existing.status !== "draft") {
-      throw new BudgetValidationError(
-        `Budget in status "${existing.status}" cannot be edited; create a new revision instead`,
-      );
-    }
+    // Se permite editar en cualquier estado (draft / sent / accepted / rejected
+    // / expired). El admin puede necesitar corregir un presupuesto ya aceptado
+    // sin tener que crear una ampliación o revisión nueva.
 
     const totals = computedSubtotals(payload);
 
