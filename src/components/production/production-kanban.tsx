@@ -71,6 +71,15 @@ export type KanbanRepair = {
     number: number;
     grandTotal: string | number;
   } | null;
+  /** Saldo pendiente de cobro (facturado − cobrado). null si todavía no hay
+   *  facturas cargadas. Se muestra en la card cuando el repair está en la
+   *  columna "Pendientes de Cobro". */
+  pendingAmount: number | null;
+  /** Suma de los importes aprobados (seguro + franquicia + particular).
+   *  null si todavía no se cargó ninguno. Cuando existe, reemplaza al
+   *  grandTotal del presupuesto en la card — es el importe que realmente
+   *  vamos a cobrar y suele diferir del ppto inicial. */
+  approvedTotal: number | null;
   serviceRating: {
     stars: number | null;
     respondedAt: string | null;
@@ -228,8 +237,16 @@ export function ProductionKanban({
     <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4">
       {COLUMNS.map((col) => {
         const items = repairs.filter((r) => r.status === col.id);
+        // Para la suma del header preferimos el `approvedTotal` (lo que
+        // realmente vamos a cobrar) y caemos al grandTotal del ppto si
+        // todavía no hay aprobación cargada. Así el total del header
+        // coincide con la suma de los importes mostrados en las cards.
         const totalAmount = items.reduce(
-          (a, r) => a + Number(r.budget?.grandTotal ?? 0),
+          (a, r) =>
+            a +
+            (r.approvedTotal !== null
+              ? r.approvedTotal
+              : Number(r.budget?.grandTotal ?? 0)),
           0,
         );
         const Icon = col.icon;
@@ -474,11 +491,37 @@ function RepairCard({
 
       {hasBudget && repair.budget && (
         <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-          <span className="text-slate-500">
+          <span className="text-slate-500 flex items-center gap-1">
             Presup. #{repair.budget.number}
+            {repair.approvedTotal !== null && (
+              <span
+                className="text-[9px] px-1 py-px rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium"
+                title="El seguro/cliente ya aprobó los importes. Se muestra el total aprobado en lugar del total del presupuesto."
+              >
+                aprobado
+              </span>
+            )}
           </span>
           <span className="font-semibold text-slate-900 tabular-nums">
-            {ARS.format(Number(repair.budget.grandTotal))}
+            {ARS.format(
+              repair.approvedTotal !== null
+                ? repair.approvedTotal
+                : Number(repair.budget.grandTotal),
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Saldo pendiente de cobro — solo en la columna "Pendientes de Cobro".
+          Permite ver de un vistazo cuánta plata queda por cobrar sin tener
+          que abrir el detalle del repair. */}
+      {repair.status === "pendientes_cobro" && repair.pendingAmount !== null && (
+        <div className="mt-1 flex items-center justify-between text-[11px]">
+          <span className="text-rose-600 font-medium">Pendiente</span>
+          <span
+            className={`font-semibold tabular-nums ${repair.pendingAmount > 0 ? "text-rose-600" : "text-emerald-600"}`}
+          >
+            {ARS.format(repair.pendingAmount)}
           </span>
         </div>
       )}

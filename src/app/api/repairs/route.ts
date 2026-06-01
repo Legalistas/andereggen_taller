@@ -73,6 +73,15 @@ export async function GET(request: Request) {
       serviceRating: {
         select: { stars: true, respondedAt: true, token: true },
       },
+      // Necesario para calcular `pendingAmount` en la card del kanban
+      // (Pendientes de Cobro). Solo traemos los `amount` — la card no
+      // muestra el detalle de cada factura/pago.
+      invoices: {
+        select: {
+          amount: true,
+          payments: { select: { amount: true } },
+        },
+      },
     },
     // El Kanban agrupa por status según el array COLUMNS de production-kanban.tsx,
     // así que el orden visual no depende del enum. Solo ordenamos por updatedAt
@@ -80,7 +89,35 @@ export async function GET(request: Request) {
     orderBy: { updatedAt: "desc" },
   });
 
-  return NextResponse.json({ repairs });
+  // Pre-computamos:
+  //  - `pendingAmount = sum(invoice.amount) - sum(payment.amount)` (cobranzas).
+  //  - `approvedTotal = approvedInsurance + approvedFranchise + approvedCustomer`,
+  //    null si todavía no se cargó ninguno (la card cae al grandTotal del ppto).
+  //    Cuando el auto está en taller, este es el importe "real" que vamos a
+  //    cobrar — el seguro suele aprobar menos (o más) que lo presupuestado.
+  const repairsWithPending = repairs.map(({ invoices, ...rest }) => {
+    const billed = invoices.reduce((a, i) => a + Number(i.amount), 0);
+    const paid = invoices.reduce(
+      (a, i) => a + i.payments.reduce((b, p) => b + Number(p.amount), 0),
+      0,
+    );
+    const hasApproval =
+      rest.approvedInsurance !== null ||
+      rest.approvedFranchise !== null ||
+      rest.approvedCustomer !== null;
+    const approvedTotal = hasApproval
+      ? Number(rest.approvedInsurance ?? 0) +
+        Number(rest.approvedFranchise ?? 0) +
+        Number(rest.approvedCustomer ?? 0)
+      : null;
+    return {
+      ...rest,
+      pendingAmount: invoices.length > 0 ? billed - paid : null,
+      approvedTotal,
+    };
+  });
+
+  return NextResponse.json({ repairs: repairsWithPending });
 }
 
 /**

@@ -29,7 +29,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authError = await verifyAuth(request, ["super_admin", "admin_taller"]);
+  const authError = await verifyAuth(request, [
+    "super_admin",
+    "admin_taller",
+    "contable",
+  ]);
   if (authError) return authError;
 
   const body = await request.json().catch(() => null);

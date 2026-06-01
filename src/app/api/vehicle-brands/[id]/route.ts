@@ -19,7 +19,11 @@ export async function GET(request: Request, ctx: RouteContext) {
 }
 
 export async function PATCH(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request, ["super_admin", "admin_taller"]);
+  const authError = await verifyAuth(request, [
+    "super_admin",
+    "admin_taller",
+    "contable",
+  ]);
   if (authError) return authError;
   const { id } = await ctx.params;
 
@@ -58,7 +62,11 @@ export async function PATCH(request: Request, ctx: RouteContext) {
 }
 
 export async function DELETE(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request, ["super_admin", "admin_taller"]);
+  const authError = await verifyAuth(request, [
+    "super_admin",
+    "admin_taller",
+    "contable",
+  ]);
   if (authError) return authError;
   const { id } = await ctx.params;
 
