@@ -237,18 +237,17 @@ export function ProductionKanban({
     <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4">
       {COLUMNS.map((col) => {
         const items = repairs.filter((r) => r.status === col.id);
-        // Para la suma del header preferimos el `approvedTotal` (lo que
-        // realmente vamos a cobrar) y caemos al grandTotal del ppto si
-        // todavía no hay aprobación cargada. Así el total del header
-        // coincide con la suma de los importes mostrados en las cards.
-        const totalAmount = items.reduce(
-          (a, r) =>
-            a +
-            (r.approvedTotal !== null
-              ? r.approvedTotal
-              : Number(r.budget?.grandTotal ?? 0)),
-          0,
-        );
+        // La suma del header refleja el mismo criterio que cada card:
+        //  - Pendientes de Cobro → pendingAmount (saldo por cobrar)
+        //  - Resto con aprobación → approvedTotal (lo que vamos a cobrar)
+        //  - Resto → grandTotal del ppto
+        const totalAmount = items.reduce((a, r) => {
+          if (col.id === "pendientes_cobro" && r.pendingAmount !== null) {
+            return a + r.pendingAmount;
+          }
+          if (r.approvedTotal !== null) return a + r.approvedTotal;
+          return a + Number(r.budget?.grandTotal ?? 0);
+        }, 0);
         const Icon = col.icon;
         const isDropTarget = dragOverColumn === col.id;
 
@@ -489,42 +488,64 @@ function RepairCard({
         </div>
       )}
 
-      {hasBudget && repair.budget && (
-        <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-          <span className="text-slate-500 flex items-center gap-1">
-            Presup. #{repair.budget.number}
-            {repair.approvedTotal !== null && (
-              <span
-                className="text-[9px] px-1 py-px rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium"
-                title="El seguro/cliente ya aprobó los importes. Se muestra el total aprobado en lugar del total del presupuesto."
-              >
-                aprobado
-              </span>
-            )}
-          </span>
-          <span className="font-semibold text-slate-900 tabular-nums">
-            {ARS.format(
-              repair.approvedTotal !== null
-                ? repair.approvedTotal
-                : Number(repair.budget.grandTotal),
-            )}
-          </span>
-        </div>
-      )}
+      {hasBudget && repair.budget && (() => {
+        // El importe principal de la card se elige en cascada según el
+        // estado del repair, para mostrar siempre el número que importa:
+        //  1. En "Pendientes de Cobro": el saldo pendiente (facturado −
+        //     cobrado). Es lo que el admin necesita ver de un vistazo.
+        //  2. Si ya hay aprobación de seguro/cliente: el total aprobado
+        //     (lo que efectivamente vamos a cobrar).
+        //  3. Default: el grandTotal del presupuesto.
+        const showPending =
+          repair.status === "pendientes_cobro" && repair.pendingAmount !== null;
+        const showApproved = !showPending && repair.approvedTotal !== null;
 
-      {/* Saldo pendiente de cobro — solo en la columna "Pendientes de Cobro".
-          Permite ver de un vistazo cuánta plata queda por cobrar sin tener
-          que abrir el detalle del repair. */}
-      {repair.status === "pendientes_cobro" && repair.pendingAmount !== null && (
-        <div className="mt-1 flex items-center justify-between text-[11px]">
-          <span className="text-rose-600 font-medium">Pendiente</span>
-          <span
-            className={`font-semibold tabular-nums ${repair.pendingAmount > 0 ? "text-rose-600" : "text-emerald-600"}`}
-          >
-            {ARS.format(repair.pendingAmount)}
-          </span>
-        </div>
-      )}
+        let label: string;
+        let badge: { text: string; class: string; title: string } | null = null;
+        let amount: number;
+        let amountClass = "text-slate-900";
+
+        if (showPending) {
+          label = `Pendiente #${repair.budget.number}`;
+          amount = repair.pendingAmount as number;
+          amountClass =
+            amount > 0
+              ? "text-rose-600"
+              : "text-emerald-600";
+        } else if (showApproved) {
+          label = `Presup. #${repair.budget.number}`;
+          badge = {
+            text: "aprobado",
+            class:
+              "bg-emerald-50 border-emerald-200 text-emerald-700",
+            title:
+              "El seguro/cliente ya aprobó los importes. Se muestra el total aprobado en lugar del total del presupuesto.",
+          };
+          amount = repair.approvedTotal as number;
+        } else {
+          label = `Presup. #${repair.budget.number}`;
+          amount = Number(repair.budget.grandTotal);
+        }
+
+        return (
+          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+            <span className="text-slate-500 flex items-center gap-1">
+              {label}
+              {badge && (
+                <span
+                  className={`text-[9px] px-1 py-px rounded border font-medium ${badge.class}`}
+                  title={badge.title}
+                >
+                  {badge.text}
+                </span>
+              )}
+            </span>
+            <span className={`font-semibold tabular-nums ${amountClass}`}>
+              {ARS.format(amount)}
+            </span>
+          </div>
+        );
+      })()}
 
       {(repair.directCreation || delivery) && (
         <div

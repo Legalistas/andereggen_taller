@@ -269,6 +269,19 @@ export default function BudgetModal({
     };
   }, [open, isEditing, isExtending]);
 
+  // Al abrir un presupuesto NUEVO (no edición / no ampliación), pre-cargamos
+  // CHAPA y PINTURA porque todo presupuesto los tiene. El admin solo carga
+  // los importes en vez de tener que seleccionarlos del desplegable cada vez.
+  // Si ya hay conceptos cargados (porque el usuario los agregó manualmente o
+  // está reabriendo el modal), no pisamos nada.
+  useEffect(() => {
+    if (!open || isEditing || isExtending) return;
+    setConcepts((prev) => {
+      if (prev.length > 0) return prev;
+      return [emptyConcept("CHAPA"), emptyConcept("PINTURA")];
+    });
+  }, [open, isEditing, isExtending]);
+
   // En modo ampliación, cargamos info del padre para mostrar contexto en el
   // header (Nº del padre, cliente, dominio). Solo display — no se edita.
   useEffect(() => {
@@ -502,6 +515,7 @@ export default function BudgetModal({
     try {
       const payload = {
         number: parsedNumber,
+        ivaRate,
         validityDays: num(validityDays) || 10,
         deliveryDays: num(deliveryDays) || 20,
         paymentCondition,
@@ -1021,6 +1035,26 @@ export default function BudgetModal({
                     className="text-xs font-bold uppercase tracking-wider text-amber-800 cursor-pointer"
                   >
                     Perlado tricapa
+                  </Label>
+                </div>
+                {/* Sin IVA en mano de obra: para presupuestos a particulares
+                    sin facturación. Al tildarlo el subtotal de mano de obra
+                    no lleva IVA y el "TOTAL" del presupuesto es directamente
+                    laborSubtotal + repuestos. Internamente seteamos ivaRate=0
+                    (no agregamos columna nueva — la calculadora ya lo soporta). */}
+                <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <Checkbox
+                    id="noIvaLabor"
+                    checked={ivaRate === 0}
+                    onCheckedChange={(c) =>
+                      setIvaRate(c ? 0 : DEFAULT_IVA_RATE)
+                    }
+                  />
+                  <Label
+                    htmlFor="noIvaLabor"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-700 cursor-pointer"
+                  >
+                    Sin IVA en mano de obra
                   </Label>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

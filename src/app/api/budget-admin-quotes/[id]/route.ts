@@ -20,6 +20,13 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
+import type { QuoteCategory } from "../../../../../generated/prisma/client";
+
+const VALID_CATEGORIES: QuoteCategory[] = [
+  "OFICIAL",
+  "ALTERNATIVO",
+  "DESARMADERO",
+];
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -53,6 +60,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   }
 
   const {
+    category,
     supplierName,
     price,
     partCode,
@@ -62,6 +70,19 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     notes,
   } = body as Record<string, unknown>;
   const data: Record<string, unknown> = {};
+
+  if (category !== undefined) {
+    if (
+      typeof category !== "string" ||
+      !VALID_CATEGORIES.includes(category as QuoteCategory)
+    ) {
+      return NextResponse.json(
+        { error: `category debe ser uno de: ${VALID_CATEGORIES.join(", ")}` },
+        { status: 400 },
+      );
+    }
+    data.category = category as QuoteCategory;
+  }
 
   if (supplierName !== undefined) {
     if (typeof supplierName !== "string" || supplierName.trim() === "") {

@@ -10,7 +10,7 @@ type Fixture = { key: string; label: string; order: number };
 const FIXTURES: Fixture[] = [
   { key: "web", label: "Formulario web", order: 10 },
   { key: "whatsapp", label: "WhatsApp", order: 20 },
-  { key: "telefono", label: "Teléfono", order: 30 },
+  { key: "pautas", label: "Pautas", order: 30 },
   { key: "manual", label: "Carga manual", order: 40 },
   { key: "referido", label: "Cliente referido", order: 50 },
   { key: "redes_sociales", label: "Redes sociales", order: 60 },

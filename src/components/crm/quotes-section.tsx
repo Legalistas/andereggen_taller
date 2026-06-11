@@ -188,8 +188,11 @@ export default function QuotesSection() {
   // Filtros
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<BudgetStatus | "all">("all");
+  // Filtros de período: rango por días (rolling) o un mes calendario puntual.
+  // El valor "month:YYYY-MM" filtra desde el primero del mes hasta el primero
+  // del siguiente, así "todos los de mayo" da exactamente eso.
   const [periodFilter, setPeriodFilter] = useState<
-    "all" | "7d" | "30d" | "90d"
+    "all" | "7d" | "30d" | "90d" | `month:${string}`
   >("all");
 
   // New quote flow
@@ -225,10 +228,19 @@ export default function QuotesSection() {
         if (search) params.set("search", search);
         if (statusFilter !== "all") params.set("status", statusFilter);
         if (periodFilter !== "all") {
-          const days =
-            periodFilter === "7d" ? 7 : periodFilter === "30d" ? 30 : 90;
-          const from = new Date(Date.now() - days * 86400_000);
-          params.set("dateFrom", from.toISOString());
+          if (periodFilter.startsWith("month:")) {
+            // "month:2026-05" → del 01/05 al 01/06 (excluyente)
+            const [y, m] = periodFilter.slice(6).split("-").map(Number);
+            const from = new Date(y, m - 1, 1);
+            const to = new Date(y, m, 1);
+            params.set("dateFrom", from.toISOString());
+            params.set("dateTo", to.toISOString());
+          } else {
+            const days =
+              periodFilter === "7d" ? 7 : periodFilter === "30d" ? 30 : 90;
+            const from = new Date(Date.now() - days * 86400_000);
+            params.set("dateFrom", from.toISOString());
+          }
         }
         const res = await fetch(`/api/budgets?${params}`, { signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -521,6 +533,26 @@ export default function QuotesSection() {
                 <SelectItem value="7d">Últimos 7 días</SelectItem>
                 <SelectItem value="30d">Últimos 30 días</SelectItem>
                 <SelectItem value="90d">Últimos 90 días</SelectItem>
+                {/* Últimos 12 meses calendario — permite ver "todos los de
+                    mayo" sin tener que pelearse con rangos de días. */}
+                {Array.from({ length: 12 }, (_, i) => {
+                  const d = new Date();
+                  d.setDate(1);
+                  d.setMonth(d.getMonth() - i);
+                  const y = d.getFullYear();
+                  const m = d.getMonth() + 1;
+                  const value = `month:${y}-${String(m).padStart(2, "0")}`;
+                  const label = d.toLocaleDateString("es-AR", {
+                    month: "long",
+                    year: "numeric",
+                  });
+                  return (
+                    <SelectItem key={value} value={value}>
+                      {label[0].toUpperCase()}
+                      {label.slice(1)}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>

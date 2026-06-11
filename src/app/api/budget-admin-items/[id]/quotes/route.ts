@@ -2,6 +2,7 @@
  * POST /api/budget-admin-items/[id]/quotes
  * Agrega una cotización de proveedor al item.
  * Body: {
+ *   category?: "OFICIAL" | "ALTERNATIVO" | "DESARMADERO",  // default OFICIAL
  *   supplierName: string,
  *   price: number,
  *   partCode?: string,
@@ -17,6 +18,13 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
+import type { QuoteCategory } from "../../../../../../generated/prisma/client";
+
+const VALID_CATEGORIES: QuoteCategory[] = [
+  "OFICIAL",
+  "ALTERNATIVO",
+  "DESARMADERO",
+];
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -48,6 +56,7 @@ export async function POST(request: Request, ctx: RouteContext) {
   }
 
   const {
+    category,
     supplierName,
     price,
     partCode,
@@ -56,6 +65,22 @@ export async function POST(request: Request, ctx: RouteContext) {
     photos,
     notes,
   } = body as Record<string, unknown>;
+
+  let categoryValue: QuoteCategory = "OFICIAL";
+  if (category !== undefined && category !== null && category !== "") {
+    if (
+      typeof category !== "string" ||
+      !VALID_CATEGORIES.includes(category as QuoteCategory)
+    ) {
+      return NextResponse.json(
+        {
+          error: `category debe ser uno de: ${VALID_CATEGORIES.join(", ")}`,
+        },
+        { status: 400 },
+      );
+    }
+    categoryValue = category as QuoteCategory;
+  }
 
   if (typeof supplierName !== "string" || supplierName.trim() === "") {
     return NextResponse.json(
@@ -94,6 +119,7 @@ export async function POST(request: Request, ctx: RouteContext) {
   const quote = await prisma.budgetAdminQuote.create({
     data: {
       itemId: id,
+      category: categoryValue,
       supplierName: supplierName.trim(),
       price: priceNum,
       partCode:

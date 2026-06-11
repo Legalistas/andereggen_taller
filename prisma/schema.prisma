@@ -450,10 +450,25 @@ model BudgetAdminItem {
   @@index([budgetId])
 }
 
+/**
+ * Categoría de la cotización: define en qué columna del comparativo aparece.
+ *  - OFICIAL: precio en concesionaria oficial de la marca.
+ *  - ALTERNATIVO: repuesto alternativo (proveedor independiente).
+ *  - DESARMADERO: repuesto usado de desarmadero.
+ * Un mismo repuesto puede tener varias cotizaciones por categoría.
+ */
+enum QuoteCategory {
+  OFICIAL
+  ALTERNATIVO
+  DESARMADERO
+}
+
 model BudgetAdminQuote {
   id           String          @id @default(uuid())
   itemId       String
   item         BudgetAdminItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  /** Bucket de la grilla comparativa (concesionaria/alternativo/desarmadero). */
+  category     QuoteCategory   @default(OFICIAL)
   supplierName String
   price        Decimal         @db.Decimal(14, 2)
   /** Código de repuesto que da el proveedor (puede repetirse entre proveedores) */
@@ -469,6 +484,7 @@ model BudgetAdminQuote {
   updatedAt    DateTime        @updatedAt
 
   @@index([itemId])
+  @@index([itemId, category])
 }
 
 model BudgetAdminPurchase {

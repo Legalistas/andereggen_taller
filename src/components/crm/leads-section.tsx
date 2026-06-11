@@ -131,6 +131,12 @@ export default function LeadsSection() {
   const [newCustPhone, setNewCustPhone] = useState("");
   const [newCustDniType, setNewCustDniType] = useState("DNI");
   const [newCustDni, setNewCustDni] = useState("");
+  // Dirección y localidad — la dirección es la primer info que pedimos a
+  // los clientes que vienen a la oficina, así que la pedimos junto a los
+  // datos esenciales del lead. Si quedan vacíos, el backend usa Rafaela y
+  // "-" como defaults históricos.
+  const [newCustAddress, setNewCustAddress] = useState("");
+  const [newCustCity, setNewCustCity] = useState("");
   const [useExistingVehicle, setUseExistingVehicle] = useState<
     string | "new" | ""
   >("");
@@ -274,6 +280,8 @@ export default function LeadsSection() {
     setNewCustPhone("");
     setNewCustDniType("DNI");
     setNewCustDni("");
+    setNewCustAddress("");
+    setNewCustCity("");
     setUseExistingVehicle("");
     setVehicleBrand("");
     setVehicleModel("");
@@ -376,6 +384,8 @@ export default function LeadsSection() {
         phone: newCustPhone.trim(),
         dni: newCustDni.trim() || undefined,
         dniType: newCustDni.trim() ? newCustDniType : undefined,
+        address: newCustAddress.trim() || undefined,
+        city: newCustCity.trim() || undefined,
       };
     }
 
@@ -498,9 +508,9 @@ export default function LeadsSection() {
                 ) : (
                   <div className="grid gap-3 rounded-md border border-dashed bg-muted/10 p-4">
                     <p className="text-xs text-muted-foreground -mt-1">
-                      Datos esenciales. La dirección completa se completa con
-                      valores por defecto (Argentina · Santa Fe · Rafaela) y se
-                      puede editar después desde Clientes.
+                      Datos del cliente. Si dejás dirección o localidad en
+                      blanco, se completan con Rafaela como default y se
+                      pueden editar después desde Clientes.
                     </p>
                     <div className="grid gap-2">
                       <Label htmlFor="newCustName">Nombre completo *</Label>
@@ -510,6 +520,26 @@ export default function LeadsSection() {
                         value={newCustName}
                         onChange={(e) => setNewCustName(e.target.value)}
                       />
+                    </div>
+                    <div className="grid grid-cols-[1fr_180px] gap-3">
+                      <div className="grid gap-2">
+                        <Label htmlFor="newCustAddress">Dirección</Label>
+                        <Input
+                          id="newCustAddress"
+                          placeholder="Calle y número"
+                          value={newCustAddress}
+                          onChange={(e) => setNewCustAddress(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="newCustCity">Localidad</Label>
+                        <Input
+                          id="newCustCity"
+                          placeholder="Rafaela"
+                          value={newCustCity}
+                          onChange={(e) => setNewCustCity(e.target.value)}
+                        />
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="grid gap-2">

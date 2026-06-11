@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Building2,
   CheckCircle2,
   FileText,
   Loader2,
@@ -8,10 +9,24 @@ import {
   TrendingUp,
   Wrench,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+type InsuranceBucket =
+  | "NORTE"
+  | "SANCOR"
+  | "SAN_CRIST"
+  | "OTROS"
+  | "PARTICULARES";
 
 type StatsResponse = {
   cotizaciones: {
@@ -28,6 +43,32 @@ type StatsResponse = {
     byStage: Array<{ stage: string; count: number }>;
     completedThisMonth: number;
   };
+  porCompania: {
+    month: string;
+    total: number;
+    accepted: number;
+    byInsurance: Array<{
+      key: InsuranceBucket;
+      total: number;
+      accepted: number;
+    }>;
+  };
+};
+
+const INSURANCE_LABEL: Record<InsuranceBucket, string> = {
+  NORTE: "Norte",
+  SANCOR: "Sancor",
+  SAN_CRIST: "San Cristóbal",
+  OTROS: "Otros seguros",
+  PARTICULARES: "Particulares",
+};
+
+const INSURANCE_DOT: Record<InsuranceBucket, string> = {
+  NORTE: "bg-blue-500",
+  SANCOR: "bg-orange-500",
+  SAN_CRIST: "bg-emerald-500",
+  OTROS: "bg-slate-400",
+  PARTICULARES: "bg-violet-500",
 };
 
 const LEAD_LABEL: Record<string, string> = {
@@ -76,12 +117,36 @@ export default function StatsSection() {
   const [data, setData] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Mes seleccionado para el bloque "Por compañía". El default es el mes
+  // actual; el resto del payload (cotizaciones / producción) usa el mismo
+  // mes para que los counters mensuales coincidan con la vista.
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  // Últimos 12 meses como opciones del selector.
+  const monthOptions = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - i);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      const value = `${y}-${String(m).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("es-AR", {
+        month: "long",
+        year: "numeric",
+      });
+      return { value, label: label[0].toUpperCase() + label.slice(1) };
+    });
+  }, []);
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/stats");
+      const res = await fetch(`/api/stats?month=${selectedMonth}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as StatsResponse;
       setData(body);
@@ -90,7 +155,7 @@ export default function StatsSection() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     fetchStats();
@@ -103,16 +168,32 @@ export default function StatsSection() {
           <Breadcrumbs items={[{ label: "Estadísticas" }]} />
           <h1 className="text-3xl font-bold">Estadísticas</h1>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchStats}
-          disabled={loading}
-          className="gap-2"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Recargar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {monthOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchStats}
+            disabled={loading}
+            className="gap-2"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+            />
+            Recargar
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -128,7 +209,8 @@ export default function StatsSection() {
       )}
 
       {data && (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <>
+          <div className="grid gap-6 lg:grid-cols-2">
           {/* ───────── Cotizaciones ───────── */}
           <section className="space-y-4">
             <div className="flex items-center gap-2">
@@ -226,7 +308,102 @@ export default function StatsSection() {
               </ul>
             </Card>
           </section>
-        </div>
+          </div>
+
+          {/* ───────── Por compañía (mensual) ───────── */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-lg bg-amber-50 flex items-center justify-center">
+                <Building2 className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">
+                  Presupuestos del mes por compañía
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Snapshot del mes seleccionado · ampliaciones excluidas
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <KpiBox
+                label="Presupuestos del mes"
+                value={INT.format(data.porCompania.total)}
+              />
+              <KpiBox
+                label="Aprobados"
+                value={INT.format(data.porCompania.accepted)}
+                accent="text-emerald-600"
+                icon={CheckCircle2}
+              />
+              <KpiBox
+                label="% Aprobación"
+                value={
+                  data.porCompania.total > 0
+                    ? `${Math.round(
+                        (data.porCompania.accepted / data.porCompania.total) *
+                          100,
+                      )}%`
+                    : "—"
+                }
+                hint={`${data.porCompania.accepted} de ${data.porCompania.total}`}
+              />
+            </div>
+
+            <Card className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Building2 className="h-4 w-4 text-slate-500" />
+                <h3 className="text-sm font-semibold text-slate-700">
+                  Detalle por compañía
+                </h3>
+              </div>
+              <ul className="space-y-2.5">
+                {data.porCompania.byInsurance.map((b) => {
+                  const rate =
+                    b.total > 0
+                      ? Math.round((b.accepted / b.total) * 100)
+                      : 0;
+                  return (
+                    <li key={b.key} className="space-y-1">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full shrink-0 ${INSURANCE_DOT[b.key]}`}
+                        />
+                        <span className="text-sm text-slate-800 font-medium w-44 shrink-0">
+                          {INSURANCE_LABEL[b.key]}
+                        </span>
+                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${INSURANCE_DOT[b.key]} transition-all`}
+                            style={{
+                              width: `${data.porCompania.total > 0 ? (b.total / data.porCompania.total) * 100 : 0}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-sm font-semibold tabular-nums text-slate-900 w-10 text-right shrink-0">
+                          {b.total}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 pl-6.5">
+                        <span className="text-[11px] text-slate-500 w-44 shrink-0">
+                          Aprobados
+                        </span>
+                        <div className="flex-1" />
+                        <span className="text-[11px] tabular-nums text-emerald-700 font-medium">
+                          {b.accepted}{" "}
+                          <span className="text-slate-400 font-normal">
+                            ({rate}%)
+                          </span>
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          </section>
+        </>
       )}
     </div>
   );
