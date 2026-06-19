@@ -1,6 +1,7 @@
 import ActivityTable from "@/components/dashboard/activity-table";
 import ChartsSection from "@/components/dashboard/charts-section";
 import DashboardKpis from "@/components/dashboard/dashboard-kpis";
+import StatsSection from "@/components/stats/stats-section";
 import { getServerSession } from "@/lib/auth-utils";
 
 export default async function DashboardPage() {
@@ -17,6 +18,7 @@ export default async function DashboardPage() {
 
       <DashboardKpis />
       <ChartsSection />
+      <StatsSection />
       <ActivityTable />
     </div>
   );

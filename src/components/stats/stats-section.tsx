@@ -10,7 +10,6 @@ import {
   Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -163,10 +162,14 @@ export default function StatsSection() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200">
         <div>
-          <Breadcrumbs items={[{ label: "Estadísticas" }]} />
-          <h1 className="text-3xl font-bold">Estadísticas</h1>
+          <h2 className="text-xl font-bold text-slate-900">
+            Estadísticas mensuales
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Cotizaciones, producción y desglose por compañía de seguro
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
