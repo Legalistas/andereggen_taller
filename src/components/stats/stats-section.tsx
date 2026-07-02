@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
+  LogIn,
   LogOut,
   RefreshCw,
   TrendingUp,
@@ -65,6 +66,23 @@ type StatsResponse = {
       domain: string;
       insurance: string | null;
       deliveredAt: string;
+      /** De dónde salió la fecha: "delivered" es exacta, las otras son
+       *  proxy y las marcamos como aproximadas en la UI. */
+      dateSource: "delivered" | "archived" | "updated";
+      status: string;
+    }>;
+  };
+  ingresos: {
+    month: string;
+    total: number;
+    list: Array<{
+      id: string;
+      internalNumber: number | null;
+      customerName: string;
+      vehicle: string;
+      domain: string;
+      insurance: string | null;
+      enteredAt: string;
     }>;
   };
 };
@@ -422,101 +440,222 @@ export default function StatsSection() {
             </Card>
           </section>
 
-          {/* ───────── Egresos del mes ─────────
-              Autos que salieron del taller en el mes seleccionado (usa
-              deliveredAt). Sirve para reportar rendimiento operativo y
-              compartir la lista con el cliente/compañía cuando pide corte. */}
+          {/* ───────── Ingresos y Egresos del mes ─────────
+              Bloques paralelos: qué entró y qué salió del taller en el mes.
+              Ingresos usa `enteredAt` (cuando el auto físicamente entra al
+              taller), Egresos usa `deliveredAt` (cuando se entrega al
+              cliente — no `archivedAt` porque el archivo puede tardar más
+              cuando el cobro sigue abierto). Selector local de mes duplicado
+              del de arriba para no tener que scrollear. */}
           <section className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-lg bg-sky-50 flex items-center justify-center">
-                <LogOut className="h-5 w-5 text-sky-600" />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-9 rounded-lg bg-indigo-50 flex items-center justify-center">
+                  <Car className="h-5 w-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">Movimiento del mes</h2>
+                  <p className="text-xs text-slate-500">
+                    Ingresos y egresos de vehículos del taller
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-xl font-bold">Egresos del mes</h2>
-                <p className="text-xs text-slate-500">
-                  Vehículos entregados al cliente (fecha real de egreso)
-                </p>
-              </div>
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
-              <KpiBox
-                label="Autos egresados"
-                value={INT.format(data.egresos.total)}
-                icon={Car}
+            <div className="grid gap-4 xl:grid-cols-2">
+              <MovementBlock
+                title="Ingresos"
+                subtitle="Vehículos que entraron al taller"
+                icon={LogIn}
+                accentClass="text-emerald-600"
+                bgClass="bg-emerald-50"
+                total={data.ingresos.total}
+                totalLabel="Autos ingresados"
+                emptyLabel="No hubo ingresos en este mes."
+                rows={data.ingresos.list.map((r) => ({
+                  id: r.id,
+                  date: r.enteredAt,
+                  internalNumber: r.internalNumber,
+                  customerName: r.customerName,
+                  vehicle: r.vehicle,
+                  domain: r.domain,
+                  insurance: r.insurance,
+                }))}
+              />
+              <MovementBlock
+                title="Egresos"
+                subtitle="Vehículos entregados al cliente"
+                icon={LogOut}
+                accentClass="text-sky-600"
+                bgClass="bg-sky-50"
+                total={data.egresos.total}
+                totalLabel="Autos egresados"
+                emptyLabel="No hubo egresos en este mes."
+                rows={data.egresos.list.map((r) => ({
+                  id: r.id,
+                  date: r.deliveredAt,
+                  // Cuando la fecha no es de deliveredAt (el admin no la
+                  // cargó en el form) marcamos con un chip aclaratorio para
+                  // que quede claro que es una fecha proxy.
+                  dateHint:
+                    r.dateSource === "archived"
+                      ? "archivado"
+                      : r.dateSource === "updated"
+                        ? "aprox"
+                        : null,
+                  internalNumber: r.internalNumber,
+                  customerName: r.customerName,
+                  vehicle: r.vehicle,
+                  domain: r.domain,
+                  insurance: r.insurance,
+                }))}
               />
             </div>
-
-            <Card className="p-0 overflow-hidden">
-              {data.egresos.list.length === 0 ? (
-                <div className="p-8 text-center text-sm text-slate-500 italic">
-                  No hubo egresos en este mes.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs border-collapse">
-                    <thead className="bg-slate-50 border-b border-slate-200">
-                      <tr>
-                        <th className="text-left px-3 py-2 font-semibold text-slate-700 w-24">
-                          Fecha
-                        </th>
-                        <th className="text-left px-3 py-2 font-semibold text-slate-700 w-14">
-                          Nº
-                        </th>
-                        <th className="text-left px-3 py-2 font-semibold text-slate-700">
-                          Cliente
-                        </th>
-                        <th className="text-left px-3 py-2 font-semibold text-slate-700">
-                          Vehículo
-                        </th>
-                        <th className="text-left px-3 py-2 font-semibold text-slate-700 w-24">
-                          Dominio
-                        </th>
-                        <th className="text-left px-3 py-2 font-semibold text-slate-700 w-40">
-                          Compañía
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.egresos.list.map((r) => (
-                        <tr
-                          key={r.id}
-                          className="border-b border-slate-100 hover:bg-slate-50"
-                        >
-                          <td className="px-3 py-2 text-slate-700 tabular-nums">
-                            {new Date(r.deliveredAt).toLocaleDateString(
-                              "es-AR",
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-slate-500 font-mono">
-                            {r.internalNumber ?? "—"}
-                          </td>
-                          <td className="px-3 py-2 font-medium text-slate-800">
-                            {r.customerName}
-                          </td>
-                          <td className="px-3 py-2 text-slate-700">
-                            {r.vehicle}
-                          </td>
-                          <td className="px-3 py-2 text-slate-700 font-mono uppercase">
-                            {r.domain}
-                          </td>
-                          <td className="px-3 py-2 text-slate-600">
-                            {r.insurance ?? (
-                              <span className="italic text-slate-400">
-                                Particular
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Card>
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+function MovementBlock({
+  title,
+  subtitle,
+  icon: Icon,
+  accentClass,
+  bgClass,
+  total,
+  totalLabel,
+  emptyLabel,
+  rows,
+}: {
+  title: string;
+  subtitle: string;
+  icon: typeof Car;
+  accentClass: string;
+  bgClass: string;
+  total: number;
+  totalLabel: string;
+  emptyLabel: string;
+  rows: Array<{
+    id: string;
+    date: string;
+    /** Etiqueta corta cuando la fecha no viene del campo principal (por
+     *  ej. "aprox" o "archivado"). Se renderiza como un chip al lado. */
+    dateHint?: string | null;
+    internalNumber: number | null;
+    customerName: string;
+    vehicle: string;
+    domain: string;
+    insurance: string | null;
+  }>;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <div
+          className={`h-8 w-8 rounded-lg ${bgClass} flex items-center justify-center`}
+        >
+          <Icon className={`h-4 w-4 ${accentClass}`} />
+        </div>
+        <div>
+          <h3 className="text-base font-bold">{title}</h3>
+          <p className="text-[11px] text-slate-500">{subtitle}</p>
+        </div>
+        <div className="ml-auto text-right">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">
+            {totalLabel}
+          </div>
+          <div className={`text-2xl font-bold tabular-nums ${accentClass}`}>
+            {INT.format(total)}
+          </div>
+        </div>
+      </div>
+      <Card className="p-0 overflow-hidden">
+        {rows.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-500 italic">
+            {emptyLabel}
+          </div>
+        ) : (
+          <div className="overflow-x-auto max-h-100 overflow-y-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+                <tr>
+                  <th className="text-left px-2.5 py-2 font-semibold text-slate-700 w-20">
+                    Fecha
+                  </th>
+                  <th className="text-left px-2.5 py-2 font-semibold text-slate-700 w-10">
+                    Nº
+                  </th>
+                  <th className="text-left px-2.5 py-2 font-semibold text-slate-700">
+                    Cliente
+                  </th>
+                  <th className="text-left px-2.5 py-2 font-semibold text-slate-700">
+                    Vehículo
+                  </th>
+                  <th className="text-left px-2.5 py-2 font-semibold text-slate-700 w-20">
+                    Dominio
+                  </th>
+                  <th className="text-left px-2.5 py-2 font-semibold text-slate-700 w-28">
+                    Compañía
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr
+                    key={r.id}
+                    className="border-b border-slate-100 hover:bg-slate-50"
+                  >
+                    <td className="px-2.5 py-1.5 text-slate-700 tabular-nums whitespace-nowrap">
+                      {new Date(r.date).toLocaleDateString("es-AR")}
+                      {r.dateHint ? (
+                        <span
+                          className="ml-1 text-[9px] uppercase text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-px"
+                          title="La fecha de egreso no fue cargada explícitamente en el detalle del repair. Se usa una fecha próxima como referencia."
+                        >
+                          {r.dateHint}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-slate-500 font-mono">
+                      {r.internalNumber ?? "—"}
+                    </td>
+                    <td className="px-2.5 py-1.5 font-medium text-slate-800 truncate max-w-40">
+                      {r.customerName}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-slate-700 truncate max-w-40">
+                      {r.vehicle}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-slate-700 font-mono uppercase">
+                      {r.domain}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-slate-600 truncate">
+                      {r.insurance ?? (
+                        <span className="italic text-slate-400">
+                          Particular
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

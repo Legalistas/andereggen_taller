@@ -102,6 +102,7 @@ export async function GET(request: Request) {
     completedMonth,
     monthBudgets,
     deliveredList,
+    enteredList,
   ] = await Promise.all([
     prisma.budget.count({ where: { createdAt: { gte: startOfYear } } }),
     prisma.budget.count({
@@ -127,13 +128,36 @@ export async function GET(request: Request) {
       },
       select: { vehicleInsurance: true, status: true },
     }),
-    // Egresos del mes: vehículos entregados al cliente. Usamos `deliveredAt`
-    // (el momento en que el auto sale del taller) para el corte mensual;
-    // no usamos archivedAt porque un repair puede archivarse mucho después
-    // del egreso real (cuando termina el cobro, por ejemplo).
+    // Egresos del mes: vehículos que salieron del taller. Consideramos
+    // egresados a todos los repairs que ya pasaron el punto de entrega
+    // (status en {pendientes_cobro, experiencia_cliente, archivado}) y
+    // cuyo "momento de egreso" cae en el mes. Ese momento es la primera
+    // fecha disponible en la cascada:
+    //   1. `deliveredAt` — si el admin la cargó en el form
+    //   2. `archivedAt`  — para los que se arrastraron directo al archivo
+    //   3. `updatedAt`   — último recurso para los que se arrastraron a
+    //                      pendientes_cobro sin cargar la fecha
+    // Con OR sobre esos tres campos capturamos el egreso real sin que se
+    // pierdan los cards movidos por drag&drop.
     prisma.repair.findMany({
       where: {
-        deliveredAt: { gte: startOfMonth, lt: startOfNextMonth },
+        status: { in: ["pendientes_cobro", "experiencia_cliente", "archivado"] },
+        OR: [
+          { deliveredAt: { gte: startOfMonth, lt: startOfNextMonth } },
+          {
+            AND: [
+              { deliveredAt: null },
+              { archivedAt: { gte: startOfMonth, lt: startOfNextMonth } },
+            ],
+          },
+          {
+            AND: [
+              { deliveredAt: null },
+              { archivedAt: null },
+              { updatedAt: { gte: startOfMonth, lt: startOfNextMonth } },
+            ],
+          },
+        ],
       },
       select: {
         id: true,
@@ -144,8 +168,35 @@ export async function GET(request: Request) {
         vehicleDomain: true,
         insuranceCompany: true,
         deliveredAt: true,
+        archivedAt: true,
+        updatedAt: true,
+        status: true,
       },
-      orderBy: { deliveredAt: "desc" },
+      orderBy: [
+        { deliveredAt: "desc" },
+        { archivedAt: "desc" },
+        { updatedAt: "desc" },
+      ],
+    }),
+    // Ingresos del mes: vehículos que físicamente entraron al taller
+    // (enteredAt es el momento en que el mecánico marca "ingresó"). No
+    // usamos createdAt porque el repair se puede crear con anticipación
+    // desde la asignación de turno.
+    prisma.repair.findMany({
+      where: {
+        enteredAt: { gte: startOfMonth, lt: startOfNextMonth },
+      },
+      select: {
+        id: true,
+        internalNumber: true,
+        customerName: true,
+        vehicleBrand: true,
+        vehicleModel: true,
+        vehicleDomain: true,
+        insuranceCompany: true,
+        enteredAt: true,
+      },
+      orderBy: { enteredAt: "desc" },
     }),
   ]);
 
@@ -243,7 +294,31 @@ export async function GET(request: Request) {
         vehicle: `${r.vehicleBrand} ${r.vehicleModel}`.trim(),
         domain: r.vehicleDomain,
         insurance: r.insuranceCompany,
-        deliveredAt: r.deliveredAt,
+        // Cascada de fecha de egreso: deliveredAt > archivedAt > updatedAt.
+        // Marcamos con `dateSource` de dónde viene por si el frontend quiere
+        // aclararlo (ej: "aprox." para los que caen a updatedAt).
+        deliveredAt: r.deliveredAt ?? r.archivedAt ?? r.updatedAt,
+        dateSource: r.deliveredAt
+          ? "delivered"
+          : r.archivedAt
+            ? "archived"
+            : "updated",
+        status: r.status,
+      })),
+    },
+    ingresos: {
+      month: `${startOfMonth.getFullYear()}-${String(
+        startOfMonth.getMonth() + 1,
+      ).padStart(2, "0")}`,
+      total: enteredList.length,
+      list: enteredList.map((r) => ({
+        id: r.id,
+        internalNumber: r.internalNumber,
+        customerName: r.customerName,
+        vehicle: `${r.vehicleBrand} ${r.vehicleModel}`.trim(),
+        domain: r.vehicleDomain,
+        insurance: r.insuranceCompany,
+        enteredAt: r.enteredAt,
       })),
     },
   });
