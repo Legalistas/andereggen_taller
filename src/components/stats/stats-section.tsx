@@ -2,9 +2,11 @@
 
 import {
   Building2,
+  Car,
   CheckCircle2,
   FileText,
   Loader2,
+  LogOut,
   RefreshCw,
   TrendingUp,
   Wrench,
@@ -50,6 +52,19 @@ type StatsResponse = {
       key: InsuranceBucket;
       total: number;
       accepted: number;
+    }>;
+  };
+  egresos: {
+    month: string;
+    total: number;
+    list: Array<{
+      id: string;
+      internalNumber: number | null;
+      customerName: string;
+      vehicle: string;
+      domain: string;
+      insurance: string | null;
+      deliveredAt: string;
     }>;
   };
 };
@@ -404,6 +419,100 @@ export default function StatsSection() {
                   );
                 })}
               </ul>
+            </Card>
+          </section>
+
+          {/* ───────── Egresos del mes ─────────
+              Autos que salieron del taller en el mes seleccionado (usa
+              deliveredAt). Sirve para reportar rendimiento operativo y
+              compartir la lista con el cliente/compañía cuando pide corte. */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-lg bg-sky-50 flex items-center justify-center">
+                <LogOut className="h-5 w-5 text-sky-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">Egresos del mes</h2>
+                <p className="text-xs text-slate-500">
+                  Vehículos entregados al cliente (fecha real de egreso)
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              <KpiBox
+                label="Autos egresados"
+                value={INT.format(data.egresos.total)}
+                icon={Car}
+              />
+            </div>
+
+            <Card className="p-0 overflow-hidden">
+              {data.egresos.list.length === 0 ? (
+                <div className="p-8 text-center text-sm text-slate-500 italic">
+                  No hubo egresos en este mes.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-semibold text-slate-700 w-24">
+                          Fecha
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-slate-700 w-14">
+                          Nº
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-slate-700">
+                          Cliente
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-slate-700">
+                          Vehículo
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-slate-700 w-24">
+                          Dominio
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-slate-700 w-40">
+                          Compañía
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.egresos.list.map((r) => (
+                        <tr
+                          key={r.id}
+                          className="border-b border-slate-100 hover:bg-slate-50"
+                        >
+                          <td className="px-3 py-2 text-slate-700 tabular-nums">
+                            {new Date(r.deliveredAt).toLocaleDateString(
+                              "es-AR",
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-slate-500 font-mono">
+                            {r.internalNumber ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 font-medium text-slate-800">
+                            {r.customerName}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {r.vehicle}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700 font-mono uppercase">
+                            {r.domain}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {r.insurance ?? (
+                              <span className="italic text-slate-400">
+                                Particular
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </Card>
           </section>
         </>

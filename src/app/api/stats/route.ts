@@ -101,6 +101,7 @@ export async function GET(request: Request) {
     repairCounts,
     completedMonth,
     monthBudgets,
+    deliveredList,
   ] = await Promise.all([
     prisma.budget.count({ where: { createdAt: { gte: startOfYear } } }),
     prisma.budget.count({
@@ -125,6 +126,26 @@ export async function GET(request: Request) {
         extensionSuffix: 0,
       },
       select: { vehicleInsurance: true, status: true },
+    }),
+    // Egresos del mes: vehículos entregados al cliente. Usamos `deliveredAt`
+    // (el momento en que el auto sale del taller) para el corte mensual;
+    // no usamos archivedAt porque un repair puede archivarse mucho después
+    // del egreso real (cuando termina el cobro, por ejemplo).
+    prisma.repair.findMany({
+      where: {
+        deliveredAt: { gte: startOfMonth, lt: startOfNextMonth },
+      },
+      select: {
+        id: true,
+        internalNumber: true,
+        customerName: true,
+        vehicleBrand: true,
+        vehicleModel: true,
+        vehicleDomain: true,
+        insuranceCompany: true,
+        deliveredAt: true,
+      },
+      orderBy: { deliveredAt: "desc" },
     }),
   ]);
 
@@ -209,6 +230,21 @@ export async function GET(request: Request) {
       total: monthTotal,
       accepted: monthAccepted,
       byInsurance,
+    },
+    egresos: {
+      month: `${startOfMonth.getFullYear()}-${String(
+        startOfMonth.getMonth() + 1,
+      ).padStart(2, "0")}`,
+      total: deliveredList.length,
+      list: deliveredList.map((r) => ({
+        id: r.id,
+        internalNumber: r.internalNumber,
+        customerName: r.customerName,
+        vehicle: `${r.vehicleBrand} ${r.vehicleModel}`.trim(),
+        domain: r.vehicleDomain,
+        insurance: r.insuranceCompany,
+        deliveredAt: r.deliveredAt,
+      })),
     },
   });
 }
