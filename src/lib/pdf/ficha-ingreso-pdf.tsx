@@ -221,6 +221,9 @@ export function FichaIngresoPdf({ data }: { data: FichaIngresoData }) {
           Declaro no poseer objetos de valor en el vehículo.
         </Text>
         <Text style={s.paragraph}>
+          Autorizo la difusión de imágenes/videos del vehículo, sin exhibir patente.
+        </Text>
+        <Text style={s.paragraph}>
           Condición de pago: {data.paymentCondition}.
         </Text>
         <View style={[s.dataRow, { flexWrap: "wrap" }]}>
