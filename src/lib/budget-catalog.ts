@@ -134,6 +134,11 @@ export const SUBDETAILS: SubdetailCatalog = {
           key: "tapizado_porton_trasero",
           label: "Tapizado interior de portón trasero",
         },
+        {
+          key: "porton_trasero_completo",
+          label:
+            "Tapizado interior, cerrajería y cristalería de portón trasero",
+        },
         { key: "tapizado_baul", label: "Tapizado interior de baúl" },
         {
           key: "tapizado_tapa_baul",
@@ -215,6 +220,7 @@ export const SUBDETAILS: SubdetailCatalog = {
           key: "radiadores_electroventilador",
           label: "Conjunto de radiadores y electroventilador",
         },
+        { key: "parabrisas_laminado", label: "Parabrisas laminado" },
         { key: "luneta_termica", label: "Luneta térmica" },
       ],
     },
