@@ -214,7 +214,7 @@ export function BudgetAdminDialog({
             showCloseButton={false}
             onPointerDownOutside={(e) => e.preventDefault()}
             onInteractOutside={(e) => e.preventDefault()}
-            className="max-w-none w-[97vw] h-[92vh] p-0 gap-0 flex flex-col sm:rounded-xl overflow-hidden"
+            className="max-w-none sm:max-w-none w-screen h-screen p-0 gap-0 flex flex-col rounded-none border-0 overflow-hidden z-60"
           >
             <DialogTitle className="sr-only">
               Administrativa del presupuesto{" "}

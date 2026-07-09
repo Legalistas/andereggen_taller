@@ -1429,9 +1429,16 @@ function DescriptiveFields({
           </Button>
         )}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-4">
+      {/* Layout de columnas CSS en vez de grid: los grupos fluyen dentro de
+          las columnas como si fueran texto, sin dejar huecos verticales
+          cuando un grupo tiene pocos items. `break-inside-avoid` evita que
+          un grupo quede partido entre dos columnas. */}
+      <div className="columns-1 md:columns-2 xl:columns-3 gap-x-6 *:mb-4">
         {groups.map((group) => (
-          <div key={group.title} className="space-y-1.5">
+          <div
+            key={group.title}
+            className="space-y-1.5 break-inside-avoid"
+          >
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               {group.title}
             </div>

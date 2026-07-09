@@ -23,15 +23,14 @@ export type CategoryDef = {
 
 export const CATEGORIES: CategoryDef[] = [
   // --- Descriptivas (sin importe) ---
+  // NOTA: `DESMONTAR_Y_CAMBIAR` fue removida del catálogo por pedido del
+  // taller (no la usaban). El enum de Prisma sigue teniendo el valor por
+  // compatibilidad con presupuestos históricos; solo dejamos de ofrecerla
+  // en el desplegable de "agregar concepto" y sacamos sus subdetalles.
   { key: "DESMONTAR", label: "Desmontar", type: "DESCRIPTIVO" },
   {
     key: "DESMONTAR_Y_REPARAR",
     label: "Desmontar y reparar",
-    type: "DESCRIPTIVO",
-  },
-  {
-    key: "DESMONTAR_Y_CAMBIAR",
-    label: "Desmontar y cambiar",
     type: "DESCRIPTIVO",
   },
   {
@@ -40,6 +39,7 @@ export const CATEGORIES: CategoryDef[] = [
     type: "DESCRIPTIVO",
   },
   { key: "DESABOLLAR", label: "Desabollar", type: "DESCRIPTIVO" },
+  { key: "DIFUMINAR", label: "Difuminar", type: "DESCRIPTIVO" },
 
   // --- Por unidades (chapa / pintura) ---
   {
@@ -235,6 +235,43 @@ export const SUBDETAILS: SubdetailCatalog = {
           key: "moldura_paragolpe_tras",
           label: "Moldura plástica de paragolpe trasero",
         },
+        {
+          key: "spoiler_inf_paragolpe_del",
+          label: "Spoiler inferior de paragolpe delantero",
+        },
+        {
+          key: "spoiler_inf_paragolpe_tras",
+          label: "Spoiler inferior de paragolpe trasero",
+        },
+        {
+          key: "fender_paragolpe_del_izq",
+          label: "Fender izquierdo de paragolpe delantero",
+        },
+        {
+          key: "fender_paragolpe_del_der",
+          label: "Fender derecho de paragolpe delantero",
+        },
+      ],
+    },
+    {
+      title: "Fender de guardabarro",
+      items: [
+        {
+          key: "fender_guardabarro_del_izq",
+          label: "Fender de guardabarro delantero izquierdo",
+        },
+        {
+          key: "fender_guardabarro_del_der",
+          label: "Fender de guardabarro delantero derecho",
+        },
+        {
+          key: "fender_guardabarro_tras_izq",
+          label: "Fender de guardabarro trasero izquierdo",
+        },
+        {
+          key: "fender_guardabarro_tras_der",
+          label: "Fender de guardabarro trasero derecho",
+        },
       ],
     },
     {
@@ -248,6 +285,19 @@ export const SUBDETAILS: SubdetailCatalog = {
         {
           key: "marco_opticas_fibra",
           label: "Marco interior soporte de ópticas (fibra de vidrio)",
+        },
+      ],
+    },
+    {
+      title: "Molduras de faros antinieblas",
+      items: [
+        {
+          key: "moldura_antiniebla_izq",
+          label: "Moldura de faro antinieblas izquierdo",
+        },
+        {
+          key: "moldura_antiniebla_der",
+          label: "Moldura de faro antinieblas derecho",
         },
       ],
     },
@@ -341,10 +391,13 @@ export const SUBDETAILS: SubdetailCatalog = {
     {
       title: "Guardabarros",
       items: [
-        { key: "verificar_costillado", label: "Verificar costillado" },
         {
           key: "ambos_guardabarros_del",
           label: "Ambos guardabarros delanteros",
+        },
+        {
+          key: "ambos_guardabarros_tras",
+          label: "Ambos guardabarros traseros",
         },
         {
           key: "guardabarro_del_izq",
@@ -372,7 +425,7 @@ export const SUBDETAILS: SubdetailCatalog = {
         { key: "panel_cola_carroceria", label: "Panel cola de carrocería" },
         {
           key: "partes_dañadas_choque",
-          label: "Partes dañadas por el choque (general)",
+          label: "Partes dañadas por el choque",
         },
       ],
     },
@@ -380,7 +433,10 @@ export const SUBDETAILS: SubdetailCatalog = {
       title: "Portones / Baúl",
       items: [
         { key: "panel_porton_trasero", label: "Panel portón trasero" },
-        { key: "marco_interior_porton", label: "Marco interior portón" },
+        {
+          key: "panel_exterior_marco_porton_tras",
+          label: "Panel exterior y marco interior de portón trasero",
+        },
         { key: "porton_caja_carga", label: "Portón caja de carga" },
         { key: "tapa_baul", label: "Tapa de baúl" },
         { key: "piso_baul", label: "Piso de baúl" },
@@ -402,6 +458,22 @@ export const SUBDETAILS: SubdetailCatalog = {
           label: "Panel puerta trasera izquierda",
         },
         { key: "panel_puerta_tras_der", label: "Panel puerta trasera derecha" },
+        {
+          key: "ambos_paneles_puertas_del",
+          label: "Ambos paneles de puertas delanteras",
+        },
+        {
+          key: "ambos_paneles_puertas_tras",
+          label: "Ambos paneles de puertas traseras",
+        },
+        {
+          key: "ambos_paneles_puertas_izq",
+          label: "Ambos paneles de puertas izquierdas",
+        },
+        {
+          key: "ambos_paneles_puertas_der",
+          label: "Ambos paneles de puertas derechas",
+        },
       ],
     },
     {
@@ -460,63 +532,49 @@ export const SUBDETAILS: SubdetailCatalog = {
     },
   ],
 
-  // --- 3.5 DESMONTAR Y CAMBIAR ---
-  DESMONTAR_Y_CAMBIAR: [
+  // NOTA: la sección `DESMONTAR_Y_CAMBIAR` fue removida — el taller no usa
+  // esa categoría. El enum en Prisma sigue estando por compatibilidad con
+  // presupuestos históricos, pero acá no hay subdetalles y arriba no la
+  // ofrecemos en el desplegable de "agregar concepto".
+
+  // --- 3.5 DIFUMINAR ---
+  // Categoría descriptiva sin importe (mismo comportamiento que DESABOLLAR).
+  // Prefijo `dif_` en las keys para no chocar con las de otras categorías
+  // aunque el label sea similar (ej. "Capot motor" también existe en
+  // DESABOLLAR).
+  DIFUMINAR: [
     {
-      title: "Paragolpes / Láminas / Grilla",
+      title: "Guardabarros",
       items: [
-        {
-          key: "cambio_lamina_paragolpe_del",
-          label: "Lámina paragolpe delantero",
-        },
-        {
-          key: "cambio_lamina_paragolpe_tras",
-          label: "Lámina paragolpe trasero",
-        },
-        { key: "cambio_grilla_central_frente", label: "Grilla central frente" },
-        { key: "cambio_tapa_remolque", label: "Tapa remolque" },
+        { key: "dif_guardabarro_del_izq", label: "Guardabarro delantero izquierdo" },
+        { key: "dif_guardabarro_del_der", label: "Guardabarro delantero derecho" },
+        { key: "dif_guardabarro_tras_izq", label: "Guardabarro trasero izquierdo" },
+        { key: "dif_guardabarro_tras_der", label: "Guardabarro trasero derecho" },
+        { key: "dif_ambos_guardabarros_del", label: "Ambos guardabarros delanteros" },
+        { key: "dif_ambos_guardabarros_tras", label: "Ambos guardabarros traseros" },
+        { key: "dif_ambos_guardabarros_izq", label: "Ambos guardabarros izquierdos" },
+        { key: "dif_ambos_guardabarros_der", label: "Ambos guardabarros derechos" },
       ],
     },
     {
-      title: "Ópticas",
+      title: "Paneles de puertas",
       items: [
-        { key: "cambio_optica_der", label: "Óptica derecha" },
-        { key: "cambio_optica_izq", label: "Óptica izquierda" },
+        { key: "dif_panel_puerta_del_izq", label: "Panel de puerta delantera izquierda" },
+        { key: "dif_panel_puerta_del_der", label: "Panel de puerta delantera derecha" },
+        { key: "dif_panel_puerta_tras_izq", label: "Panel de puerta trasera izquierda" },
+        { key: "dif_panel_puerta_tras_der", label: "Panel de puerta trasera derecha" },
+        { key: "dif_ambos_paneles_puertas_del", label: "Ambos paneles de puertas delanteras" },
+        { key: "dif_ambos_paneles_puertas_tras", label: "Ambos paneles de puertas traseras" },
+        { key: "dif_ambos_paneles_puertas_izq", label: "Ambos paneles de puertas izquierdas" },
+        { key: "dif_ambos_paneles_puertas_der", label: "Ambos paneles de puertas derechas" },
       ],
     },
     {
-      title: "Cristales de puertas",
+      title: "Capot / Portón / Baúl",
       items: [
-        { key: "cristal_del_der", label: "Cristal delantera derecha" },
-        { key: "cristal_del_izq", label: "Cristal delantera izquierda" },
-        { key: "cristal_tras_der", label: "Cristal trasera derecha" },
-        { key: "cristal_tras_izq", label: "Cristal trasera izquierda" },
-      ],
-    },
-    {
-      title: "Cristalería general",
-      items: [
-        { key: "cambio_luneta_termica", label: "Luneta térmica" },
-        { key: "cambio_parabrisas_laminado", label: "Parabrisas laminado" },
-      ],
-    },
-    {
-      title: "Piezas grandes",
-      items: [
-        { key: "cambio_capot_motor", label: "Capot motor" },
-        { key: "cambio_puerta_del_izq", label: "Puerta delantera izquierda" },
-        { key: "cambio_puerta_del_der", label: "Puerta delantera derecha" },
-        { key: "cambio_puerta_tras_izq", label: "Puerta trasera izquierda" },
-        { key: "cambio_puerta_tras_der", label: "Puerta trasera derecha" },
-      ],
-    },
-    {
-      title: "Repuestos detallados externamente",
-      items: [
-        {
-          key: "repuestos_hoja_adjunta",
-          label: "Repuestos que se detallan en hoja adjunta",
-        },
+        { key: "dif_capot_motor", label: "Capot motor" },
+        { key: "dif_panel_porton_trasero", label: "Panel de portón trasero" },
+        { key: "dif_tapa_baul", label: "Tapa baúl" },
       ],
     },
   ],
