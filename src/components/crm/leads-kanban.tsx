@@ -9,6 +9,7 @@ import {
   MoreVertical,
   Send,
   TrendingUp,
+  Trophy,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
@@ -88,13 +89,18 @@ export type KanbanLead = {
 
 export type ActorKind = "inspector" | "insurance";
 
-const COLUMNS: Array<{
+type KanbanColumn = {
   id: LeadStatus;
   label: string;
   icon: typeof FileText;
   headerClass: string;
   ringClass: string;
-}> = [
+};
+
+// spec 1.4 v2 · La columna "Perdido" quedó fuera del kanban (las perdidas
+// se ven desde el módulo Presupuestos). "Ganado" se muestra sólo cuando el
+// usuario activa el switch "Mostrar ganadas" en la barra de filtros.
+const BASE_COLUMNS: KanbanColumn[] = [
   {
     id: "solicitud",
     label: "Solicitud",
@@ -130,11 +136,15 @@ const COLUMNS: Array<{
     headerClass: "bg-amber-50 text-amber-800 border-amber-200",
     ringClass: "ring-amber-400",
   },
-  // spec 1.4 v2 · Las columnas "Ganado" y "Perdido" ya no viven en el kanban
-  // de Cotizaciones. Las tarjetas ganadas pasan a Producción; las perdidas
-  // quedan accesibles desde el módulo Presupuestos. Para marcar un lead como
-  // Ganado/Perdido se usa el StatusPicker del drawer (lead-canvas).
 ];
+
+const GANADO_COLUMN: KanbanColumn = {
+  id: "ganado",
+  label: "Ganado",
+  icon: Trophy,
+  headerClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  ringClass: "ring-emerald-400",
+};
 
 const ARS = new Intl.NumberFormat("es-AR", {
   style: "currency",
@@ -172,6 +182,10 @@ const REPAIR_KANBAN_COLOR: Record<RepairStatusLite, string> = {
 type Props = {
   leads: KanbanLead[];
   loading: boolean;
+  /** spec 1.4 v2 · Cuando true, agregamos la columna "Ganado" al final del
+   *  kanban. Por defecto está oculta y las tarjetas ganadas se ven desde
+   *  Producción/Presupuestos. */
+  showGanado?: boolean;
   onStatusChange: (leadId: string, next: LeadStatus) => Promise<void>;
   onAssignActor: (
     leadId: string,
@@ -186,6 +200,7 @@ type Props = {
 export function LeadsKanban({
   leads,
   loading,
+  showGanado = false,
   onStatusChange,
   onAssignActor,
   onOpenDetail,
@@ -195,6 +210,7 @@ export function LeadsKanban({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<LeadStatus | null>(null);
   const [movingLead, setMovingLead] = useState<string | null>(null);
+  const COLUMNS = showGanado ? [...BASE_COLUMNS, GANADO_COLUMN] : BASE_COLUMNS;
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
     setDraggingId(id);
@@ -419,15 +435,20 @@ function LeadCard({
             <DropdownMenuItem className="text-xs text-slate-500" disabled>
               Mover a…
             </DropdownMenuItem>
-            {COLUMNS.filter((c) => c.id !== lead.status).map((c) => (
-              <DropdownMenuItem
-                key={c.id}
-                onClick={() => onMove(lead.id, c.id)}
-              >
-                <c.icon className="h-3.5 w-3.5 mr-2" />
-                {c.label}
-              </DropdownMenuItem>
-            ))}
+            {/* "Mover a…" siempre lista todas las columnas incluida Ganado,
+                aunque el switch del kanban la esté ocultando — así el usuario
+                puede cerrar la venta desde acá sin salir del kanban. */}
+            {[...BASE_COLUMNS, GANADO_COLUMN]
+              .filter((c) => c.id !== lead.status)
+              .map((c) => (
+                <DropdownMenuItem
+                  key={c.id}
+                  onClick={() => onMove(lead.id, c.id)}
+                >
+                  <c.icon className="h-3.5 w-3.5 mr-2" />
+                  {c.label}
+                </DropdownMenuItem>
+              ))}
             {onDelete && (
               <>
                 <DropdownMenuSeparator />

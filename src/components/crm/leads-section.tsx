@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import BudgetModal from "./budget-modal";
 import CustomerSelector, { type Customer } from "./customer-selector";
@@ -115,6 +116,10 @@ export default function LeadsSection() {
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [sortBy, setSortBy] = useState<SortBy>("recent");
+  // spec 1.4 v2 · Por defecto ocultamos "Ganado" del kanban (las tarjetas
+  // ganadas pasan a Producción). El switch permite verlas de nuevo cuando
+  // el equipo necesita revisar el historial reciente sin salir del kanban.
+  const [showGanado, setShowGanado] = useState(false);
 
   // Estado del dialog "Nuevo Lead"
   const [showNewLeadDialog, setShowNewLeadDialog] = useState(false);
@@ -187,26 +192,35 @@ export default function LeadsSection() {
   // modo "barra flotante".
   const [budgetMinimized, setBudgetMinimized] = useState(false);
 
-  const fetchLeads = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      // spec 1.4 v2 · El kanban de cotizaciones sólo debe mostrar tarjetas
-      // activas — las ganadas y perdidas siguen accesibles desde el módulo
-      // Presupuestos. Traemos solo el subconjunto activo desde la API para
-      // no cargar cientos de cerradas que después descartaríamos client-side.
-      const res = await fetch(`/api/crm/leads?tab=activas`, { signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { leads: Lead[] };
-      setLeads(data.leads);
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        setLoadError(e instanceof Error ? e.message : "Error al cargar leads");
+  const fetchLeads = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        // spec 1.4 v2 · Por defecto sólo activas — las ganadas pasan a
+        // Producción. Con el switch "Mostrar ganadas" traemos todo y
+        // filtramos client-side para excluir Perdidos (nunca se ven acá).
+        const url = showGanado ? "/api/crm/leads" : "/api/crm/leads?tab=activas";
+        const res = await fetch(url, { signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { leads: Lead[] };
+        setLeads(
+          showGanado
+            ? data.leads.filter((l) => l.status !== "perdido")
+            : data.leads,
+        );
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") {
+          setLoadError(
+            e instanceof Error ? e.message : "Error al cargar leads",
+          );
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [showGanado],
+  );
 
   useEffect(() => {
     const ac = new AbortController();
@@ -778,6 +792,20 @@ export default function LeadsSection() {
 
         {/* Sort + limpiar */}
         <div className="flex items-center gap-2 shrink-0 ml-auto">
+          <div className="flex items-center gap-2 text-xs text-slate-600 select-none">
+            <Switch
+              id="toggle-show-ganado"
+              checked={showGanado}
+              onCheckedChange={setShowGanado}
+              aria-label="Mostrar columna Ganado"
+            />
+            <Label
+              htmlFor="toggle-show-ganado"
+              className="cursor-pointer text-xs font-normal text-slate-600"
+            >
+              Mostrar ganadas
+            </Label>
+          </div>
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
             <SelectTrigger className="w-44 bg-white">
               <ArrowUpDown className="h-3.5 w-3.5 text-slate-400 mr-1" />
@@ -814,6 +842,7 @@ export default function LeadsSection() {
       <LeadsKanban
         leads={filteredLeads as unknown as KanbanLead[]}
         loading={loading}
+        showGanado={showGanado}
         onStatusChange={handleStatusChange}
         onAssignActor={handleAssignActor}
         onOpenDetail={(lead) => setCanvasLeadId(lead.id)}
