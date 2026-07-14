@@ -10,10 +10,10 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 /**
  * Estados desde los que el sistema puede auto-avanzar a "chapa" cuando se
- * carga la fecha de ingreso por primera vez. Solo turno_asignado: si la card
- * ya está más adelante en el flujo, no la pisamos.
+ * carga la fecha de ingreso por primera vez. turno_a_asignar + turno_asignado:
+ * si la card ya está más adelante en el flujo, no la pisamos.
  */
-const AUTO_ADVANCE_FROM = new Set(["turno_asignado"]);
+const AUTO_ADVANCE_FROM = new Set(["turno_a_asignar", "turno_asignado"]);
 
 /**
  * Estados "el auto está en taller" (antes de retirarse). Cuando se carga
@@ -117,6 +117,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     approvedCustomer,
     approvedAt,
     approvedNotes,
+    needsTransport,
   } = body as Record<string, unknown>;
 
   // Helper: parsea un importe que puede venir como number, string numérico,
@@ -205,6 +206,22 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     !existing.enteredAt &&
     AUTO_ADVANCE_FROM.has(existing.status);
 
+  // spec 2.1 v2 · Auto-transición turno_a_asignar → turno_asignado cuando se
+  // carga scheduledAt. Un vehículo con turno coordinado ya no es "por
+  // asignar". Solo aplica si venía de turno_a_asignar y todavía no tenía
+  // scheduledAt: seteos posteriores no cambian de columna.
+  const newScheduledAt =
+    scheduledAt !== undefined
+      ? scheduledAt
+        ? new Date(scheduledAt as string)
+        : null
+      : undefined;
+  const willTriggerTurnAssigned =
+    newScheduledAt !== undefined &&
+    newScheduledAt !== null &&
+    !existing.scheduledAt &&
+    existing.status === "turno_a_asignar";
+
   // Auto-transición a "pendientes_cobro" cuando se setea deliveredAt y el
   // repair está en alguna etapa pre-entrega. Si la card ya está después de
   // entrega (pendientes_cobro / experiencia_cliente / archivado) la dejamos.
@@ -283,6 +300,10 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       ...(approvedNotes !== undefined && {
         approvedNotes: (approvedNotes as string | null) || null,
       }),
+      ...(needsTransport !== undefined && {
+        needsTransport: Boolean(needsTransport),
+      }),
+      ...(willTriggerTurnAssigned && { status: "turno_asignado" as const }),
       ...(willTriggerEntry && { status: "chapa" as const }),
       ...(willTriggerDelivery && { status: "experiencia_cliente" as const }),
     },
@@ -309,6 +330,17 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       .catch((e) =>
         console.error("[notif:vehicle_entered] error en envío:", e),
       );
+  }
+
+  // spec 2.1 v2 · Mail de confirmación de turno al cliente cuando la card
+  // pasa de "Turno a Asignar" a "Turno Asignado" (se coordinó fecha con el
+  // cliente). Background para no bloquear la respuesta.
+  if (willTriggerTurnAssigned) {
+    buildRepairContext(updated.id)
+      .then((ctx) => {
+        if (ctx) return sendRepairEventNotification("turn_assigned", ctx);
+      })
+      .catch((e) => console.error("[notif:turn_assigned] error en envío:", e));
   }
 
   // Side-effects de la auto-transición a "experiencia_cliente" al setear

@@ -3,8 +3,6 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -24,16 +22,9 @@ import {
 } from "@/components/ui/card";
 
 type ChartsData = {
-  revenue: Array<{ month: string; ingresos: number }>;
   services: Array<{ servicio: string; cantidad: number }>;
-  vehicles: Array<{ dia: string; vehiculos: number }>;
+  vehicles: Array<{ mes: string; vehiculos: number }>;
 };
-
-const ARS = new Intl.NumberFormat("es-AR", {
-  style: "currency",
-  currency: "ARS",
-  maximumFractionDigits: 0,
-});
 
 export default function ChartsSection() {
   const [data, setData] = useState<ChartsData | null>(null);
@@ -66,7 +57,7 @@ export default function ChartsSection() {
   if (!data) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        {[4, 3, 7].map((span) => (
+        {[4, 7].map((span) => (
           <Card
             key={span}
             className={`lg:col-span-${span} p-8 flex items-center justify-center min-h-75 text-slate-400`}
@@ -79,52 +70,10 @@ export default function ChartsSection() {
   }
 
   return (
+    // spec 3.3 / T16 v2 · El gráfico "Ingresos" se mudó al módulo Caja.
+    // Acá dejamos Servicios y Flujo de Vehículos.
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
       <Card className="lg:col-span-4 hover:shadow-md transition-shadow">
-        <CardHeader>
-          <CardTitle>Ingresos</CardTitle>
-          <CardDescription>Cobros por mes (últimos 6 meses)</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-75 min-h-75 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.revenue}>
-                <defs>
-                  <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#003b73" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#003b73" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                <YAxis
-                  stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
-                  tickFormatter={(v: number) => (v >= 1000 ? `$${Math.round(v / 1000)}k` : `$${v}`)}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "6px",
-                  }}
-                  labelStyle={{ color: "hsl(var(--foreground))" }}
-                  formatter={(v) => ARS.format(Number(v ?? 0))}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="ingresos"
-                  stroke="#003b73"
-                  fill="url(#colorIngresos)"
-                  strokeWidth={2}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="lg:col-span-3 hover:shadow-md transition-shadow">
         <CardHeader>
           <CardTitle>Servicios Más Solicitados</CardTitle>
           <CardDescription>Top 5 conceptos en presupuestos</CardDescription>
@@ -166,14 +115,14 @@ export default function ChartsSection() {
       <Card className="lg:col-span-7 hover:shadow-md transition-shadow">
         <CardHeader>
           <CardTitle>Flujo de Vehículos</CardTitle>
-          <CardDescription>Vehículos ingresados por día (últimos 7 días)</CardDescription>
+          <CardDescription>Vehículos ingresados por mes (últimos 6 meses)</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-50 min-h-50 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={data.vehicles}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="dia" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <XAxis dataKey="mes" stroke="hsl(var(--muted-foreground))" fontSize={12} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
                 <Tooltip
                   contentStyle={{

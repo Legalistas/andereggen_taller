@@ -14,6 +14,19 @@ const VALID_METHODS: PaymentMethod[] = [
   "OTRO",
 ];
 
+// spec 2.1 v2 · Estados en los que un repair puede ser auto-archivado al
+// completarse el cobro total. Solo estados post-entrega: si todavía está en
+// chapa/pintura/etc., que el cobro llegue no debería archivar por error.
+const AUTO_ARCHIVE_FROM = new Set([
+  "pendientes_cobro",
+  "experiencia_cliente",
+]);
+
+// Tolerancia para comparar Decimals: si sum(payments) alcanza ≥ (total - $1)
+// consideramos cobrado. Cubre redondeos y descuentos chicos que suelen dejar
+// unos pocos pesos sin cobrar sin querer.
+const PAYMENT_TOLERANCE = 1;
+
 /**
  * POST /api/repair-invoices/[id]/payments — registra un cobro contra la factura.
  * Body: { amount, paidAt, method?, reference?, notes? }
@@ -26,7 +39,7 @@ export async function POST(request: Request, ctx: RouteContext) {
 
   const invoice = await prisma.repairInvoice.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, repairId: true },
   });
   if (!invoice) {
     return NextResponse.json(
@@ -40,7 +53,7 @@ export async function POST(request: Request, ctx: RouteContext) {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { amount, paidAt, method, reference, notes } = body as Record<
+  const { amount, paidAt, method, reference, notes, cashBoxId } = body as Record<
     string,
     unknown
   >;
@@ -70,6 +83,23 @@ export async function POST(request: Request, ctx: RouteContext) {
       ? (method as PaymentMethod)
       : "EFECTIVO";
 
+  // spec 4.2 v2 · Caja destino del cobro. Nullable (algunos cobros históricos
+  // no la tienen). Si viene el id, validamos que exista.
+  let resolvedCashBoxId: string | null = null;
+  if (typeof cashBoxId === "string" && cashBoxId.trim()) {
+    const box = await prisma.cashBox.findUnique({
+      where: { id: cashBoxId },
+      select: { id: true },
+    });
+    if (!box) {
+      return NextResponse.json(
+        { error: "Caja destino no encontrada" },
+        { status: 400 },
+      );
+    }
+    resolvedCashBoxId = box.id;
+  }
+
   const payment = await prisma.repairInvoicePayment.create({
     data: {
       invoiceId: id,
@@ -81,9 +111,54 @@ export async function POST(request: Request, ctx: RouteContext) {
           ? reference.trim()
           : null,
       notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
+      cashBoxId: resolvedCashBoxId,
       createdById: session?.user?.id ?? null,
     },
   });
+
+  // spec 2.1/2.15 v2 · Auto-archivado al completarse el cobro total. Sumamos
+  // el importe facturado y el cobrado en TODAS las facturas del repair; si
+  // el cobro cubre el facturado (con tolerancia de $1 para redondeos) y el
+  // repair está en un estado post-entrega, lo pasamos a "archivado".
+  try {
+    const repair = await prisma.repair.findUnique({
+      where: { id: invoice.repairId },
+      select: { id: true, status: true, archivedAt: true },
+    });
+    if (repair && AUTO_ARCHIVE_FROM.has(repair.status)) {
+      const invoices = await prisma.repairInvoice.findMany({
+        where: { repairId: repair.id },
+        select: {
+          amount: true,
+          payments: { select: { amount: true } },
+        },
+      });
+      const totalBilled = invoices.reduce(
+        (a, inv) => a + Number(inv.amount),
+        0,
+      );
+      const totalPaid = invoices.reduce(
+        (a, inv) =>
+          a + inv.payments.reduce((b, p) => b + Number(p.amount), 0),
+        0,
+      );
+      const fullyPaid =
+        totalBilled > 0 && totalPaid + PAYMENT_TOLERANCE >= totalBilled;
+      if (fullyPaid) {
+        await prisma.repair.update({
+          where: { id: repair.id },
+          data: {
+            status: "archivado",
+            archivedAt: repair.archivedAt ?? new Date(),
+          },
+        });
+      }
+    }
+  } catch (e) {
+    // No queremos que un fallo del auto-archivado rompa el registro del
+    // cobro. Se logea y se sigue devolviendo el payment creado.
+    console.error("[auto-archive] error:", e);
+  }
 
   return NextResponse.json({ payment }, { status: 201 });
 }

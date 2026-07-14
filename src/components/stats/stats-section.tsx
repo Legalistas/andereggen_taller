@@ -28,7 +28,8 @@ type InsuranceBucket =
   | "SANCOR"
   | "SAN_CRIST"
   | "OTROS"
-  | "PARTICULARES";
+  | "PARTICULARES"
+  | "SIN_DEFINIR";
 
 type StatsResponse = {
   cotizaciones: {
@@ -93,6 +94,7 @@ const INSURANCE_LABEL: Record<InsuranceBucket, string> = {
   SAN_CRIST: "San Cristóbal",
   OTROS: "Otros seguros",
   PARTICULARES: "Particulares",
+  SIN_DEFINIR: "Sin definir",
 };
 
 const INSURANCE_DOT: Record<InsuranceBucket, string> = {
@@ -101,6 +103,7 @@ const INSURANCE_DOT: Record<InsuranceBucket, string> = {
   SAN_CRIST: "bg-emerald-500",
   OTROS: "bg-slate-400",
   PARTICULARES: "bg-violet-500",
+  SIN_DEFINIR: "bg-slate-300",
 };
 
 const LEAD_LABEL: Record<string, string> = {
@@ -124,6 +127,7 @@ const LEAD_DOT: Record<string, string> = {
 };
 
 const REPAIR_LABEL: Record<string, string> = {
+  turno_a_asignar: "Turno a Asignar",
   turno_asignado: "Turno Asignado",
   pendientes_repuestos: "Pendientes de Repuestos",
   chapa: "Chapa",
@@ -134,6 +138,7 @@ const REPAIR_LABEL: Record<string, string> = {
 };
 
 const REPAIR_DOT: Record<string, string> = {
+  turno_a_asignar: "bg-blue-500",
   turno_asignado: "bg-slate-500",
   pendientes_repuestos: "bg-amber-500",
   chapa: "bg-orange-500",

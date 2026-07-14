@@ -142,7 +142,9 @@ export async function POST(request: Request, ctx: RouteContext) {
       if (!existingRepair && leadForRepair) {
         await tx.repair.create({
           data: {
-            status: "turno_asignado",
+            // spec 2.1 v2 · Presupuesto aceptado sin turno aún: arranca en
+            // "turno_a_asignar" hasta que el equipo cargue scheduledAt.
+            status: "turno_a_asignar",
             budgetId: updated.id,
             leadId: updated.leadId,
             directCreation: false,

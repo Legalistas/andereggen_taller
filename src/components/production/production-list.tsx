@@ -38,6 +38,7 @@ import type {
 } from "./production-kanban";
 
 const STATUS_LABEL: Record<RepairStatus, string> = {
+  turno_a_asignar: "Turno a Asignar",
   turno_asignado: "Turno Asignado",
   ingresado: "Ingresado",
   pendientes_repuestos: "Pendientes de Repuestos",
@@ -50,6 +51,7 @@ const STATUS_LABEL: Record<RepairStatus, string> = {
 };
 
 const STATUS_STYLE: Record<RepairStatus, string> = {
+  turno_a_asignar: "bg-blue-100 text-blue-700 border-blue-200",
   turno_asignado: "bg-slate-100 text-slate-700 border-slate-200",
   ingresado: "bg-blue-100 text-blue-700 border-blue-200",
   pendientes_repuestos: "bg-amber-100 text-amber-700 border-amber-200",
@@ -64,6 +66,7 @@ const STATUS_STYLE: Record<RepairStatus, string> = {
 type SortBy = "recent" | "oldest" | "name_asc";
 
 const ALL_STATUSES: RepairStatus[] = [
+  "turno_a_asignar",
   "turno_asignado",
   "pendientes_repuestos",
   "chapa",

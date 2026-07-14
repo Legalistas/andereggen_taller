@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Calendar,
   Car,
   BarChartBig as ChartBar,
   FileText,
@@ -69,6 +70,13 @@ export default function Navigation() {
           />
 
           <NavDropdown label="Producción" icon={Car} items={produccionItems} />
+
+          <NavLink
+            href="/calendario"
+            label="Calendario"
+            icon={Calendar}
+            isActive={pathname.startsWith("/calendario")}
+          />
 
           <NavDropdown label="Reportes" icon={FileText} items={reportesItems} />
 

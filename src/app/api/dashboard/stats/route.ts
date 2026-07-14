@@ -27,12 +27,18 @@ const NOT_STARTED: RepairStatus[] = ["turno_asignado", "pendientes_repuestos"];
 const IN_PROGRESS: RepairStatus[] = ["chapa", "pintura", "calidad"];
 const READY: RepairStatus[] = ["pendientes_cobro", "experiencia_cliente"];
 
+// spec 2.2 v2 · "En taller ahora" solo cuenta Turno Asignado → Calidad
+// (inclusive). Ready (pendientes_cobro / experiencia_cliente) queda excluido:
+// son vehículos entregables, no están más "en taller".
+const IN_SHOP_STATUSES: RepairStatus[] = [...NOT_STARTED, ...IN_PROGRESS];
+
 export async function GET(request: Request) {
   const authError = await verifyAuth(request);
   if (authError) return authError;
 
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
   const [
     repairCounts,
@@ -41,7 +47,8 @@ export async function GET(request: Request) {
     completedMonthCount,
     paymentsMonth,
     avgDaysAgg,
-    leadCounts,
+    wonThisMonth,
+    lostThisMonth,
   ] = await Promise.all([
     prisma.repair.groupBy({ by: ["status"], _count: true }),
     prisma.budget.count({ where: { status: "draft" } }),
@@ -63,10 +70,24 @@ export async function GET(request: Request) {
         AND "archivedAt" IS NOT NULL
         AND "archivedAt" > "enteredAt"
     `,
-    prisma.lead.groupBy({ by: ["status"], _count: true }),
+    // spec 1.1 + 3.1 v2 · Ganados del mes imputados por orderReceivedAt
+    // (fecha en que se recibió la orden), no por createdAt del lead.
+    prisma.lead.count({
+      where: {
+        status: "ganado",
+        orderReceivedAt: { gte: startOfMonth, lt: startOfNextMonth },
+      },
+    }),
+    // Perdidos del mes imputados por updatedAt (momento de la transición).
+    prisma.lead.count({
+      where: {
+        status: "perdido",
+        updatedAt: { gte: startOfMonth, lt: startOfNextMonth },
+      },
+    }),
   ]);
 
-  // ── KPI 1: Vehículos en reparación
+  // ── KPI 1: Vehículos en taller (spec 2.2 v2 — solo Turno Asignado → Calidad)
   const repairByStatus = new Map<RepairStatus, number>();
   for (const r of repairCounts) repairByStatus.set(r.status, r._count);
   const sum = (statuses: RepairStatus[]) =>
@@ -75,6 +96,7 @@ export async function GET(request: Request) {
   const notStarted = sum(NOT_STARTED);
   const inProgress = sum(IN_PROGRESS);
   const ready = sum(READY);
+  const inShopTotal = sum(IN_SHOP_STATUSES);
 
   // ── KPI 2: Cotizaciones en curso
   const totalBudgets = draftCount + sentCount;
@@ -89,17 +111,14 @@ export async function GET(request: Request) {
       ? Number(avgDaysRaw)
       : null;
 
-  // ── KPI 5: Tasa de conversión
-  const leadByStatus = new Map<string, number>();
-  for (const l of leadCounts) leadByStatus.set(l.status, l._count);
-  const won = leadByStatus.get("ganado") ?? 0;
-  const lost = leadByStatus.get("perdido") ?? 0;
-  const closedTotal = won + lost;
-  const rate = closedTotal > 0 ? Math.round((won / closedTotal) * 100) : 0;
+  // ── KPI 5: Tasa de conversión mensual
+  const closedTotal = wonThisMonth + lostThisMonth;
+  const rate =
+    closedTotal > 0 ? Math.round((wonThisMonth / closedTotal) * 100) : 0;
 
   return NextResponse.json({
     vehiclesInRepair: {
-      total: notStarted + inProgress + ready,
+      total: inShopTotal,
       breakdown: { not_started: notStarted, in_progress: inProgress, ready },
     },
     budgetsInProgress: {
@@ -112,6 +131,6 @@ export async function GET(request: Request) {
       amount: completedAmount,
     },
     avgRepairDays,
-    conversionRate: { rate, won, total: closedTotal },
+    conversionRate: { rate, won: wonThisMonth, total: closedTotal },
   });
 }

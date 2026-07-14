@@ -3,15 +3,23 @@
  *
  * Estadísticas simplificadas — dos bloques bien separados:
  *
- * 1. Cotizaciones (CRM)
- *    - totalYear / totalMonth: cantidad de presupuestos creados
- *    - byStage: conteo de Leads por cada estado del embudo
- *    - conversionRate: ganados / (ganados + perdidos) %
- *    - won / lost / closed (para el denominador del rate)
+ * 1. Cotizaciones (CRM) — spec 1.1 + 3.1 v2
+ *    - totalYear / totalMonth: Leads creados en el período (por Lead ID,
+ *      NO por presupuesto — cada tarjeta cuenta una sola vez).
+ *    - byStage: conteo de Leads por cada estado del embudo (snapshot actual)
+ *    - conversionRate: ganados / (ganados + perdidos) del mes, imputando
+ *      "ganados" al mes en que se recibió la orden (Lead.orderReceivedAt).
+ *    - won / lost / closed (mensuales, para el denominador del rate)
  *
- * 2. Producción (Repair)
+ * 2. Producción (Repair) — spec 2.2 v2
  *    - byStage: cuántos vehículos hay AHORA en cada columna del Kanban (excl. archivado)
+ *    - totalActive: sólo Turno Asignado → Calidad (excluye Experiencia del
+ *      Cliente y Pendientes de Cobro; ya no cuentan como "en taller").
  *    - completedThisMonth: cuántas reparaciones se cerraron (archivado) este mes
+ *
+ * 3. Por compañía (spec 3.1 v2)
+ *    - Se agrupa por Seguro Responsable (Propio / Tercero → nombre de
+ *      compañía; Particular → bucket separado).
  *
  * Sin filtros de período: el corte es siempre "mes actual" para los counters
  * mensuales y "año en curso" para los anuales.
@@ -37,6 +45,7 @@ const LEAD_STAGES: LeadStatus[] = [
 
 // Estados activos del Kanban de producción (sin archivado)
 const REPAIR_STAGES: RepairStatus[] = [
+  "turno_a_asignar",
   "turno_asignado",
   "pendientes_repuestos",
   "chapa",
@@ -46,23 +55,35 @@ const REPAIR_STAGES: RepairStatus[] = [
   "experiencia_cliente",
 ];
 
+// spec 2.2 v2 · "En taller" solo cuenta hasta Calidad. A partir de
+// Experiencia del Cliente el vehículo deja de contarse como en taller.
+const IN_SHOP_STAGES: RepairStatus[] = [
+  "turno_asignado",
+  "pendientes_repuestos",
+  "chapa",
+  "pintura",
+  "calidad",
+];
+
 /**
  * Bucket por compañía de seguro. Las 3 principales se reconocen por
- * substring sobre el snapshot `Budget.vehicleInsurance` (case-insensitive).
- * "PARTICULARES" agrupa los presupuestos sin compañía cargada.
- * "OTROS" agrupa los presupuestos con compañía pero que no son ninguna
- * de las 3 principales.
+ * substring sobre el nombre de la compañía asociada al Lead
+ * (Lead.insuranceCompany.name para propio, Vehicle.thirdPartySecure para
+ * tercero). "PARTICULARES" agrupa los leads cuyo Seguro Responsable es
+ * "particular". "OTROS" agrupa compañías fuera de las 3 principales.
+ * "SIN_DEFINIR" son leads sin Seguro Responsable seteado (histórico).
  */
 type InsuranceBucket =
   | "NORTE"
   | "SANCOR"
   | "SAN_CRIST"
   | "OTROS"
-  | "PARTICULARES";
+  | "PARTICULARES"
+  | "SIN_DEFINIR";
 
-function bucketOf(insurance: string | null): InsuranceBucket {
-  if (!insurance || insurance.trim() === "") return "PARTICULARES";
-  const v = insurance.toLowerCase();
+function bucketByCompanyName(name: string | null): InsuranceBucket {
+  if (!name || name.trim() === "") return "OTROS";
+  const v = name.toLowerCase();
   if (v.includes("norte")) return "NORTE";
   if (v.includes("sancor")) return "SANCOR";
   if (v.includes("san crist") || v.includes("sancrist")) return "SAN_CRIST";
@@ -95,19 +116,36 @@ export async function GET(request: Request) {
   const startOfYear = new Date(now.getFullYear(), 0, 1);
 
   const [
-    budgetsYear,
-    budgetsMonth,
+    leadsYear,
+    leadsMonth,
+    wonThisMonth,
+    lostThisMonth,
     leadCounts,
     repairCounts,
     completedMonth,
-    monthBudgets,
+    monthLeads,
     deliveredList,
     enteredList,
   ] = await Promise.all([
-    prisma.budget.count({ where: { createdAt: { gte: startOfYear } } }),
-    prisma.budget.count({
+    // spec 1.1 v2 · Contamos por Lead ID (tarjeta), no por Budget.
+    prisma.lead.count({ where: { createdAt: { gte: startOfYear } } }),
+    prisma.lead.count({
       where: {
         createdAt: { gte: startOfMonth, lt: startOfNextMonth },
+      },
+    }),
+    // spec 1.1 + 3.1 v2 · Ganados del mes imputados a orderReceivedAt.
+    prisma.lead.count({
+      where: {
+        status: "ganado",
+        orderReceivedAt: { gte: startOfMonth, lt: startOfNextMonth },
+      },
+    }),
+    // Perdidos del mes imputados a updatedAt.
+    prisma.lead.count({
+      where: {
+        status: "perdido",
+        updatedAt: { gte: startOfMonth, lt: startOfNextMonth },
       },
     }),
     prisma.lead.groupBy({ by: ["status"], _count: true }),
@@ -118,15 +156,20 @@ export async function GET(request: Request) {
         archivedAt: { gte: startOfMonth, lt: startOfNextMonth },
       },
     }),
-    // Para el desglose por compañía: traemos solo los snapshots de seguro y
-    // status de los presupuestos del mes. Ampliaciones (extensionSuffix > 0)
-    // quedan excluidas para no contar dos veces el mismo trabajo.
-    prisma.budget.findMany({
+    // spec 3.1 v2 · Desglose por compañía basado en Seguro Responsable.
+    // Traemos los Leads del mes con su compañía y el seguro del tercero para
+    // poder rutear cada uno al bucket correcto. Filtramos por createdAt del
+    // Lead (mismo criterio que "totalMonth") para que el denominador cierre.
+    prisma.lead.findMany({
       where: {
         createdAt: { gte: startOfMonth, lt: startOfNextMonth },
-        extensionSuffix: 0,
       },
-      select: { vehicleInsurance: true, status: true },
+      select: {
+        status: true,
+        insuranceResponsibility: true,
+        insuranceCompany: { select: { name: true } },
+        vehicle: { select: { thirdPartySecure: true, secure: true } },
+      },
     }),
     // Egresos del mes: vehículos que salieron del taller. Consideramos
     // egresados a todos los repairs que ya pasaron el punto de entrega
@@ -200,7 +243,7 @@ export async function GET(request: Request) {
     }),
   ]);
 
-  // ── Cotizaciones (Lead funnel)
+  // ── Cotizaciones (Lead funnel — snapshot actual por columna)
   const leadByStatus = new Map<string, number>();
   for (const r of leadCounts) leadByStatus.set(r.status, r._count);
 
@@ -209,11 +252,11 @@ export async function GET(request: Request) {
     count: leadByStatus.get(s) ?? 0,
   }));
 
-  const won = leadByStatus.get("ganado") ?? 0;
-  const lost = leadByStatus.get("perdido") ?? 0;
-  const closedTotal = won + lost;
+  // spec 3.1 v2 · Tasa de conversión mensual: ganados/(ganados+perdidos) del
+  // mes. Ganados imputados por orderReceivedAt, perdidos por updatedAt.
+  const closedTotal = wonThisMonth + lostThisMonth;
   const conversionRate =
-    closedTotal > 0 ? Math.round((won / closedTotal) * 100) : 0;
+    closedTotal > 0 ? Math.round((wonThisMonth / closedTotal) * 100) : 0;
 
   // ── Producción (Repair)
   const repairByStatus = new Map<string, number>();
@@ -224,17 +267,23 @@ export async function GET(request: Request) {
     count: repairByStatus.get(s) ?? 0,
   }));
 
-  const totalActive = produccionByStage.reduce((acc, x) => acc + x.count, 0);
+  // spec 2.2 v2 · totalActive = vehículos en taller (solo Turno Asignado →
+  // Calidad). El breakdown por columna sigue mostrando todas las etapas.
+  const totalActive = IN_SHOP_STAGES.reduce(
+    (acc, s) => acc + (repairByStatus.get(s) ?? 0),
+    0,
+  );
 
-  // ── Desglose mensual por compañía de seguro
-  // Para cada bucket calculamos { total, aprobados } sobre los presupuestos
-  // del mes (sin ampliaciones). "aprobado" = budget.status === "accepted".
+  // ── Desglose mensual por compañía (spec 3.1 v2 — por Seguro Responsable)
+  // Para cada bucket calculamos { total, aprobados } sobre los Leads del mes.
+  // "Aprobado" acá = Lead.status === "ganado" (recibió orden de trabajo).
   const buckets: InsuranceBucket[] = [
     "NORTE",
     "SANCOR",
     "SAN_CRIST",
     "OTROS",
     "PARTICULARES",
+    "SIN_DEFINIR",
   ];
   const insuranceStats: Record<
     InsuranceBucket,
@@ -245,11 +294,27 @@ export async function GET(request: Request) {
     SAN_CRIST: { total: 0, accepted: 0 },
     OTROS: { total: 0, accepted: 0 },
     PARTICULARES: { total: 0, accepted: 0 },
+    SIN_DEFINIR: { total: 0, accepted: 0 },
   };
-  for (const b of monthBudgets) {
-    const key = bucketOf(b.vehicleInsurance);
+  for (const l of monthLeads) {
+    let key: InsuranceBucket;
+    if (!l.insuranceResponsibility) {
+      key = "SIN_DEFINIR";
+    } else if (l.insuranceResponsibility === "particular") {
+      key = "PARTICULARES";
+    } else if (l.insuranceResponsibility === "propio") {
+      // Nombre de la compañía del titular: preferimos la relación
+      // Lead.insuranceCompany (dato normalizado); fallback al string libre
+      // Vehicle.secure para leads antiguos sin FK cargada.
+      key = bucketByCompanyName(
+        l.insuranceCompany?.name ?? l.vehicle?.secure ?? null,
+      );
+    } else {
+      // tercero → compañía del tercero (string libre en Vehicle)
+      key = bucketByCompanyName(l.vehicle?.thirdPartySecure ?? null);
+    }
     insuranceStats[key].total += 1;
-    if (b.status === "accepted") insuranceStats[key].accepted += 1;
+    if (l.status === "ganado") insuranceStats[key].accepted += 1;
   }
   const byInsurance = buckets.map((key) => ({
     key,
@@ -261,12 +326,12 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     cotizaciones: {
-      totalYear: budgetsYear,
-      totalMonth: budgetsMonth,
+      totalYear: leadsYear,
+      totalMonth: leadsMonth,
       byStage: cotizacionesByStage,
       conversionRate,
-      won,
-      lost,
+      won: wonThisMonth,
+      lost: lostThisMonth,
       closedTotal,
     },
     produccion: {

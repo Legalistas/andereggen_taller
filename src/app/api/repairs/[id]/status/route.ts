@@ -10,6 +10,7 @@ import type { RepairStatus } from "../../../../../../generated/prisma/client";
 type RouteContext = { params: Promise<{ id: string }> };
 
 const ALL_STATUSES: RepairStatus[] = [
+  "turno_a_asignar",
   "turno_asignado",
   "pendientes_repuestos",
   "chapa",

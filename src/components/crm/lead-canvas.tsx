@@ -141,6 +141,7 @@ function budgetDisplay(b: { number: number; extensionSuffix?: number | null }): 
 }
 
 type RepairStatusLite =
+  | "turno_a_asignar"
   | "turno_asignado"
   | "ingresado"
   | "pendientes_repuestos"
@@ -165,6 +166,8 @@ type RepairLite = {
   updatedAt: string;
 };
 
+type InsuranceResponsibility = "propio" | "tercero" | "particular";
+
 type LeadDetail = {
   id: string;
   status: LeadStatus;
@@ -178,6 +181,7 @@ type LeadDetail = {
   inspector: UserLite | null;
   insuranceAgent: UserLite | null;
   insuranceCompany: InsuranceCompanyLite | null;
+  insuranceResponsibility: InsuranceResponsibility | null;
   budgets: BudgetLite[];
   repairs: RepairLite[];
 };
@@ -510,7 +514,12 @@ export function LeadCanvas({
               />
 
               {lead.vehicle ? (
-                <VehicleSection vehicle={lead.vehicle} onPatch={patchVehicle} />
+                <VehicleSection
+                  vehicle={lead.vehicle}
+                  onPatch={patchVehicle}
+                  insuranceResponsibility={lead.insuranceResponsibility}
+                  onPatchLead={patchLead}
+                />
               ) : (
                 <WebLeadVehicleStub
                   leadId={lead.id}
@@ -1395,9 +1404,13 @@ function InsuranceCompanyRow({
 function VehicleSection({
   vehicle,
   onPatch,
+  insuranceResponsibility,
+  onPatchLead,
 }: {
   vehicle: VehicleDetail;
   onPatch: (patch: Record<string, unknown>) => Promise<void>;
+  insuranceResponsibility: InsuranceResponsibility | null;
+  onPatchLead: (patch: Record<string, unknown>) => Promise<void>;
 }) {
   return (
     <SectionCard
@@ -1463,6 +1476,38 @@ function VehicleSection({
             value={vehicle.thirdPartySecure}
             onSave={(v) => onPatch({ thirdPartySecure: v })}
           />
+        </div>
+        <div className="grid gap-1">
+          <Label className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+            Seguro Responsable
+          </Label>
+          <Select
+            value={insuranceResponsibility ?? "none"}
+            onValueChange={(v) =>
+              onPatchLead({
+                insuranceResponsibility: v === "none" ? null : v,
+              })
+            }
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Sin definir" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sin definir</SelectItem>
+              <SelectItem value="propio">
+                Seguro Propio — titular del vehículo
+              </SelectItem>
+              <SelectItem value="tercero">
+                Seguro del Tercero — causante del siniestro
+              </SelectItem>
+              <SelectItem value="particular">
+                Particular — cliente paga
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-[10px] text-slate-500">
+            Obligatorio antes de pasar a &quot;Ganado&quot;.
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="grid gap-1">
@@ -1839,6 +1884,7 @@ function BudgetsSection({
 // ─────────────────────────────────────────────────────────────
 
 const REPAIR_STATUS_LABEL: Record<RepairStatusLite, string> = {
+  turno_a_asignar: "Turno a Asignar",
   turno_asignado: "Turno Asignado",
   ingresado: "Ingresado",
   pendientes_repuestos: "Pendientes de Repuestos",
@@ -1851,6 +1897,7 @@ const REPAIR_STATUS_LABEL: Record<RepairStatusLite, string> = {
 };
 
 const REPAIR_STATUS_COLOR: Record<RepairStatusLite, string> = {
+  turno_a_asignar: "bg-blue-100 text-blue-700 border-blue-200",
   turno_asignado: "bg-slate-100 text-slate-700 border-slate-200",
   ingresado: "bg-blue-100 text-blue-700 border-blue-200",
   pendientes_repuestos: "bg-amber-100 text-amber-700 border-amber-200",

@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export type RepairStatus =
+  | "turno_a_asignar"
   | "turno_asignado"
   | "ingresado"
   | "pendientes_repuestos"
@@ -94,6 +95,17 @@ const COLUMNS: Array<{
   headerClass: string;
   ringClass: string;
 }> = [
+  // spec 2.1 v2 · Primera columna del kanban: leads recién ganados que
+  // todavía no tienen turno coordinado con el cliente. Al cargar
+  // `scheduledAt` en la ficha, el repair pasa automáticamente a
+  // "turno_asignado" y dispara el mail de confirmación.
+  {
+    id: "turno_a_asignar",
+    label: "Turno a Asignar",
+    icon: Calendar,
+    headerClass: "bg-blue-50 text-blue-700 border-blue-200",
+    ringClass: "ring-blue-400",
+  },
   {
     id: "turno_asignado",
     label: "Turno Asignado",

@@ -111,6 +111,7 @@ type RepairDetail = {
   estimatedDeliveryAt: string | null;
   deliveredAt: string | null;
   archivedAt: string | null;
+  needsTransport: boolean;
   notes: string | null;
   insuranceCompany: string | null;
   approvedInsurance: string | number | null;
@@ -151,6 +152,7 @@ const INVOICE_RECIPIENT_LABEL: Record<InvoiceRecipient, string> = {
 };
 
 const STATUS_LABEL: Record<RepairStatus, string> = {
+  turno_a_asignar: "Turno a Asignar",
   turno_asignado: "Turno Asignado",
   ingresado: "Ingresado",
   pendientes_repuestos: "Pendientes de Repuestos",
@@ -163,6 +165,7 @@ const STATUS_LABEL: Record<RepairStatus, string> = {
 };
 
 const STATUS_DOT: Record<RepairStatus, string> = {
+  turno_a_asignar: "bg-blue-500",
   turno_asignado: "bg-slate-500",
   ingresado: "bg-blue-500",
   pendientes_repuestos: "bg-amber-500",
@@ -175,6 +178,7 @@ const STATUS_DOT: Record<RepairStatus, string> = {
 };
 
 const ALL_STATUSES: RepairStatus[] = [
+  "turno_a_asignar",
   "turno_asignado",
   "pendientes_repuestos",
   "chapa",
@@ -805,6 +809,24 @@ function DatesSection({
           readonly
         />
       </div>
+      {/* spec 2.3 v2 · Traslado del cliente al dejar el vehículo */}
+      <label className="flex items-start gap-2 mt-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={repair.needsTransport}
+          onChange={(e) => onPatch({ needsTransport: e.target.checked })}
+          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[#003b73] focus:ring-[#003b73]"
+        />
+        <div className="grid gap-0.5">
+          <span className="text-sm font-medium text-slate-800">
+            El cliente pide traslado al dejar el vehículo
+          </span>
+          <span className="text-[11px] text-slate-500">
+            Marcar si hay que llevarlo a su domicilio o trabajo. Aparece en el
+            calendario del día del turno.
+          </span>
+        </div>
+      </label>
     </SectionCard>
   );
 }

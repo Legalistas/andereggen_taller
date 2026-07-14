@@ -18,6 +18,7 @@ async function nextRepairInternalNumber(
 }
 
 const ALL_STATUSES: RepairStatus[] = [
+  "turno_a_asignar",
   "turno_asignado",
   "pendientes_repuestos",
   "chapa",
@@ -209,7 +210,11 @@ export async function POST(request: Request) {
     const internalNumber = await nextRepairInternalNumber();
     const repair = await prisma.repair.create({
       data: {
-        status: "turno_asignado",
+        // spec 2.1 v2 · Si el caller ya coordinó fecha con el cliente
+        // (mandó scheduledAt), arranca directo en "turno_asignado";
+        // si no, queda en "turno_a_asignar" hasta que el equipo cargue
+        // la fecha.
+        status: scheduledAt ? "turno_asignado" : "turno_a_asignar",
         internalNumber,
         budgetId,
         leadId: budget.leadId,
@@ -440,7 +445,10 @@ export async function POST(request: Request) {
       const internalNumber = await nextRepairInternalNumber(tx);
       return tx.repair.create({
         data: {
-          status: "turno_asignado",
+          // spec 2.1 v2 · Nueva Reparación directa: si el usuario ya
+          // asignó turno arranca en "turno_asignado", si no en
+          // "turno_a_asignar".
+          status: scheduledAt ? "turno_asignado" : "turno_a_asignar",
           internalNumber,
           directCreation: true,
           customerId: resolvedCustomerId,

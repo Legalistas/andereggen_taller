@@ -37,6 +37,12 @@ const STAGE_INFO: Record<
   RepairStatus,
   { stage: number; label: string; message: string }
 > = {
+  turno_a_asignar: {
+    stage: 1,
+    label: "Turno por coordinar",
+    message:
+      "Recibimos la aprobación de tu trabajo. En las próximas horas te contactamos para coordinar el turno.",
+  },
   turno_asignado: {
     stage: 1,
     label: "Turno reservado",

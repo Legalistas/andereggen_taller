@@ -191,7 +191,11 @@ export default function LeadsSection() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`/api/crm/leads`, { signal });
+      // spec 1.4 v2 · El kanban de cotizaciones sólo debe mostrar tarjetas
+      // activas — las ganadas y perdidas siguen accesibles desde el módulo
+      // Presupuestos. Traemos solo el subconjunto activo desde la API para
+      // no cargar cientos de cerradas que después descartaríamos client-side.
+      const res = await fetch(`/api/crm/leads?tab=activas`, { signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { leads: Lead[] };
       setLeads(data.leads);

@@ -59,6 +59,7 @@ model User {
   repairsAssigned     Repair[]         @relation("RepairMechanic")
   repairInvoicesCreated         RepairInvoice[]        @relation("RepairInvoiceCreatedBy")
   repairInvoicePaymentsCreated  RepairInvoicePayment[] @relation("RepairInvoicePaymentCreatedBy")
+  cashMovementsCreated          CashMovement[]         @relation("CashMovementCreatedBy")
 }
 
 model Session {
@@ -274,6 +275,14 @@ enum LeadLostReason {
   otro
 }
 
+// spec 1.2 v2 · Seguro Responsable: define quién paga el trabajo y sobre
+// qué compañía se imputan las estadísticas de aprobación por aseguradora.
+enum InsuranceResponsibility {
+  propio // Seguro del titular del vehículo cubre el trabajo
+  tercero // Seguro del tercero causante paga el trabajo
+  particular // Cliente paga (culpa concurrente, indemnizado, etc.)
+}
+
 model Lead {
   id          String          @id @default(uuid())
   customerId  String
@@ -291,6 +300,15 @@ model Lead {
   inspectorId        String? // User con rol "inspector"
   insuranceAgentId   String? // User con rol "productor_seguros"
   insuranceCompanyId String? // FK a InsuranceCompany — 4to actor (spec 8.1)
+
+  // spec 1.2 v2 · Quién es responsable de pagar. Obligatorio antes de pasar
+  // el Lead a "ganado" (validación aplicada en la API de cambio de estado).
+  insuranceResponsibility InsuranceResponsibility?
+
+  // spec 1.1 + 3.1 v2 · Fecha en que se recibió la orden de trabajo (Lead
+  // ganado). Las métricas de "ganados por mes" y "presupuestos por compañía"
+  // se imputan a este mes, no al mes de creación del lead.
+  orderReceivedAt DateTime?
 
   customer         Customer          @relation(fields: [customerId], references: [id])
   vehicle          CustomerVehicle?  @relation(fields: [vehicleId], references: [id])
@@ -310,6 +328,7 @@ model Lead {
   @@index([createdById])
   @@index([inspectorId])
   @@index([insuranceAgentId])
+  @@index([orderReceivedAt])
 }
 
 // =====================================================
@@ -756,12 +775,14 @@ model AppSettings {
   notifyOnStageChange    Boolean @default(true)
   reminderDaysAfterSent  Int     @default(5)
 
-  // Notificaciones automáticas — spec sección 6 (5 eventos)
+  // Notificaciones automáticas — spec sección 6 (5 eventos) + spec 2.1/1.3 v2 (2 eventos)
   notifyBudgetCreated      Boolean @default(true) // Presupuesto generado → Cliente + Inspector + Productor
   notifyVehicleEntered     Boolean @default(true) // Vehículo ingresado al taller → Cliente + Productor
   notifyPartsReceived      Boolean @default(true) // Repuestos recibidos → Inspector + Productor
   notifyRepairCompleted    Boolean @default(true) // Reparación completada / listo para retirar → Cliente + Inspector + Productor
   notifyCustomerExperience Boolean @default(true) // Solicitud de experiencia del cliente → Cliente
+  notifyTurnAssigned       Boolean @default(true) // spec 2.1 v2 · Turno coordinado → Cliente
+  notifyLeadReinforcement  Boolean @default(true) // spec 1.3 v2 · Lead movido a "Refuerzo" → Cliente
 
   // Apariencia / localización
   locale   String @default("es-AR")
@@ -898,6 +919,11 @@ enum RepairStatus {
   experiencia_cliente
   pendientes_cobro
   archivado
+  // spec 2.1 v2 · Estado inicial cuando la oportunidad se gana pero todavía
+  // no se coordinó turno con el cliente. Al setear `scheduledAt` en la ficha
+  // pasa automáticamente a `turno_asignado`. Agregado al final porque
+  // Postgres mantiene el orden histórico del enum.
+  turno_a_asignar
 }
 
 /**
@@ -953,6 +979,10 @@ model Repair {
   estimatedDeliveryAt DateTime?
   deliveredAt        DateTime?
   archivedAt         DateTime?
+  // spec 2.3 v2 · El cliente pidió que lo lleven a su domicilio/trabajo al
+  // dejar el vehículo. Se muestra como checkbox en el calendario y en la
+  // ficha del repair. Es sobre la persona, no el vehículo.
+  needsTransport     Boolean @default(false)
 
   // Compañía de seguro que paga — snapshot al crear el repair. Visible en
   // la card del kanban mientras el auto está en taller. Texto libre porque
@@ -1101,6 +1131,11 @@ model RepairInvoicePayment {
   reference   String?
   notes       String?       @db.Text
 
+  // spec 4.2 v2 · Caja destino del cobro. Nullable para cobros históricos
+  // y para cobros en los que el operador no eligió caja (quedan sin imputar).
+  cashBoxId   String?
+  cashBox     CashBox? @relation(fields: [cashBoxId], references: [id], onDelete: SetNull)
+
   createdById String?
   createdBy   User?    @relation("RepairInvoicePaymentCreatedBy", fields: [createdById], references: [id])
 
@@ -1108,4 +1143,70 @@ model RepairInvoicePayment {
 
   @@index([invoiceId])
   @@index([paidAt])
+  @@index([cashBoxId])
+}
+
+// =====================================================
+// Módulo Caja — spec sección 4 v2
+// =====================================================
+// Trazabilidad de dónde está el dinero en cada momento. Las 5 cajas no son
+// por usuario sino un registro contable del flujo entre personas y métodos.
+// Los cobros de facturas (RepairInvoicePayment.cashBoxId) alimentan la vista
+// automáticamente; CashMovement se usa para egresos y transferencias entre
+// cajas — no duplicamos los cobros ahí.
+
+enum CashMovementType {
+  INGRESO // Ingreso manual (aportes, ventas fuera de reparación)
+  EGRESO // Gastos, retiros, sueldos
+  TRANSFER_IN // Contraparte "recibí" de una transferencia interna
+  TRANSFER_OUT // Contraparte "envié" de una transferencia interna
+}
+
+model CashBox {
+  id          String  @id @default(uuid())
+  /** Slug estable — se seedea con "caja_1", "caja_2", "caja_maria",
+   *  "caja_alfredo", "caja_lucila". Se usa para features que necesitan
+   *  identificar una caja específica sin depender del UUID. */
+  key         String  @unique
+  name        String
+  description String? @db.Text
+  /** Orden de despliegue en la UI. */
+  sortOrder   Int     @default(0)
+  archivedAt  DateTime?
+
+  movements CashMovement[]
+  payments  RepairInvoicePayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+}
+
+model CashMovement {
+  id        String           @id @default(uuid())
+  cashBoxId String
+  cashBox   CashBox          @relation(fields: [cashBoxId], references: [id], onDelete: Cascade)
+  type      CashMovementType
+  amount    Decimal          @db.Decimal(14, 2)
+  method    PaymentMethod    @default(EFECTIVO)
+  /** Descripción libre — "Alquiler local", "Salario María", "Transferencia
+   *  a Caja 1", etc. Obligatorio para poder auditar el movimiento. */
+  concept   String
+  reference String?
+  notes     String?          @db.Text
+
+  /** Para transferencias entre cajas: los dos rows (TRANSFER_OUT origen y
+   *  TRANSFER_IN destino) comparten este UUID. Permite mostrar la
+   *  contraparte y evitar contar dos veces al agregar totales globales. */
+  transferGroupId String?
+
+  paidAt      DateTime @default(now())
+  createdById String?
+  createdBy   User?    @relation("CashMovementCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([cashBoxId])
+  @@index([paidAt])
+  @@index([transferGroupId])
 }

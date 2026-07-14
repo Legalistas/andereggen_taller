@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import {
+  buildLeadContext,
+  sendRepairEventNotification,
+} from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import type {
+  InsuranceResponsibility,
   LeadLostReason,
   LeadStatus,
 } from "../../../../../../generated/prisma/client";
@@ -21,6 +26,11 @@ const LOST_REASONS: LeadLostReason[] = [
   "no_respondio",
   "competencia",
   "otro",
+];
+const INSURANCE_RESPONSIBILITIES: InsuranceResponsibility[] = [
+  "propio",
+  "tercero",
+  "particular",
 ];
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -112,6 +122,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     inspectorId,
     insuranceAgentId,
     insuranceCompanyId,
+    insuranceResponsibility,
   } = body as {
     status?: LeadStatus;
     notes?: string | null;
@@ -121,6 +132,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     inspectorId?: string | null;
     insuranceAgentId?: string | null;
     insuranceCompanyId?: string | null;
+    insuranceResponsibility?: InsuranceResponsibility | null;
   };
 
   if (status && !ALL_STATUSES.includes(status)) {
@@ -129,10 +141,36 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   if (lostReason && !LOST_REASONS.includes(lostReason)) {
     return NextResponse.json({ error: "Invalid lostReason" }, { status: 400 });
   }
+  if (
+    insuranceResponsibility &&
+    !INSURANCE_RESPONSIBILITIES.includes(insuranceResponsibility)
+  ) {
+    return NextResponse.json(
+      { error: "Invalid insuranceResponsibility" },
+      { status: 400 },
+    );
+  }
 
   const existing = await prisma.lead.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  }
+
+  // spec 1.2 v2 · "Seguro Responsable" es obligatorio antes de pasar a Ganado.
+  // Miramos el valor efectivo tras el patch: si viene en el body usamos ese,
+  // si no, el que ya tiene el lead.
+  const effectiveResponsibility =
+    insuranceResponsibility !== undefined
+      ? insuranceResponsibility
+      : existing.insuranceResponsibility;
+  if (status === "ganado" && !effectiveResponsibility) {
+    return NextResponse.json(
+      {
+        error:
+          "Debe seleccionar Seguro Responsable (Propio / Tercero / Particular) antes de pasar el lead a Ganado.",
+      },
+      { status: 400 },
+    );
   }
 
   // Validar que los actores asignados existan y tengan el rol correcto.
@@ -182,8 +220,21 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   // antes de existir este auto-create.
   const finalStatus = status ?? existing.status;
   const willBeGanado = finalStatus === "ganado";
+  // spec 1.1 + 3.1 v2 · Imputamos "ganados por mes" al momento de recibir la
+  // orden. Marcamos orderReceivedAt en la transición a ganado (solo si no
+  // estaba ya seteado, para no pisar backfills o re-transiciones).
+  const shouldSetOrderReceivedAt =
+    status === "ganado" &&
+    existing.status !== "ganado" &&
+    !existing.orderReceivedAt;
 
   const lead = await prisma.$transaction(async (tx) => {
+    // Ojo con el `include` de este update: el frontend hace merge shallow
+    // (`{...prev, ...body.lead}`) al recibir el PATCH, así que si acá
+    // devolvemos `vehicle` o `customer` con un select reducido, pisamos los
+    // que ya tenía en memoria y los inputs controlados (chassis, color,
+    // country, state, etc.) pasan a undefined → warning de React. Por eso
+    // replicamos el mismo shape que el GET.
     const updated = await tx.lead.update({
       where: { id },
       data: {
@@ -195,23 +246,19 @@ export async function PATCH(request: Request, ctx: RouteContext) {
         ...(inspectorId !== undefined && { inspectorId }),
         ...(insuranceAgentId !== undefined && { insuranceAgentId }),
         ...(insuranceCompanyId !== undefined && { insuranceCompanyId }),
+        ...(insuranceResponsibility !== undefined && {
+          insuranceResponsibility,
+        }),
+        ...(shouldSetOrderReceivedAt && { orderReceivedAt: new Date() }),
       },
       include: {
         customer: {
-          select: { id: true, name: true, email: true, phone: true },
-        },
-        vehicle: {
-          select: {
-            id: true,
-            brand: true,
-            model: true,
-            year: true,
-            domain: true,
-            // `secure` se usa abajo para snapshotear la compañía aseguradora
-            // en el Repair que se crea automáticamente al ganar el lead.
-            secure: true,
+          include: {
+            country: { select: { id: true, name: true, code: true } },
+            state: { select: { id: true, name: true } },
           },
         },
+        vehicle: true,
         inspector: { select: ACTOR_SELECT },
         insuranceAgent: { select: ACTOR_SELECT },
         insuranceCompany: {
@@ -253,7 +300,10 @@ export async function PATCH(request: Request, ctx: RouteContext) {
           }
           await tx.repair.create({
             data: {
-              status: "turno_asignado",
+              // spec 2.1 v2 · El repair arranca en "turno_a_asignar" hasta
+              // que el equipo coordine turno con el cliente (setea
+              // scheduledAt) — ahí pasa a "turno_asignado".
+              status: "turno_a_asignar",
               budgetId: lastBudget.id,
               leadId: id,
               directCreation: false,
@@ -274,7 +324,10 @@ export async function PATCH(request: Request, ctx: RouteContext) {
           // Lead ganado sin budget — snapshot directo desde customer/vehicle
           await tx.repair.create({
             data: {
-              status: "turno_asignado",
+              // spec 2.1 v2 · El repair arranca en "turno_a_asignar" hasta
+              // que el equipo coordine turno con el cliente (setea
+              // scheduledAt) — ahí pasa a "turno_asignado".
+              status: "turno_a_asignar",
               leadId: id,
               directCreation: false,
               customerId: updated.customerId,
@@ -296,6 +349,19 @@ export async function PATCH(request: Request, ctx: RouteContext) {
 
     return updated;
   });
+
+  // spec 1.3 v2 · Mail de refuerzo comercial cuando el lead entra en
+  // "refuerzo". Solo si es una transición efectiva (existing.status !==
+  // "refuerzo") — así reasignar dentro de la misma columna no reenvía.
+  if (status === "refuerzo" && existing.status !== "refuerzo") {
+    buildLeadContext(id)
+      .then((ctx) => {
+        if (ctx) return sendRepairEventNotification("lead_reinforcement", ctx);
+      })
+      .catch((e) =>
+        console.error("[notif:lead_reinforcement] error en envío:", e),
+      );
+  }
 
   return NextResponse.json({ lead });
 }

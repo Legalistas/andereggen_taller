@@ -4,7 +4,12 @@
  * Devuelve los 3 datasets que consume <ChartsSection> en el dashboard:
  *   - revenue:   ingresos por mes (últimos 6 meses, basado en Payment.paidAt)
  *   - services:  top 5 conceptos más usados en Budgets (BudgetConcept)
- *   - vehicles:  flujo de vehículos por día de la semana actual (Repair.enteredAt)
+ *   - vehicles:  flujo de vehículos por mes (últimos 6 meses, Repair.enteredAt)
+ *
+ * spec 3.3 v2 · El gráfico "Flujo de Vehículos" pasa de vista semanal
+ * (últimos 7 días por día de la semana) a vista semestral (últimos 6 meses).
+ * La granularidad mensual permite ver estacionalidad real del taller que en
+ * la vista semanal quedaba oculta.
  */
 
 import { NextResponse } from "next/server";
@@ -12,7 +17,6 @@ import { verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-const DAY_LABELS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 const CONCEPT_LABELS: Record<string, string> = {
   DESMONTAR: "Desmontar",
@@ -38,9 +42,9 @@ export async function GET(request: Request) {
 
   const now = new Date();
 
-  // ───── Revenue (últimos 6 meses) ─────
+  // ───── Revenue y Vehicles (últimos 6 meses) ─────
   // Inicio del mes actual menos 5 meses (=> 6 meses incluido el actual)
-  const revenueStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  const sixMonthsStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
   const [revenueRaw, topConcepts, vehiclesRaw] = await Promise.all([
     // Group by mes — usamos $queryRaw para date_trunc
@@ -48,7 +52,7 @@ export async function GET(request: Request) {
       SELECT date_trunc('month', "paidAt")::timestamp AS month,
              SUM(amount)::float AS total
       FROM "Payment"
-      WHERE "paidAt" >= ${revenueStart}
+      WHERE "paidAt" >= ${sixMonthsStart}
       GROUP BY 1
       ORDER BY 1 ASC
     `,
@@ -58,11 +62,13 @@ export async function GET(request: Request) {
       orderBy: { _count: { category: "desc" } },
       take: 5,
     }),
-    prisma.$queryRaw<Array<{ dow: number; count: number }>>`
-      SELECT EXTRACT(DOW FROM "enteredAt")::int AS dow,
+    // spec 3.3 v2 · Flujo de vehículos por mes (semestral) — count de
+    // ingresos físicos al taller agrupados por mes.
+    prisma.$queryRaw<Array<{ month: Date; count: number }>>`
+      SELECT date_trunc('month', "enteredAt")::timestamp AS month,
              COUNT(*)::int AS count
       FROM "Repair"
-      WHERE "enteredAt" >= ${new Date(now.getTime() - 7 * 86400_000)}
+      WHERE "enteredAt" >= ${sixMonthsStart}
         AND "enteredAt" IS NOT NULL
       GROUP BY 1
       ORDER BY 1 ASC
@@ -92,14 +98,22 @@ export async function GET(request: Request) {
     cantidad: c._count,
   }));
 
-  // ── Vehicles: flujo por día (lunes a sábado, últimos 7 días)
-  const vehiclesByDow = new Map<number, number>();
-  for (const v of vehiclesRaw) vehiclesByDow.set(v.dow, v.count);
-  // Empezar desde lunes (dow=1) y terminar en sábado (dow=6)
-  const vehicles = [1, 2, 3, 4, 5, 6].map((dow) => ({
-    dia: DAY_LABELS[dow],
-    vehiculos: vehiclesByDow.get(dow) ?? 0,
-  }));
+  // ── Vehicles: flujo por mes (últimos 6 meses, mismo eje que revenue)
+  const vehiclesByKey = new Map<string, number>();
+  for (const v of vehiclesRaw) {
+    const d = new Date(v.month);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    vehiclesByKey.set(key, Number(v.count) || 0);
+  }
+  const vehicles: Array<{ mes: string; vehiculos: number }> = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    vehicles.push({
+      mes: MONTH_LABELS[d.getMonth()],
+      vehiculos: vehiclesByKey.get(key) ?? 0,
+    });
+  }
 
   return NextResponse.json({ revenue, services, vehicles });
 }

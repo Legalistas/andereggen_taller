@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import type { RepairStatus } from "../../../../../generated/prisma/client";
 
 const STATUS_GROUP: Record<RepairStatus, "completed" | "in-progress" | "pending"> = {
+  turno_a_asignar: "pending",
   turno_asignado: "pending",
   ingresado: "pending",
   pendientes_repuestos: "pending",
@@ -24,6 +25,7 @@ const STATUS_GROUP: Record<RepairStatus, "completed" | "in-progress" | "pending"
 };
 
 const STATUS_LABEL: Record<RepairStatus, string> = {
+  turno_a_asignar: "Turno a asignar",
   turno_asignado: "Turno asignado",
   ingresado: "Ingresado",
   pendientes_repuestos: "Pend. repuestos",

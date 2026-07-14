@@ -9,9 +9,7 @@ import {
   MoreVertical,
   Send,
   TrendingUp,
-  Trophy,
   Wrench,
-  XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +48,7 @@ export type Actor = {
 };
 
 export type RepairStatusLite =
+  | "turno_a_asignar"
   | "turno_asignado"
   | "ingresado"
   | "pendientes_repuestos"
@@ -131,20 +130,10 @@ const COLUMNS: Array<{
     headerClass: "bg-amber-50 text-amber-800 border-amber-200",
     ringClass: "ring-amber-400",
   },
-  {
-    id: "ganado",
-    label: "Ganado",
-    icon: Trophy,
-    headerClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    ringClass: "ring-emerald-400",
-  },
-  {
-    id: "perdido",
-    label: "Perdido",
-    icon: XCircle,
-    headerClass: "bg-rose-50 text-rose-700 border-rose-200",
-    ringClass: "ring-rose-400",
-  },
+  // spec 1.4 v2 · Las columnas "Ganado" y "Perdido" ya no viven en el kanban
+  // de Cotizaciones. Las tarjetas ganadas pasan a Producción; las perdidas
+  // quedan accesibles desde el módulo Presupuestos. Para marcar un lead como
+  // Ganado/Perdido se usa el StatusPicker del drawer (lead-canvas).
 ];
 
 const ARS = new Intl.NumberFormat("es-AR", {
@@ -155,6 +144,7 @@ const ARS = new Intl.NumberFormat("es-AR", {
 
 // Colores de las etapas de Producción, para el badge en el card del kanban CRM
 const REPAIR_KANBAN_LABEL: Record<RepairStatusLite, string> = {
+  turno_a_asignar: "Turno a asignar",
   turno_asignado: "Turno asignado",
   ingresado: "Ingresado",
   pendientes_repuestos: "Pendientes Repuestos",
@@ -167,6 +157,7 @@ const REPAIR_KANBAN_LABEL: Record<RepairStatusLite, string> = {
 };
 
 const REPAIR_KANBAN_COLOR: Record<RepairStatusLite, string> = {
+  turno_a_asignar: "bg-blue-100 text-blue-700",
   turno_asignado: "bg-slate-100 text-slate-700",
   ingresado: "bg-blue-100 text-blue-700",
   pendientes_repuestos: "bg-amber-100 text-amber-700",

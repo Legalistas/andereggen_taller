@@ -18,7 +18,9 @@ export type RepairEventType =
   | "vehicle_entered"
   | "parts_received"
   | "repair_completed"
-  | "customer_experience";
+  | "customer_experience"
+  | "turn_assigned" // spec 2.1 v2 · Turno coordinado con el cliente
+  | "lead_reinforcement"; // spec 1.3 v2 · Lead movido a "Refuerzo"
 
 type Role = "customer" | "inspector" | "insurance";
 
@@ -33,6 +35,8 @@ type Props = {
   budgetTotal?: string;
   /** URL de encuesta para customer_experience */
   surveyUrl?: string;
+  /** Para turn_assigned: fecha/hora del turno formateada en es-AR */
+  turnDateFormatted?: string;
   taller: { name: string; phone: string; email: string };
 };
 
@@ -126,6 +130,42 @@ const COPY: Record<
       heading: "Encuesta enviada al cliente",
       intro: (p) =>
         `Se envió la encuesta de satisfacción al cliente ${p.customerName} (${p.vehicleSummary}).`,
+    },
+  },
+  turn_assigned: {
+    customer: {
+      heading: "Turno confirmado",
+      intro: (p) =>
+        p.turnDateFormatted
+          ? `Coordinamos tu turno para el ${p.turnDateFormatted}. Te esperamos con tu vehículo ${p.vehicleSummary}.`
+          : `Coordinamos el turno para tu vehículo ${p.vehicleSummary}. Te esperamos en la fecha acordada.`,
+    },
+    inspector: {
+      heading: "Turno confirmado",
+      intro: (p) =>
+        `Se coordinó turno con ${p.customerName} para el vehículo ${p.vehicleSummary}${p.turnDateFormatted ? ` (${p.turnDateFormatted})` : ""}.`,
+    },
+    insurance: {
+      heading: "Turno confirmado",
+      intro: (p) =>
+        `Se coordinó turno con ${p.customerName} para el vehículo ${p.vehicleSummary}${p.turnDateFormatted ? ` (${p.turnDateFormatted})` : ""}.`,
+    },
+  },
+  lead_reinforcement: {
+    customer: {
+      heading: "¿Coordinamos tu reparación?",
+      intro: (p) =>
+        `¿Pudiste ver el presupuesto que te enviamos para tu vehículo ${p.vehicleSummary}? Nos gustaría coordinar un turno para avanzar. Cualquier duda respondé este correo y te ayudamos.`,
+    },
+    inspector: {
+      heading: "Lead en seguimiento",
+      intro: (p) =>
+        `El lead de ${p.customerName} (${p.vehicleSummary}) pasó a "Refuerzo": mail de seguimiento enviado al cliente.`,
+    },
+    insurance: {
+      heading: "Lead en seguimiento",
+      intro: (p) =>
+        `El lead de ${p.customerName} (${p.vehicleSummary}) pasó a "Refuerzo".`,
     },
   },
 };

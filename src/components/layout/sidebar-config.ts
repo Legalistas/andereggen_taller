@@ -1,5 +1,6 @@
 import {
   BarChartBig,
+  Calendar,
   Car,
   FileText,
   type LucideIcon,
@@ -7,6 +8,7 @@ import {
   Settings,
   UserCog,
   Users,
+  Wallet,
 } from "lucide-react";
 
 export type SidebarItem = {
@@ -16,12 +18,17 @@ export type SidebarItem = {
 };
 
 /**
- * Sidebar plana — 6 módulos principales, sin agrupaciones.
+ * Sidebar plana — módulos principales, sin agrupaciones.
  * Orden alineado con el flujo diario del taller.
  */
 export const SIDEBAR_ITEMS: SidebarItem[] = [
   { label: "Cotizaciones", icon: FileText, href: "/crm/leads" },
   { label: "Producción", icon: Car, href: "/produccion" },
+  // spec 2.3 v2 · Módulo Calendario — reemplaza el Excel de gestión de turnos
+  { label: "Calendario", icon: Calendar, href: "/calendario" },
+  // spec sección 4 v2 · Módulo Caja — cobros, egresos, transferencias entre
+  // las 5 cajas del taller. Administrado por el rol Contable (Ayelén).
+  { label: "Caja", icon: Wallet, href: "/caja" },
   { label: "Estadísticas", icon: BarChartBig, href: "/dashboard" },
   { label: "Inventario", icon: Package, href: "/inventario" },
   { label: "Clientes", icon: Users, href: "/customers" },

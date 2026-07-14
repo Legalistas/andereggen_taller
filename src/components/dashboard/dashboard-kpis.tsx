@@ -69,7 +69,7 @@ export default function DashboardKpis() {
         icon={Wrench}
         iconColor="text-[#003b73]"
         iconBg="bg-[#003b73]/10"
-        label="Vehículos en reparación"
+        label="Vehículos en taller"
         value={String(stats.vehiclesInRepair.total)}
         footer={
           <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
@@ -80,10 +80,6 @@ export default function DashboardKpis() {
             <span className="inline-flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
               {stats.vehiclesInRepair.breakdown.in_progress} en proceso
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              {stats.vehiclesInRepair.breakdown.ready} listas
             </span>
           </div>
         }
