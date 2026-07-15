@@ -5,6 +5,7 @@ import {
   ArrowRightLeft,
   ArrowUp,
   Loader2,
+  Trash2,
   Wallet,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -111,6 +112,7 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
     cashBoxId: string | null;
   } | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchMovements = useCallback(
     async (signal?: AbortSignal) => {
@@ -145,6 +147,49 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
   const reloadAll = () => {
     onReload();
     fetchMovements();
+  };
+
+  const deleteRow = async (m: MovementRow) => {
+    // El id local viene prefijado por el GET (mov-… o pay-…) para distinguir
+    // manual movements de cobros de factura. Rutamos a la API correcta y
+    // avisamos al usuario si el borrado del cobro dispara reapertura del
+    // repair (paso de archivado → pendientes_cobro).
+    const isPayment = m.source === "payment";
+    const rawId = m.id.replace(/^(mov-|pay-)/, "");
+    const kind = isPayment ? "el cobro" : "el movimiento";
+    if (
+      !window.confirm(
+        `¿Borrar ${kind} de ${ARS.format(m.amount)}? Esta acción no se puede deshacer.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(m.id);
+    try {
+      const url = isPayment
+        ? `/api/caja/payments/${rawId}`
+        : `/api/caja/movements/${rawId}`;
+      const res = await fetch(url, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        restored?: boolean;
+      };
+      if (data.restored) {
+        window.alert(
+          "El cobro fue eliminado. El vehículo volvió a 'Pendientes de Cobro'.",
+        );
+      }
+      reloadAll();
+    } catch (e) {
+      window.alert(
+        e instanceof Error ? `No se pudo borrar: ${e.message}` : "Error",
+      );
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -292,10 +337,11 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
           <ul className="divide-y divide-slate-100">
             {movements.map((m) => {
               const meta = TYPE_META[m.type];
+              const isDeleting = deletingId === m.id;
               return (
                 <li
                   key={m.id}
-                  className="px-4 py-2.5 flex items-center gap-3 text-sm"
+                  className="px-4 py-2.5 flex items-center gap-3 text-sm group"
                 >
                   <span
                     className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${meta.color} shrink-0`}
@@ -324,6 +370,30 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                     {meta.sign > 0 ? "+" : "−"}
                     {ARS.format(m.amount)}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => deleteRow(m)}
+                    disabled={isDeleting}
+                    aria-label={
+                      m.source === "payment"
+                        ? "Borrar cobro"
+                        : "Borrar movimiento"
+                    }
+                    title={
+                      m.source === "payment"
+                        ? "Borrar cobro (revierte el auto-archivado si aplica)"
+                        : m.transferGroupId
+                          ? "Borrar transferencia (elimina ambas contrapartes)"
+                          : "Borrar movimiento"
+                    }
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 rounded p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50 transition"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
+                  </button>
                 </li>
               );
             })}
