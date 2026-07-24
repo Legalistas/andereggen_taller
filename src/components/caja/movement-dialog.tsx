@@ -43,6 +43,30 @@ const METHODS = [
   { value: "OTRO", label: "Otro" },
 ];
 
+// spec v2 · Catálogo de conceptos de EGRESO que el taller usa por mes.
+// El operador elige uno o "Otro…" para escribir libre. Al listar movimientos
+// esto permite agrupar/filtrar por rubro sin depender del texto libre.
+const EGRESO_CONCEPTS = [
+  "Flete",
+  "Aportes entidades",
+  "Gastos administrativos",
+  "Inversiones construcción",
+  "Publicidad",
+  "Repuestos",
+  "Albañiles",
+  "Particular",
+  "Varios",
+  "Mano de obra tercerizada",
+  "Mejoras de edificio",
+  "Impuestos (luz/gas/agua/TGI/API/patentes/seguros vehículos)",
+  "AP seguros",
+  "Gastos jefes de obras",
+  "Alquileres",
+  "Marketing",
+  "Brixar",
+];
+const EGRESO_OTHER = "__otro__";
+
 export default function MovementDialog({
   type,
   cashBoxId,
@@ -53,6 +77,9 @@ export default function MovementDialog({
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("EFECTIVO");
   const [concept, setConcept] = useState("");
+  // Para EGRESO usamos un select del catálogo con opción "Otro…" que
+  // habilita el input libre. INGRESO usa texto libre directo.
+  const [conceptChoice, setConceptChoice] = useState<string>("");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [selectedBoxId, setSelectedBoxId] = useState(cashBoxId);
@@ -150,18 +177,49 @@ export default function MovementDialog({
             </div>
           </div>
 
-          <div className="grid gap-1">
-            <Label className="text-xs">Concepto</Label>
-            <Input
-              value={concept}
-              onChange={(e) => setConcept(e.target.value)}
-              placeholder={
-                type === "INGRESO"
-                  ? "Ej: aporte, venta, ajuste…"
-                  : "Ej: alquiler, sueldos, insumos…"
-              }
-            />
-          </div>
+          {type === "EGRESO" ? (
+            <div className="grid gap-1">
+              <Label className="text-xs">Concepto</Label>
+              <Select
+                value={conceptChoice}
+                onValueChange={(v) => {
+                  setConceptChoice(v);
+                  // Si eligen un preset, ese texto es el concepto final.
+                  // Si es "Otro…", limpiamos el concepto para que escriban.
+                  setConcept(v === EGRESO_OTHER ? "" : v);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Elegí el rubro del egreso" />
+                </SelectTrigger>
+                <SelectContent>
+                  {EGRESO_CONCEPTS.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={EGRESO_OTHER}>Otro…</SelectItem>
+                </SelectContent>
+              </Select>
+              {conceptChoice === EGRESO_OTHER && (
+                <Input
+                  value={concept}
+                  onChange={(e) => setConcept(e.target.value)}
+                  placeholder="Detalle del egreso"
+                  className="mt-1"
+                />
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-1">
+              <Label className="text-xs">Concepto</Label>
+              <Input
+                value={concept}
+                onChange={(e) => setConcept(e.target.value)}
+                placeholder="Ej: aporte, venta, ajuste…"
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1">

@@ -72,7 +72,7 @@ export async function GET(request: Request) {
     paymentsMonth, // ingresos del mes por caja
     movementsAll, // saldo histórico por caja (manual)
     movementsMonth, // por caja + tipo
-    invoicesForBilling, // facturación del mes
+    officialPaymentsMonth, // facturación del mes = cobros a cajas oficiales
     pendingCollections, // cobros pendientes (histórico)
     avgDaysPost,
     monthPaymentsByInsurance,
@@ -104,10 +104,20 @@ export async function GET(request: Request) {
       where: { paidAt: { gte: startOfMonth, lt: startOfNextMonth } },
       _sum: { amount: true },
     }),
-    // Facturación del mes = suma de RepairInvoice.amount cuyo issuedAt cae
-    // en el mes. Es el "facturado", no el "cobrado".
-    prisma.repairInvoice.aggregate({
-      where: { issuedAt: { gte: startOfMonth, lt: startOfNextMonth } },
+    // spec 4.4 v2 · Facturación del mes = suma de los COBROS registrados
+    // en el mes que hayan ido a una caja "oficial" (todas excepto Caja 2).
+    // Caja 2 es la "línea negra" — efectivo interno que NO se factura, por
+    // eso no debe sumar a este KPI aunque el usuario haya cargado el cobro
+    // en el módulo. Los cobros sin caja asignada (histórico) se cuentan
+    // para no perder facturado viejo.
+    prisma.repairInvoicePayment.aggregate({
+      where: {
+        paidAt: { gte: startOfMonth, lt: startOfNextMonth },
+        OR: [
+          { cashBoxId: null },
+          { cashBox: { key: { not: "caja_2" } } },
+        ],
+      },
       _sum: { amount: true },
     }),
     // Cobros pendientes = suma de saldos (invoice.amount − Σ payments) de
@@ -136,6 +146,8 @@ export async function GET(request: Request) {
     `,
     // Cobros del mes agrupados por compañía de seguros del repair. Nos sirve
     // para "Cobros por compañía" del panel de estadísticas contables.
+    // Excluimos Caja 2 (línea negra) por el mismo motivo que en Facturación:
+    // no es cobro formal por compañía.
     prisma.$queryRaw<
       Array<{ insurance_company: string | null; total: number }>
     >`
@@ -144,8 +156,10 @@ export async function GET(request: Request) {
       FROM "RepairInvoicePayment" rip
       JOIN "RepairInvoice" ri ON ri."id" = rip."invoiceId"
       JOIN "Repair" r ON r."id" = ri."repairId"
+      LEFT JOIN "CashBox" cb ON cb."id" = rip."cashBoxId"
       WHERE rip."paidAt" >= ${startOfMonth}
         AND rip."paidAt" < ${startOfNextMonth}
+        AND (cb."key" IS NULL OR cb."key" <> 'caja_2')
       GROUP BY r."insuranceCompany"
       ORDER BY total DESC
     `,
@@ -245,7 +259,7 @@ export async function GET(request: Request) {
     0,
   );
   const monthEgresos = boxesOut.reduce((a, b) => a + b.month.egresos, 0);
-  const monthBilling = Number(invoicesForBilling._sum.amount ?? 0);
+  const monthBilling = Number(officialPaymentsMonth._sum.amount ?? 0);
 
   // ── Serie mensual de cobros (últimos 6 meses, completando meses vacíos)
   const MONTH_LABELS = [

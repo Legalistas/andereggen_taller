@@ -251,6 +251,34 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                       {ARS.format(box.month.transfersOut)}
                     </span>
                   </div>
+                  {/* spec v2 · Diferencia neta del mes (ingresos − egresos
+                      neto de transferencias). Sirve para chequear que los
+                      importes de la caja del mes cierren. */}
+                  {(() => {
+                    const saldoMes =
+                      box.month.collections +
+                      box.month.ingresos +
+                      box.month.transfersIn -
+                      box.month.egresos -
+                      box.month.transfersOut;
+                    return (
+                      <div className="flex justify-between pt-1 mt-1 border-t border-slate-100">
+                        <span className="font-semibold text-slate-700">
+                          Saldo del mes
+                        </span>
+                        <span
+                          className={`tabular-nums font-semibold ${
+                            saldoMes >= 0
+                              ? "text-emerald-700"
+                              : "text-rose-700"
+                          }`}
+                        >
+                          {saldoMes >= 0 ? "+" : "−"}
+                          {ARS.format(Math.abs(saldoMes))}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </button>
               <div className="flex items-center gap-1 mt-2">

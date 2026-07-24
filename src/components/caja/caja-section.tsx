@@ -285,20 +285,22 @@ export default function CajaSection() {
       </Card>
 
       {/* Tabs Cobros / General */}
-      <Tabs defaultValue="cobros" className="w-full">
+      {/* spec v2 · "Caja general" primero (default) porque es el flujo diario;
+          "Cobros por vehículo" queda detrás. */}
+      <Tabs defaultValue="general" className="w-full">
         <TabsList>
-          <TabsTrigger value="cobros">Cobros por vehículo</TabsTrigger>
           <TabsTrigger value="general">Caja general</TabsTrigger>
+          <TabsTrigger value="cobros">Cobros por vehículo</TabsTrigger>
         </TabsList>
-        <TabsContent value="cobros" className="mt-4">
-          <CollectionsTable byInsurance={data?.byInsurance ?? []} />
-        </TabsContent>
         <TabsContent value="general" className="mt-4">
           <GeneralPanel
             boxes={data?.boxes ?? []}
             monthParam={monthParam}
             onReload={() => fetchBoxes()}
           />
+        </TabsContent>
+        <TabsContent value="cobros" className="mt-4">
+          <CollectionsTable byInsurance={data?.byInsurance ?? []} />
         </TabsContent>
       </Tabs>
     </div>

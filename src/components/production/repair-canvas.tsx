@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   CircleDollarSign,
+  ClipboardList,
   FileText,
   Hash,
   Loader2,
@@ -47,6 +48,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { BudgetAdminDialog } from "../crm/budget-admin-dialog";
 import BudgetModal from "../crm/budget-modal";
 import { FichasDialog } from "../crm/fichas-dialog";
 import type { RepairStatus } from "./production-kanban";
@@ -75,6 +77,7 @@ type RepairInvoicePayment = {
   method: PaymentMethod;
   reference: string | null;
   notes: string | null;
+  cashBox: { id: string; key: string; name: string } | null;
 };
 
 type RepairInvoice = {
@@ -780,6 +783,7 @@ function DatesSection({
           label="Turno asignado"
           value={repair.scheduledAt}
           onSave={(v) => onPatch({ scheduledAt: v })}
+          withTime
         />
         <DateField
           label="Ingresado"
@@ -831,19 +835,70 @@ function DatesSection({
   );
 }
 
+/**
+ * Formatea un ISO en `YYYY-MM-DD` usando la fecha LOCAL del navegador.
+ * `Date.toISOString()` es UTC — en AR (UTC-3) hace saltar 3hs para atrás y
+ * el día se muestra corrido. Usamos los getters locales para evitarlo.
+ */
+function toLocalDateInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Contraparte para `datetime-local` (`YYYY-MM-DDTHH:mm` en local). */
+function toLocalDateTimeInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${day}T${h}:${min}`;
+}
+
+/**
+ * Parsea el value de un `input[type=date]` (`YYYY-MM-DD`) como mediodía
+ * LOCAL. Al mediodía evita ambigüedades de DST y garantiza que la fecha
+ * mostrada sea la misma que eligió el usuario, sin importar la TZ.
+ */
+function parseLocalDateInput(v: string): string | null {
+  if (!v) return null;
+  const [y, m, d] = v.split("-").map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+}
+
+/** Parsea `datetime-local` (`YYYY-MM-DDTHH:mm`) como fecha local. */
+function parseLocalDateTimeInput(v: string): string | null {
+  if (!v) return null;
+  const [datePart, timePart] = v.split("T");
+  const [y, m, d] = datePart.split("-").map(Number);
+  const [h, min] = timePart.split(":").map(Number);
+  return new Date(y, m - 1, d, h, min, 0).toISOString();
+}
+
 function DateField({
   label,
   value,
   onSave,
   readonly,
+  withTime,
 }: {
   label: string;
   value: string | null;
   onSave: (value: string | null) => void;
   readonly?: boolean;
+  /** Si true, incluye hora (input datetime-local). */
+  withTime?: boolean;
 }) {
-  // input type="date" usa formato YYYY-MM-DD
-  const dateValue = value ? new Date(value).toISOString().slice(0, 10) : "";
+  const inputValue = withTime
+    ? toLocalDateTimeInput(value)
+    : toLocalDateInput(value);
+  const parse = withTime ? parseLocalDateTimeInput : parseLocalDateInput;
 
   return (
     <div className="grid gap-1">
@@ -851,13 +906,12 @@ function DateField({
         {label}
       </Label>
       <Input
-        type="date"
-        value={dateValue}
+        type={withTime ? "datetime-local" : "date"}
+        value={inputValue}
         readOnly={readonly}
         disabled={readonly}
         onChange={(e) => {
-          const v = e.target.value;
-          onSave(v ? new Date(v).toISOString() : null);
+          onSave(parse(e.target.value));
         }}
         className={readonly ? "opacity-60 cursor-not-allowed" : ""}
       />
@@ -945,6 +999,12 @@ function BudgetSection({
   // BudgetModal local en modo ampliación. Si en el taller aparece trabajo
   // extra durante la reparación, el operador amplía sin tener que ir al CRM.
   const [extendOpen, setExtendOpen] = useState(false);
+  // BudgetModal en modo LECTURA/EDICIÓN — para ver el presupuesto ya cerrado
+  // y enviado desde la ficha del vehículo, sin salir a Cotizaciones.
+  const [viewOpen, setViewOpen] = useState(false);
+  // Administrativa (cotizaciones internas, compras, fotos). Cuando el auto
+  // está en producción se abre desde acá para registrar compras rápido.
+  const [adminOpen, setAdminOpen] = useState(false);
   const display =
     (budget.extensionSuffix ?? 0) > 0
       ? `${budget.number}-A${budget.extensionSuffix}`
@@ -971,6 +1031,17 @@ function BudgetSection({
           <p className="font-semibold text-base text-slate-900 mt-1 tabular-nums">
             {ARS.format(Number(budget.grandTotal))}
           </p>
+          {/* Ver presupuesto cerrado — abre el BudgetModal en modo edición
+              para consultar el detalle enviado al cliente sin salir a CRM. */}
+          <button
+            type="button"
+            onClick={() => setViewOpen(true)}
+            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+            title="Ver el detalle del presupuesto que se envió al cliente"
+          >
+            <FileText className="h-3 w-3" />
+            Ver presupuesto
+          </button>
           <button
             type="button"
             onClick={() => setFichasOpen(true)}
@@ -979,6 +1050,18 @@ function BudgetSection({
           >
             <Printer className="h-3 w-3" />
             Imprimir fichas
+          </button>
+          {/* Administrativa — cotizaciones internas, compras, fotos. En
+              producción es el flujo diario: cuando entra el auto arrancan
+              a registrar compras. Antes sólo estaba accesible desde CRM. */}
+          <button
+            type="button"
+            onClick={() => setAdminOpen(true)}
+            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 transition-colors"
+            title="Administrativa (interno) — cotizaciones, compras, fotos"
+          >
+            <ClipboardList className="h-3 w-3" />
+            Administrativa
           </button>
           {isOriginal && (
             <button
@@ -1014,6 +1097,21 @@ function BudgetSection({
         open={extendOpen}
         onOpenChange={setExtendOpen}
         onSaved={() => setExtendOpen(false)}
+      />
+      {/* BudgetModal en modo edición para ver/editar el presupuesto cerrado. */}
+      <BudgetModal
+        budgetId={viewOpen ? budget.id : undefined}
+        hideTrigger
+        open={viewOpen}
+        onOpenChange={setViewOpen}
+        onSaved={() => setViewOpen(false)}
+      />
+      {/* Administrativa (interno) — accesible desde producción. */}
+      <BudgetAdminDialog
+        budgetId={adminOpen ? budget.id : null}
+        budgetNumber={budget.number}
+        open={adminOpen}
+        onOpenChange={setAdminOpen}
       />
     </>
   );
@@ -1366,6 +1464,36 @@ function InvoicesSection({
     recipientName: "",
     amount: "",
   });
+  // spec 4.2/4.3 v2 · Cajas para el selector de cobros y compañías de
+  // seguros para el dropdown "razón social" cuando el destinatario es SEGURO.
+  const [cashBoxes, setCashBoxes] = useState<CashBoxOption[]>([]);
+  const [insuranceCompanies, setInsuranceCompanies] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch("/api/caja/boxes", { signal: ac.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.boxes) setCashBoxes(d.boxes as CashBoxOption[]);
+      })
+      .catch(() => {});
+    fetch("/api/insurance-companies?active=1", { signal: ac.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.companies) {
+          setInsuranceCompanies(
+            (d.companies as Array<{ id: string; name: string }>).map((c) => ({
+              id: c.id,
+              name: c.name,
+            })),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => ac.abort();
+  }, []);
 
   const refresh = async () => {
     const res = await fetch(`/api/repairs/${repairId}/invoices`);
@@ -1471,6 +1599,7 @@ function InvoicesSection({
               invoice={inv}
               onRemove={() => removeInvoice(inv.id)}
               onRefresh={refresh}
+              cashBoxes={cashBoxes}
             />
           ))
         )}
@@ -1504,6 +1633,9 @@ function InvoicesSection({
               setNewInvoice((p) => ({
                 ...p,
                 recipient: v as InvoiceRecipient,
+                // Al cambiar de tipo limpiamos el nombre — el dropdown de
+                // compañías sólo aplica cuando es "SEGURO".
+                recipientName: "",
               }))
             }
           >
@@ -1513,19 +1645,46 @@ function InvoicesSection({
             <SelectContent>
               <SelectItem value="CLIENTE">Cliente</SelectItem>
               <SelectItem value="SEGURO">Seguro</SelectItem>
-              <SelectItem value="OTRO">Otro</SelectItem>
+              <SelectItem value="OTRO">Otro (Particular)</SelectItem>
             </SelectContent>
           </Select>
-          <Input
-            placeholder="Razón social (opcional)"
-            value={newInvoice.recipientName}
-            onChange={(e) =>
-              setNewInvoice((p) => ({
-                ...p,
-                recipientName: e.target.value,
-              }))
-            }
-          />
+          {newInvoice.recipient === "SEGURO" ? (
+            // spec v2 · Facturación por compañía: usamos el catálogo de
+            // InsuranceCompany en lugar de texto libre para poder cruzar
+            // con estadísticas por seguro.
+            <Select
+              value={newInvoice.recipientName}
+              onValueChange={(v) =>
+                setNewInvoice((p) => ({ ...p, recipientName: v }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Compañía de seguros" />
+              </SelectTrigger>
+              <SelectContent>
+                {insuranceCompanies.map((c) => (
+                  <SelectItem key={c.id} value={c.name}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              placeholder={
+                newInvoice.recipient === "CLIENTE"
+                  ? "Nombre del titular (opcional)"
+                  : "Detalle (opcional)"
+              }
+              value={newInvoice.recipientName}
+              onChange={(e) =>
+                setNewInvoice((p) => ({
+                  ...p,
+                  recipientName: e.target.value,
+                }))
+              }
+            />
+          )}
         </div>
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <Input
@@ -1589,10 +1748,12 @@ function InvoiceCard({
   invoice,
   onRemove,
   onRefresh,
+  cashBoxes,
 }: {
   invoice: RepairInvoice;
   onRemove: () => void;
   onRefresh: () => Promise<void>;
+  cashBoxes: CashBoxOption[];
 }) {
   const [expanded, setExpanded] = useState(true);
   const amount = Number(invoice.amount);
@@ -1658,6 +1819,7 @@ function InvoiceCard({
             invoiceId={invoice.id}
             payments={invoice.payments}
             onRefresh={onRefresh}
+            cashBoxes={cashBoxes}
           />
           <button
             type="button"
@@ -1672,14 +1834,18 @@ function InvoiceCard({
   );
 }
 
+type CashBoxOption = { id: string; key: string; name: string };
+
 function PaymentsList({
   invoiceId,
   payments,
   onRefresh,
+  cashBoxes,
 }: {
   invoiceId: string;
   payments: RepairInvoicePayment[];
   onRefresh: () => Promise<void>;
+  cashBoxes: CashBoxOption[];
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({
@@ -1687,6 +1853,7 @@ function PaymentsList({
     paidAt: new Date().toISOString().slice(0, 10),
     method: "EFECTIVO" as PaymentMethod,
     reference: "",
+    cashBoxId: "",
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -1695,6 +1862,10 @@ function PaymentsList({
     const amt = Number(draft.amount.replace(",", "."));
     if (!Number.isFinite(amt) || amt <= 0) {
       setError("Importe inválido.");
+      return;
+    }
+    if (!draft.cashBoxId) {
+      setError("Elegí a qué caja va el cobro.");
       return;
     }
     setAdding(true);
@@ -1709,6 +1880,7 @@ function PaymentsList({
             paidAt: new Date(draft.paidAt).toISOString(),
             method: draft.method,
             reference: draft.reference.trim() || null,
+            cashBoxId: draft.cashBoxId,
           }),
         },
       );
@@ -1721,6 +1893,7 @@ function PaymentsList({
         paidAt: new Date().toISOString().slice(0, 10),
         method: "EFECTIVO",
         reference: "",
+        cashBoxId: draft.cashBoxId, // recordamos la caja recién usada
       });
       await onRefresh();
     } catch (e) {
@@ -1747,6 +1920,7 @@ function PaymentsList({
             <tr className="text-left text-[9px] uppercase tracking-wider text-slate-500">
               <th className="font-semibold pb-1">Fecha</th>
               <th className="font-semibold pb-1">Método</th>
+              <th className="font-semibold pb-1">Caja</th>
               <th className="font-semibold pb-1">Ref.</th>
               <th className="font-semibold pb-1 text-right">Importe</th>
               <th className="w-6" />
@@ -1759,6 +1933,11 @@ function PaymentsList({
                   {formatShortDate(p.paidAt)}
                 </td>
                 <td className="py-1">{PAYMENT_METHOD_LABEL[p.method]}</td>
+                <td className="py-1 text-slate-600 truncate max-w-24">
+                  {p.cashBox?.name ?? (
+                    <span className="text-slate-400 italic">—</span>
+                  )}
+                </td>
                 <td className="py-1 text-slate-500 truncate max-w-24">
                   {p.reference ?? "—"}
                 </td>
@@ -1785,7 +1964,7 @@ function PaymentsList({
         </p>
       )}
 
-      <div className="pt-1 grid grid-cols-[80px_110px_1fr_90px_auto] gap-1.5 items-end">
+      <div className="pt-1 grid grid-cols-[80px_100px_1fr_1fr_80px_auto] gap-1.5 items-end">
         <Input
           type="number"
           min="0"
@@ -1822,6 +2001,23 @@ function PaymentsList({
                 </SelectItem>
               ),
             )}
+          </SelectContent>
+        </Select>
+        {/* spec 4.2 v2 · A qué caja va el cobro. Cobros a Caja 2 (línea
+            negra) no suman a "Facturación del mes" del panel de Caja. */}
+        <Select
+          value={draft.cashBoxId}
+          onValueChange={(v) => setDraft((p) => ({ ...p, cashBoxId: v }))}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="Caja" />
+          </SelectTrigger>
+          <SelectContent>
+            {cashBoxes.map((b) => (
+              <SelectItem key={b.id} value={b.id}>
+                {b.name}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Input

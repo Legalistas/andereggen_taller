@@ -42,6 +42,23 @@ const ARS = new Intl.NumberFormat("es-AR", {
 
 type FichaSection = { title: string; bullets: string[] };
 
+type SavedTecnica = {
+  color: string | null;
+  sections: FichaSection[];
+};
+type SavedIngreso = {
+  date: string;
+  insurance: string;
+  technicalInsurance: string;
+  franchiseAmount: string;
+  franchiseLabel: string;
+  paymentCondition: string;
+  customerName: string;
+  customerAddress: string;
+  customerLocality: string;
+  customerPhone: string;
+};
+
 type BudgetForFichas = {
   id: string;
   number: number;
@@ -65,6 +82,11 @@ type BudgetForFichas = {
     customer: { city: string | null; address: string | null };
     vehicle: { color: string | null; thirdPartySecure: string | null } | null;
   };
+  /** spec v2 · Ediciones previas guardadas de este mismo diálogo. */
+  fichasOverrides: {
+    tecnica?: SavedTecnica;
+    ingreso?: SavedIngreso;
+  } | null;
 };
 
 type Props = {
@@ -115,53 +137,73 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
         const b = data.budget as BudgetForFichas;
         setBudget(b);
 
-        // Defaults Ficha Técnica
-        setColor(b.lead.vehicle?.color ?? "");
-        const initialSections: FichaSection[] = [];
-        for (const c of b.concepts) {
-          if (c.type !== "DESCRIPTIVO") continue;
-          const cat = c.category as ConceptCategory;
-          const def = CATEGORY_BY_KEY[cat];
-          const title = (
-            def?.label ?? c.category.replaceAll("_", " ")
-          ).toUpperCase();
-          const bullets = c.subdetails.map((k) => subdetailLabel(cat, k));
-          if (c.additionalDetail?.trim()) {
-            bullets.push(c.additionalDetail.trim());
+        // spec v2 · Prefill con ediciones previas si existen; si no, defaults
+        // derivados del budget/vehículo. Cada tab se prefill independiente.
+        const savedTecnica = b.fichasOverrides?.tecnica;
+        if (savedTecnica) {
+          setColor(savedTecnica.color ?? "");
+          setSections(savedTecnica.sections);
+        } else {
+          setColor(b.lead.vehicle?.color ?? "");
+          const initialSections: FichaSection[] = [];
+          for (const c of b.concepts) {
+            if (c.type !== "DESCRIPTIVO") continue;
+            const cat = c.category as ConceptCategory;
+            const def = CATEGORY_BY_KEY[cat];
+            const title = (
+              def?.label ?? c.category.replaceAll("_", " ")
+            ).toUpperCase();
+            const bullets = c.subdetails.map((k) => subdetailLabel(cat, k));
+            if (c.additionalDetail?.trim()) {
+              bullets.push(c.additionalDetail.trim());
+            }
+            if (bullets.length > 0) {
+              initialSections.push({ title, bullets });
+            }
           }
-          if (bullets.length > 0) {
-            initialSections.push({ title, bullets });
-          }
+          setSections(initialSections);
         }
-        setSections(initialSections);
 
-        // Defaults Ficha Ingreso
-        setDate(todayDDMMYYYY());
-        setInsurance(b.vehicleInsurance ?? "");
-        setTechInsurance(b.lead.vehicle?.thirdPartySecure ?? "");
-        setFranchiseAmount(
-          b.insuranceFranchise !== null
-            ? ARS.format(Number(b.insuranceFranchise))
-            : "-",
-        );
-        // Default del label: si hay seguro o franquicia cargados, asumimos
-        // caso por seguro. Si no, caso particular (sin "de franquicia").
-        const isFranchiseCase =
-          !!b.vehicleInsurance || b.insuranceFranchise !== null;
-        setFranchiseLabel(
-          isFranchiseCase
-            ? "Monto de franquicia a abonar en efectivo al retirar el rodado:"
-            : "Monto a abonar en efectivo al retirar el rodado:",
-        );
-        setPaymentCondition(b.paymentCondition);
-        setCustomerName(b.customerName);
-        const addr =
-          b.customerAddress && b.customerAddress !== "-"
-            ? b.customerAddress
-            : (b.lead.customer.address ?? "");
-        setCustomerAddress(addr);
-        setCustomerLocality(b.lead.customer.city ?? "");
-        setCustomerPhone(b.customerPhone);
+        const savedIngreso = b.fichasOverrides?.ingreso;
+        if (savedIngreso) {
+          setDate(savedIngreso.date);
+          setInsurance(savedIngreso.insurance);
+          setTechInsurance(savedIngreso.technicalInsurance);
+          setFranchiseAmount(savedIngreso.franchiseAmount);
+          setFranchiseLabel(savedIngreso.franchiseLabel);
+          setPaymentCondition(savedIngreso.paymentCondition);
+          setCustomerName(savedIngreso.customerName);
+          setCustomerAddress(savedIngreso.customerAddress);
+          setCustomerLocality(savedIngreso.customerLocality);
+          setCustomerPhone(savedIngreso.customerPhone);
+        } else {
+          setDate(todayDDMMYYYY());
+          setInsurance(b.vehicleInsurance ?? "");
+          setTechInsurance(b.lead.vehicle?.thirdPartySecure ?? "");
+          setFranchiseAmount(
+            b.insuranceFranchise !== null
+              ? ARS.format(Number(b.insuranceFranchise))
+              : "-",
+          );
+          // Default del label: si hay seguro o franquicia cargados, asumimos
+          // caso por seguro. Si no, caso particular (sin "de franquicia").
+          const isFranchiseCase =
+            !!b.vehicleInsurance || b.insuranceFranchise !== null;
+          setFranchiseLabel(
+            isFranchiseCase
+              ? "Monto de franquicia a abonar en efectivo al retirar el rodado:"
+              : "Monto a abonar en efectivo al retirar el rodado:",
+          );
+          setPaymentCondition(b.paymentCondition);
+          setCustomerName(b.customerName);
+          const addr =
+            b.customerAddress && b.customerAddress !== "-"
+              ? b.customerAddress
+              : (b.lead.customer.address ?? "");
+          setCustomerAddress(addr);
+          setCustomerLocality(b.lead.customer.city ?? "");
+          setCustomerPhone(b.customerPhone);
+        }
       })
       .catch((e) => {
         if (!cancelled) {
@@ -175,6 +217,70 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
       cancelled = true;
     };
   }, [open, budgetId, todayDDMMYYYY]);
+
+  // spec v2 · Persistimos los overrides en el budget para que reabrir el
+  // dialog muestre las últimas ediciones. Se llama al generar el PDF y
+  // también desde el botón explícito "Guardar cambios".
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+  const saveOverrides = async (
+    which: "tecnica" | "ingreso",
+    silent = false,
+  ) => {
+    if (!budgetId) return;
+    const payload: {
+      tecnica?: SavedTecnica;
+      ingreso?: SavedIngreso;
+    } = {};
+    if (which === "tecnica") {
+      payload.tecnica = {
+        color: color.trim() || null,
+        sections: sections.map((s) => ({
+          title: s.title.trim(),
+          bullets: s.bullets.map((b) => b.trim()).filter((b) => b !== ""),
+        })),
+      };
+    } else {
+      payload.ingreso = {
+        date: date.trim(),
+        insurance: insurance.trim(),
+        technicalInsurance: techInsurance.trim(),
+        franchiseAmount: franchiseAmount.trim(),
+        franchiseLabel: franchiseLabel.trim(),
+        paymentCondition: paymentCondition.trim(),
+        customerName: customerName.trim(),
+        customerAddress: customerAddress.trim(),
+        customerLocality: customerLocality.trim(),
+        customerPhone: customerPhone.trim(),
+      };
+    }
+    if (!silent) setSaveState("saving");
+    try {
+      const res = await fetch(
+        `/api/budgets/${budgetId}/fichas-overrides`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!silent) {
+        setSaveState("saved");
+        setTimeout(() => setSaveState("idle"), 2000);
+      }
+    } catch (e) {
+      if (!silent) {
+        setSaveState("idle");
+        alert(
+          e instanceof Error
+            ? `No se pudieron guardar los cambios: ${e.message}`
+            : "No se pudieron guardar los cambios",
+        );
+      }
+    }
+  };
 
   const generate = async (
     kind: "ficha-tecnica" | "ficha-ingreso",
@@ -201,18 +307,22 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
     }
   };
 
-  const generateTecnica = () => {
-    generate("ficha-tecnica", {
+  const generateTecnica = async () => {
+    const body = {
       color: color.trim() || null,
       sections: sections.map((s) => ({
         title: s.title.trim(),
         bullets: s.bullets.map((b) => b.trim()).filter((b) => b !== ""),
       })),
-    });
+    };
+    // Persistimos en background antes de abrir el PDF — así reabrir el
+    // dialog trae los mismos datos que salieron impresos.
+    saveOverrides("tecnica", true);
+    generate("ficha-tecnica", body);
   };
 
-  const generateIngreso = () => {
-    generate("ficha-ingreso", {
+  const generateIngreso = async () => {
+    const body = {
       date: date.trim(),
       insurance: insurance.trim(),
       technicalInsurance: techInsurance.trim(),
@@ -223,7 +333,9 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
       customerAddress: customerAddress.trim(),
       customerLocality: customerLocality.trim(),
       customerPhone: customerPhone.trim(),
-    });
+    };
+    saveOverrides("ingreso", true);
+    generate("ficha-ingreso", body);
   };
 
   // ── Editor de secciones de la Ficha Técnica ────────────────────────────
@@ -287,8 +399,9 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
                 )}
               </DialogTitle>
               <DialogDescription className="text-xs">
-                Documentos internos para imprimir. Editá lo que necesites antes
-                de generar el PDF — los cambios no se guardan.
+                Documentos internos para imprimir. Editá lo que necesites y
+                guardá — los cambios quedan asociados al presupuesto y se
+                cargan la próxima vez que abras el diálogo.
               </DialogDescription>
             </div>
           </div>
@@ -436,7 +549,19 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
                   ))}
                 </div>
 
-                <div className="flex justify-end pt-2">
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => saveOverrides("tecnica")}
+                    disabled={saveState === "saving"}
+                    className="gap-2"
+                  >
+                    {saveState === "saved"
+                      ? "✓ Guardado"
+                      : saveState === "saving"
+                        ? "Guardando…"
+                        : "Guardar cambios"}
+                  </Button>
                   <Button onClick={generateTecnica} className="gap-2">
                     <Printer className="h-4 w-4" />
                     Generar PDF Ficha Técnica
@@ -572,7 +697,19 @@ export function FichasDialog({ budgetId, open, onOpenChange }: Props) {
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => saveOverrides("ingreso")}
+                    disabled={saveState === "saving"}
+                    className="gap-2"
+                  >
+                    {saveState === "saved"
+                      ? "✓ Guardado"
+                      : saveState === "saving"
+                        ? "Guardando…"
+                        : "Guardar cambios"}
+                  </Button>
                   <Button onClick={generateIngreso} className="gap-2">
                     <Printer className="h-4 w-4" />
                     Generar PDF Ficha Ingreso/Egreso

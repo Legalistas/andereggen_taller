@@ -67,7 +67,12 @@ export async function GET(request: Request, ctx: RouteContext) {
       invoices: {
         orderBy: { issuedAt: "asc" },
         include: {
-          payments: { orderBy: { paidAt: "asc" } },
+          payments: {
+            orderBy: { paidAt: "asc" },
+            include: {
+              cashBox: { select: { id: true, key: true, name: true } },
+            },
+          },
         },
       },
     },
@@ -314,7 +319,14 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       budget: { select: { id: true, number: true, grandTotal: true } },
       invoices: {
         orderBy: { issuedAt: "asc" },
-        include: { payments: { orderBy: { paidAt: "asc" } } },
+        include: {
+          payments: {
+            orderBy: { paidAt: "asc" },
+            include: {
+              cashBox: { select: { id: true, key: true, name: true } },
+            },
+          },
+        },
       },
     },
   });

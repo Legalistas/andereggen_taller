@@ -410,6 +410,16 @@ model Budget {
   acceptedAt DateTime?
   rejectedAt DateTime?
 
+  // spec v2 · Overrides persistidos del dialog "Fichas" (Ficha Técnica +
+  // Ficha Ingreso/Egreso). Antes eran efímeros y se re-armaban desde los
+  // conceptos cada vez; ahora si el usuario edita y guarda, quedan
+  // asociados al budget y se repiten al reabrir. Shape:
+  //   { tecnica?: { color, sections: [{title, bullets[]}] },
+  //     ingreso?: { date, insurance, technicalInsurance, franchiseAmount,
+  //                 franchiseLabel, paymentCondition, customerName,
+  //                 customerAddress, customerLocality, customerPhone } }
+  fichasOverrides Json?
+
   lead          Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
   concepts      BudgetConcept[]
   parts         BudgetPart[]

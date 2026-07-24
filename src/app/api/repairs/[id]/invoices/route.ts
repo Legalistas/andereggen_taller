@@ -19,7 +19,14 @@ export async function GET(request: Request, ctx: RouteContext) {
   const invoices = await prisma.repairInvoice.findMany({
     where: { repairId: id },
     orderBy: { issuedAt: "asc" },
-    include: { payments: { orderBy: { paidAt: "asc" } } },
+    include: {
+      payments: {
+        orderBy: { paidAt: "asc" },
+        include: {
+          cashBox: { select: { id: true, key: true, name: true } },
+        },
+      },
+    },
   });
   return NextResponse.json({ invoices });
 }

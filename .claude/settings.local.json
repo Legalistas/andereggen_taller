@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"c:/Proyect/LexiasTech/Andereggen_Taller_Backoffices/src/app/api/budgets/[id]/fichas-overrides\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Proyect\\LexiasTech\\Andereggen_Taller_Backoffices\\src\\app\\api\\budgets\\[id]"
+    ]
+  }
+}

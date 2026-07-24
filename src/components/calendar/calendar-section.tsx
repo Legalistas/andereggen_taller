@@ -3,21 +3,32 @@
 import {
   ArrowRightLeft,
   Calendar as CalendarIcon,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  LayoutGrid,
   Loader2,
   LogIn,
   LogOut,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import EventDetailDialog from "./event-detail-dialog";
+import PendingTurnosPanel from "./pending-turnos-panel";
 
 /**
  * spec 2.3 v2 · Módulo de Calendario.
@@ -49,7 +60,13 @@ type CalendarPayload = {
 type EventKind = "ingreso" | "entrega";
 type DayEvent = CalendarEvent & { kind: EventKind };
 
-const WEEKDAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+// spec 2.3 v2 · El taller no toma turnos los domingos. Renderizamos 6
+// columnas (Lun–Sáb) y omitimos el domingo tanto del header como de la
+// grilla. Los turnos legacy que hayan quedado con fecha de domingo (por el
+// bug de TZ) igual no aparecen en la vista pero siguen accesibles desde el
+// listado de "Próximos eventos" para que el equipo los reprograme.
+const WEEKDAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+const VISIBLE_WEEKDAYS = 6;
 const MONTH_LABELS = [
   "Enero",
   "Febrero",
@@ -122,35 +139,115 @@ function formatDayLabel(d: Date): string {
 // El resto se agrupa detrás de un botón "+N más" tipo Google Calendar.
 const MAX_VISIBLE_EVENTS = 2;
 
+type ViewMode = "mes" | "semana";
+
+/** Lunes de la semana que contiene la fecha dada. */
+function mondayOf(d: Date): Date {
+  const weekday = (d.getDay() + 6) % 7; // 0=Lun ... 6=Dom
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - weekday);
+  return monday;
+}
+
 export default function CalendarSection() {
   const now = new Date();
+  // Vista mes: navega por año/mes. Vista semana: el "anchor" define la
+  // semana visible (siempre 6 días Lun-Sáb desde el lunes que contiene el
+  // anchor). Ambas comparten el mismo endpoint (fetch por mes).
+  const [viewMode, setViewMode] = useState<ViewMode>("mes");
   const [year, setYear] = useState(now.getFullYear());
   const [month0, setMonth0] = useState(now.getMonth());
+  const [weekAnchor, setWeekAnchor] = useState<Date>(now);
   const [data, setData] = useState<CalendarPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  // spec 2.3 v2 · Modal de detalle. Click en el chip de un evento abre este
+  // dialog para ver/editar hora del turno y toggle de traslado.
+  const [openEvent, setOpenEvent] = useState<DayEvent | null>(null);
+  // Modal de "turnos pendientes por asignar". Se abre por botón (sin fecha
+  // prefill) o por click en una celda del calendario (con fecha prefill).
+  const [pendingOpen, setPendingOpen] = useState(false);
+  const [pendingPrefill, setPendingPrefill] = useState<string | undefined>();
+  // Contador de pendientes visible en el botón. Lo levantamos con un fetch
+  // liviano al mismo endpoint que usa el panel adentro del modal.
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
 
-  const monthParam = `${year}-${String(month0 + 1).padStart(2, "0")}`;
+  // En vista semana el anchor manda: la fetch usa el mes del anchor para que
+  // los eventos de la semana lleguen aun si cruza fin de mes (la API ya trae
+  // ±7 días de padding). En vista mes usamos year/month0.
+  const monthParam =
+    viewMode === "semana"
+      ? `${weekAnchor.getFullYear()}-${String(weekAnchor.getMonth() + 1).padStart(2, "0")}`
+      : `${year}-${String(month0 + 1).padStart(2, "0")}`;
 
-  useEffect(() => {
-    const ac = new AbortController();
-    setLoading(true);
-    setError(null);
-    fetch(`/api/calendar?month=${monthParam}`, { signal: ac.signal })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return (await r.json()) as CalendarPayload;
-      })
-      .then((d) => setData(d))
-      .catch((e) => {
+  const fetchCalendar = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/calendar?month=${monthParam}`, {
+          signal,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = (await res.json()) as CalendarPayload;
+        setData(d);
+      } catch (e) {
         if ((e as Error).name !== "AbortError") {
           setError(e instanceof Error ? e.message : "Error");
         }
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [monthParam],
+  );
+
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchCalendar(ac.signal);
     return () => ac.abort();
-  }, [monthParam]);
+  }, [fetchCalendar]);
+
+  // Contador de turnos pendientes (badge en el botón). Se refresca cuando
+  // se cierra el modal (por si asignaron alguno).
+  const fetchPendingCount = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch("/api/calendar/pending", { signal });
+      if (!res.ok) return;
+      const d = (await res.json()) as { rows: unknown[] };
+      setPendingCount(d.rows.length);
+    } catch {
+      /* silencioso — el badge es opcional */
+    }
+  }, []);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchPendingCount(ac.signal);
+    return () => ac.abort();
+  }, [fetchPendingCount]);
+
+  /** Arma un `YYYY-MM-DDT09:00` local para prefill del dialog al clickear
+   *  una celda. 9 AM es un horario razonable de apertura del taller. */
+  const dayCellToPrefill = (d: Date): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}T09:00`;
+  };
+
+  const openPendingForDay = (d: Date) => {
+    setPendingPrefill(dayCellToPrefill(d));
+    setPendingOpen(true);
+  };
+  const openPendingFromButton = () => {
+    setPendingPrefill(undefined);
+    setPendingOpen(true);
+  };
+  const closePendingModal = () => {
+    setPendingOpen(false);
+    setPendingPrefill(undefined);
+    fetchPendingCount();
+  };
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, DayEvent[]>();
@@ -174,10 +271,55 @@ export default function CalendarSection() {
     return map;
   }, [data]);
 
-  const grid = useMemo(() => buildMonthGrid(year, month0), [year, month0]);
+  const grid = useMemo(() => {
+    // Filtramos los domingos (getDay()===0) para dejar 6 columnas de lun a
+    // sáb. La grilla base sigue construyéndose con offset lunes-first.
+    if (viewMode === "semana") {
+      // Semana: 6 celdas Lun-Sáb desde el lunes que contiene el anchor.
+      const monday = mondayOf(weekAnchor);
+      const cells = [] as Array<{ date: Date; inMonth: boolean; key: string }>;
+      for (let i = 0; i < VISIBLE_WEEKDAYS; i++) {
+        const d = new Date(
+          monday.getFullYear(),
+          monday.getMonth(),
+          monday.getDate() + i,
+        );
+        cells.push({
+          date: d,
+          // En vista semana no hay "fuera de mes" — siempre destacamos igual.
+          inMonth: true,
+          key: toKey(d.getFullYear(), d.getMonth(), d.getDate()),
+        });
+      }
+      return cells;
+    }
+    const all = buildMonthGrid(year, month0);
+    return all.filter((cell) => cell.date.getDay() !== 0);
+  }, [viewMode, weekAnchor, year, month0]);
   const today = todayKey();
 
-  const prevMonth = () => {
+  // Header con el rango visible según modo.
+  const rangeLabel = useMemo(() => {
+    if (viewMode === "semana" && grid.length > 0) {
+      const first = grid[0].date;
+      const last = grid[grid.length - 1].date;
+      const sameMonth = first.getMonth() === last.getMonth();
+      const firstStr = `${first.getDate()} ${MONTH_LABELS[first.getMonth()].slice(0, 3)}`;
+      const lastStr = sameMonth
+        ? `${last.getDate()} ${MONTH_LABELS[last.getMonth()].slice(0, 3)}`
+        : `${last.getDate()} ${MONTH_LABELS[last.getMonth()].slice(0, 3)}`;
+      return `${firstStr} – ${lastStr} ${last.getFullYear()}`;
+    }
+    return `${MONTH_LABELS[month0]} ${year}`;
+  }, [viewMode, grid, month0, year]);
+
+  const prev = () => {
+    if (viewMode === "semana") {
+      const d = new Date(weekAnchor);
+      d.setDate(d.getDate() - 7);
+      setWeekAnchor(d);
+      return;
+    }
     if (month0 === 0) {
       setYear((y) => y - 1);
       setMonth0(11);
@@ -185,7 +327,13 @@ export default function CalendarSection() {
       setMonth0((m) => m - 1);
     }
   };
-  const nextMonth = () => {
+  const next = () => {
+    if (viewMode === "semana") {
+      const d = new Date(weekAnchor);
+      d.setDate(d.getDate() + 7);
+      setWeekAnchor(d);
+      return;
+    }
     if (month0 === 11) {
       setYear((y) => y + 1);
       setMonth0(0);
@@ -194,6 +342,10 @@ export default function CalendarSection() {
     }
   };
   const goToday = () => {
+    if (viewMode === "semana") {
+      setWeekAnchor(new Date());
+      return;
+    }
     setYear(now.getFullYear());
     setMonth0(now.getMonth());
   };
@@ -236,12 +388,12 @@ export default function CalendarSection() {
       <Card className="p-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={prevMonth}>
+            <Button variant="ghost" size="icon" onClick={prev}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <div className="min-w-55 text-center">
               <div className="text-lg font-semibold text-slate-900">
-                {MONTH_LABELS[month0]} {year}
+                {rangeLabel}
               </div>
               {loading && (
                 <div className="text-[11px] text-slate-500 inline-flex items-center gap-1">
@@ -249,12 +401,66 @@ export default function CalendarSection() {
                 </div>
               )}
             </div>
-            <Button variant="ghost" size="icon" onClick={nextMonth}>
+            <Button variant="ghost" size="icon" onClick={next}>
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="sm" onClick={goToday}>
               Hoy
             </Button>
+            {/* spec 2.3 v2 · Botón para abrir turnos pendientes en modal.
+                Reemplaza al panel que antes estaba fijo arriba del calendario. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openPendingFromButton}
+              className="ml-2 gap-1.5"
+            >
+              <Clock className="h-3.5 w-3.5 text-amber-600" />
+              Turnos pendientes
+              {pendingCount !== null && pendingCount > 0 && (
+                <span className="text-[10px] font-medium bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                  {pendingCount}
+                </span>
+              )}
+            </Button>
+            {/* Toggle Mes / Semana */}
+            <div className="ml-1 inline-flex rounded-md border border-slate-200 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setViewMode("mes")}
+                className={`inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-medium transition ${
+                  viewMode === "mes"
+                    ? "bg-[#003b73] text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+                aria-pressed={viewMode === "mes"}
+              >
+                <LayoutGrid className="h-3 w-3" />
+                Mes
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Al pasar a semana, anclamos al lunes de la semana que
+                  // contiene el mes visible (o hoy si estamos en el mes actual).
+                  const isCurrent =
+                    year === now.getFullYear() && month0 === now.getMonth();
+                  setWeekAnchor(
+                    isCurrent ? new Date() : new Date(year, month0, 1),
+                  );
+                  setViewMode("semana");
+                }}
+                className={`inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-medium border-l border-slate-200 transition ${
+                  viewMode === "semana"
+                    ? "bg-[#003b73] text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+                aria-pressed={viewMode === "semana"}
+              >
+                <CalendarDays className="h-3 w-3" />
+                Semana
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-slate-600">
             <span className="inline-flex items-center gap-1">
@@ -281,7 +487,7 @@ export default function CalendarSection() {
 
       <Card className="overflow-hidden">
         {/* Header semana */}
-        <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+        <div className="grid grid-cols-6 border-b border-slate-200 bg-slate-50">
           {WEEKDAY_LABELS.map((d) => (
             <div
               key={d}
@@ -293,16 +499,21 @@ export default function CalendarSection() {
         </div>
         {/* Grid celdas — altura fija tipo Google Calendar. Máx 3 eventos
              visibles y el resto detrás de un "+N más". */}
-        <div className="grid grid-cols-7 divide-x divide-y divide-slate-100">
+        <div className="grid grid-cols-6 divide-x divide-y divide-slate-100">
           {grid.map((cell) => {
             const events = eventsByDay.get(cell.key) ?? [];
             const isToday = cell.key === today;
-            const visible = events.slice(0, MAX_VISIBLE_EVENTS);
-            const hiddenCount = events.length - visible.length;
+            // En vista Semana mostramos TODOS los eventos con scroll interno;
+            // en Mes limitamos y agrupamos el resto detrás de "+N más".
+            const isWeek = viewMode === "semana";
+            const visible = isWeek
+              ? events
+              : events.slice(0, MAX_VISIBLE_EVENTS);
+            const hiddenCount = isWeek ? 0 : events.length - visible.length;
             return (
               <div
                 key={cell.key}
-                className={`h-32 overflow-hidden p-1.5 flex flex-col gap-1 ${
+                className={`${isWeek ? "h-96" : "h-32"} overflow-hidden p-1.5 flex flex-col gap-1 ${
                   cell.inMonth ? "bg-white" : "bg-slate-50/50"
                 }`}
               >
@@ -311,17 +522,28 @@ export default function CalendarSection() {
                     cell.inMonth ? "text-slate-700" : "text-slate-400"
                   }`}
                 >
-                  <span
+                  <button
+                    type="button"
+                    onClick={() => openPendingForDay(cell.date)}
+                    title="Asignar un turno pendiente en este día"
                     className={
                       isToday
-                        ? "inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#003b73] text-white font-semibold"
-                        : "font-medium"
+                        ? "inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#003b73] text-white font-semibold hover:opacity-90"
+                        : "font-medium hover:text-[#003b73] hover:underline"
                     }
                   >
                     {cell.date.getDate()}
-                  </span>
+                  </button>
+                  {isWeek && events.length > 0 && (
+                    <span className="text-[10px] text-slate-500">
+                      {events.length}{" "}
+                      {events.length === 1 ? "evento" : "eventos"}
+                    </span>
+                  )}
                 </div>
-                <div className="flex flex-col gap-1 min-h-0">
+                <div
+                  className={`flex flex-col gap-1 min-h-0 ${isWeek ? "overflow-y-auto" : ""}`}
+                >
                   {visible.map((ev) => (
                     <EventChip
                       key={`${ev.repairId}-${ev.kind}`}
@@ -330,6 +552,7 @@ export default function CalendarSection() {
                       onToggleTransport={(next) =>
                         toggleTransport(ev.repairId, next)
                       }
+                      onOpen={setOpenEvent}
                     />
                   ))}
                   {hiddenCount > 0 && (
@@ -338,6 +561,7 @@ export default function CalendarSection() {
                       events={events}
                       savingId={savingId}
                       onToggleTransport={toggleTransport}
+                      onOpen={setOpenEvent}
                     />
                   )}
                 </div>
@@ -349,6 +573,45 @@ export default function CalendarSection() {
 
       {/* Lista compacta debajo — útil en mobile / para escanear rápido */}
       <UpcomingList data={data} />
+
+      {openEvent && (
+        <EventDetailDialog
+          event={openEvent}
+          onClose={() => setOpenEvent(null)}
+          onSaved={() => {
+            setOpenEvent(null);
+            fetchCalendar();
+          }}
+        />
+      )}
+
+      {/* spec 2.3 v2 · Modal de turnos pendientes. Se abre por el botón del
+          header (sin fecha prefill) o por click en una celda (con prefill). */}
+      <Dialog open={pendingOpen} onOpenChange={(v) => !v && closePendingModal()}>
+        <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-4 py-3 border-b bg-slate-50 flex flex-row items-center justify-between gap-2">
+            <DialogTitle className="text-sm font-semibold text-slate-700 inline-flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-600" />
+              Asignar turno pendiente
+              {pendingPrefill && (
+                <span className="text-xs font-normal text-slate-500">
+                  · prefill al día seleccionado
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[70vh] overflow-y-auto">
+            <PendingTurnosPanel
+              bare
+              defaultDate={pendingPrefill}
+              onAssigned={() => {
+                fetchCalendar();
+                fetchPendingCount();
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -357,10 +620,12 @@ function EventChip({
   event,
   saving,
   onToggleTransport,
+  onOpen,
 }: {
   event: DayEvent;
   saving: boolean;
   onToggleTransport: (next: boolean) => void;
+  onOpen: (event: DayEvent) => void;
 }) {
   const bg =
     event.kind === "ingreso"
@@ -375,13 +640,14 @@ function EventChip({
       <div className="flex items-center gap-1">
         <Icon className="h-3 w-3 shrink-0" />
         <span className="font-semibold tabular-nums">{time}</span>
-        <Link
-          href={`/produccion?repairId=${event.repairId}`}
-          className="truncate hover:underline"
+        <button
+          type="button"
+          onClick={() => onOpen(event)}
+          className="truncate text-left hover:underline"
           title={`${event.customerName} · ${event.vehicleSummary} · ${event.vehicleDomain}`}
         >
           {event.customerName}
-        </Link>
+        </button>
         <button
           type="button"
           disabled={saving}
@@ -414,11 +680,13 @@ function DayOverflow({
   events,
   savingId,
   onToggleTransport,
+  onOpen,
 }: {
   dateLabel: string;
   events: DayEvent[];
   savingId: string | null;
   onToggleTransport: (repairId: string, next: boolean) => void;
+  onOpen: (event: DayEvent) => void;
 }) {
   const hidden = events.length - MAX_VISIBLE_EVENTS;
   return (
@@ -442,6 +710,7 @@ function DayOverflow({
               event={ev}
               saving={savingId === ev.repairId}
               onToggleTransport={(next) => onToggleTransport(ev.repairId, next)}
+              onOpen={onOpen}
             />
           ))}
         </div>
