@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -87,30 +87,134 @@ export default function MovementDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // spec v2 · Para INGRESO opcional: vincular el cobro a un vehículo por
+  // N° interno. Si se vincula y se elige una factura, el ingreso se
+  // registra como RepairInvoicePayment (aparece en Caja + en la ficha del
+  // vehículo, sección "Facturación y cobros"). Si no, cae en CashMovement
+  // como antes (ingreso libre).
+  const [internalNumber, setInternalNumber] = useState("");
+  const [linkedRepair, setLinkedRepair] = useState<{
+    id: string;
+    internalNumber: number | null;
+    customerName: string;
+    vehicleSummary: string;
+    vehicleDomain: string;
+    status: string;
+    invoices: Array<{
+      id: string;
+      number: string;
+      amount: number;
+      paid: number;
+      remaining: number;
+      recipient: string;
+      recipientName: string | null;
+    }>;
+  } | null>(null);
+  const [linkingError, setLinkingError] = useState<string | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
+  const [lookupBusy, setLookupBusy] = useState(false);
+
+  // Búsqueda debounced del N° interno mientras el usuario tipea.
+  useEffect(() => {
+    if (type !== "INGRESO") return;
+    const n = internalNumber.trim();
+    if (!n) {
+      setLinkedRepair(null);
+      setLinkingError(null);
+      setSelectedInvoiceId("");
+      return;
+    }
+    const ac = new AbortController();
+    const t = setTimeout(async () => {
+      setLookupBusy(true);
+      setLinkingError(null);
+      try {
+        const res = await fetch(
+          `/api/repairs/by-internal-number?n=${encodeURIComponent(n)}`,
+          { signal: ac.signal },
+        );
+        if (!res.ok) {
+          const b = await res.json().catch(() => ({}));
+          setLinkedRepair(null);
+          setSelectedInvoiceId("");
+          setLinkingError(b?.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        const d = (await res.json()) as { repair: typeof linkedRepair };
+        setLinkedRepair(d.repair);
+        // Autoselecciona la primera factura con saldo pendiente para
+        // ahorrarle el click al operador.
+        const firstPending =
+          d.repair?.invoices.find((i) => i.remaining > 0) ??
+          d.repair?.invoices[0] ??
+          null;
+        setSelectedInvoiceId(firstPending?.id ?? "");
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") {
+          setLinkingError(e instanceof Error ? e.message : "Error");
+        }
+      } finally {
+        setLookupBusy(false);
+      }
+    }, 350);
+    return () => {
+      clearTimeout(t);
+      ac.abort();
+    };
+  }, [internalNumber, type]);
+
   const title = type === "INGRESO" ? "Registrar ingreso" : "Registrar egreso";
   const buttonLabel = type === "INGRESO" ? "Guardar ingreso" : "Guardar egreso";
+  const willLinkToRepair =
+    type === "INGRESO" &&
+    !!linkedRepair &&
+    !!selectedInvoiceId;
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/caja/movements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cashBoxId: selectedBoxId,
-          type,
-          amount: Number(amount),
-          method,
-          concept,
-          reference: reference.trim() || null,
-          notes: notes.trim() || null,
-          paidAt,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      if (willLinkToRepair) {
+        // Cobro vinculado a factura del cliente → aparece en Caja + ficha.
+        const res = await fetch(
+          `/api/repair-invoices/${selectedInvoiceId}/payments`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount: Number(amount),
+              paidAt: new Date(paidAt).toISOString(),
+              method,
+              reference: reference.trim() || null,
+              notes: notes.trim() || concept.trim() || null,
+              cashBoxId: selectedBoxId,
+            }),
+          },
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error ?? `HTTP ${res.status}`);
+        }
+      } else {
+        // Ingreso libre → CashMovement como antes.
+        const res = await fetch("/api/caja/movements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cashBoxId: selectedBoxId,
+            type,
+            amount: Number(amount),
+            method,
+            concept,
+            reference: reference.trim() || null,
+            notes: notes.trim() || null,
+            paidAt,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error ?? `HTTP ${res.status}`);
+        }
       }
       onSaved();
     } catch (e) {
@@ -122,7 +226,9 @@ export default function MovementDialog({
 
   const canSave =
     Number(amount) > 0 &&
-    concept.trim().length > 0 &&
+    // Si va vinculado a factura, el "concept" no es obligatorio (usamos el
+    // de la factura). Si es INGRESO libre o EGRESO, sí.
+    (willLinkToRepair || concept.trim().length > 0) &&
     selectedBoxId &&
     !saving;
 
@@ -176,6 +282,69 @@ export default function MovementDialog({
               </Select>
             </div>
           </div>
+
+          {/* spec v2 · Vinculador con vehículo por N° interno (solo INGRESO).
+              Si el ingreso corresponde al cobro de un cliente, se guarda como
+              RepairInvoicePayment y aparece también en "Facturación y cobros"
+              de la ficha del vehículo. */}
+          {type === "INGRESO" && (
+            <div className="grid gap-1 rounded-md border border-slate-200 bg-slate-50 p-2.5">
+              <Label className="text-xs">
+                N° interno del vehículo (opcional)
+              </Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                placeholder="Ej: 4029 — vincula el cobro al cliente"
+                value={internalNumber}
+                onChange={(e) => setInternalNumber(e.target.value)}
+              />
+              {lookupBusy && (
+                <p className="text-[11px] text-slate-500">Buscando…</p>
+              )}
+              {linkingError && (
+                <p className="text-[11px] text-rose-700">{linkingError}</p>
+              )}
+              {linkedRepair && (
+                <div className="mt-1 space-y-1">
+                  <p className="text-[11px] text-slate-700">
+                    <span className="font-medium">
+                      {linkedRepair.customerName}
+                    </span>{" "}
+                    · {linkedRepair.vehicleSummary} ·{" "}
+                    {linkedRepair.vehicleDomain}
+                  </p>
+                  {linkedRepair.invoices.length === 0 ? (
+                    <p className="text-[11px] text-amber-700">
+                      Este vehículo todavía no tiene facturas cargadas. El
+                      ingreso se guardará como movimiento libre — para
+                      impactar en "Facturación y cobros" primero creá la
+                      factura desde la ficha del vehículo.
+                    </p>
+                  ) : (
+                    <div className="grid gap-1">
+                      <Label className="text-[10px]">Factura a imputar</Label>
+                      <Select
+                        value={selectedInvoiceId}
+                        onValueChange={setSelectedInvoiceId}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Elegí la factura" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {linkedRepair.invoices.map((inv) => (
+                            <SelectItem key={inv.id} value={inv.id}>
+                              #{inv.number} — total ${inv.amount.toLocaleString("es-AR")} · saldo ${inv.remaining.toLocaleString("es-AR")}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {type === "EGRESO" ? (
             <div className="grid gap-1">
