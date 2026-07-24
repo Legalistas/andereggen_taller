@@ -223,8 +223,29 @@ export default function CajaSection() {
         />
       </div>
 
-      {/* spec 3.3 / T16 v2 · Gráfico de Ingresos — se mudó del dashboard
-          general a Caja. Muestra los cobros de los últimos 6 meses. */}
+      {/* Tabs Cobros / General */}
+      {/* spec v2 · "Caja general" primero (default) porque es el flujo diario;
+          "Cobros por vehículo" queda detrás. */}
+      <Tabs defaultValue="general" className="w-full">
+        <TabsList>
+          <TabsTrigger value="general">Caja general</TabsTrigger>
+          <TabsTrigger value="cobros">Cobros por vehículo</TabsTrigger>
+        </TabsList>
+        <TabsContent value="general" className="mt-4">
+          <GeneralPanel
+            boxes={data?.boxes ?? []}
+            monthParam={monthParam}
+            onReload={() => fetchBoxes()}
+          />
+        </TabsContent>
+        <TabsContent value="cobros" className="mt-4">
+          <CollectionsTable byInsurance={data?.byInsurance ?? []} />
+        </TabsContent>
+      </Tabs>
+
+      {/* spec 3.3 / T16 v2 · Gráfico de Ingresos al pie de la página —
+          referencia histórica de los últimos 6 meses. Se dejó abajo para no
+          competir por atención con los KPIs y el flujo diario de las cajas. */}
       <Card>
         <CardHeader>
           <CardTitle>Ingresos</CardTitle>
@@ -283,26 +304,6 @@ export default function CajaSection() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Tabs Cobros / General */}
-      {/* spec v2 · "Caja general" primero (default) porque es el flujo diario;
-          "Cobros por vehículo" queda detrás. */}
-      <Tabs defaultValue="general" className="w-full">
-        <TabsList>
-          <TabsTrigger value="general">Caja general</TabsTrigger>
-          <TabsTrigger value="cobros">Cobros por vehículo</TabsTrigger>
-        </TabsList>
-        <TabsContent value="general" className="mt-4">
-          <GeneralPanel
-            boxes={data?.boxes ?? []}
-            monthParam={monthParam}
-            onReload={() => fetchBoxes()}
-          />
-        </TabsContent>
-        <TabsContent value="cobros" className="mt-4">
-          <CollectionsTable byInsurance={data?.byInsurance ?? []} />
-        </TabsContent>
-      </Tabs>
     </div>
   );
 }
