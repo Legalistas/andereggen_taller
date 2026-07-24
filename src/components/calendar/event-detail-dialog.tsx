@@ -42,6 +42,7 @@ export type EventDialogInput = {
   date: string;
   needsTransport: boolean;
   status: string;
+  notes: string | null;
 };
 
 type Props = {
@@ -105,6 +106,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
     isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date),
   );
   const [needsTransport, setNeedsTransport] = useState(event.needsTransport);
+  const [notes, setNotes] = useState(event.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,13 +116,16 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
       isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date),
     );
     setNeedsTransport(event.needsTransport);
+    setNotes(event.notes ?? "");
     setError(null);
   }, [event, isTurno]);
 
+  const originalNotes = event.notes ?? "";
   const isDirty =
     dateValue !==
       (isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date)) ||
-    needsTransport !== event.needsTransport;
+    needsTransport !== event.needsTransport ||
+    notes !== originalNotes;
 
   const handleSave = async () => {
     setSaving(true);
@@ -128,6 +133,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
     try {
       const body: Record<string, unknown> = {
         needsTransport,
+        notes: notes.trim() || null,
       };
       if (isTurno) {
         body.scheduledAt = parseLocalDateTime(dateValue);
@@ -208,6 +214,20 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
               </span>
             </div>
           </label>
+
+          <div className="grid gap-1">
+            <Label className="text-xs">Detalles del turno</Label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              placeholder="Aclaraciones sobre el turno, contacto, avisos internos…"
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#003b73]/30 focus:border-[#003b73] resize-y"
+            />
+            <p className="text-[11px] text-slate-500">
+              Estas notas se comparten con la ficha del vehículo en Producción.
+            </p>
+          </div>
 
           {error && (
             <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">

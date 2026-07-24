@@ -24,6 +24,7 @@ type CalendarEvent = {
   date: string;
   needsTransport: boolean;
   status: string;
+  notes: string | null;
 };
 
 const REPAIR_SELECT = {
@@ -37,6 +38,7 @@ const REPAIR_SELECT = {
   estimatedDeliveryAt: true,
   needsTransport: true,
   status: true,
+  notes: true,
 } as const;
 
 function summarizeVehicle(r: {
@@ -105,6 +107,7 @@ export async function GET(request: Request) {
       date: r.scheduledAt!.toISOString(),
       needsTransport: r.needsTransport,
       status: r.status,
+      notes: r.notes,
     }));
 
   const entregas: CalendarEvent[] = deliveries
@@ -118,6 +121,7 @@ export async function GET(request: Request) {
       date: r.estimatedDeliveryAt!.toISOString(),
       needsTransport: r.needsTransport,
       status: r.status,
+      notes: r.notes,
     }));
 
   return NextResponse.json({

@@ -49,6 +49,7 @@ type CalendarEvent = {
   date: string;
   needsTransport: boolean;
   status: string;
+  notes: string | null;
 };
 
 type CalendarPayload = {
