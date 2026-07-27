@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, Car, Loader2, Phone, Search, X } from "lucide-react";
+import { Calendar, Car, Loader2, Phone, RotateCcw, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,38 @@ export default function ProductionHistory() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [range, setRange] = useState<RangeFilter>("all");
+  // spec v2 · Restaurar de "archivado" a "pendientes_cobro" — a veces se
+  // cobra la franquicia el viernes pero la factura formal se emite recién
+  // cuando el cliente retira, así que necesitamos volver a producción.
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  const handleRestore = async (repairId: string, customerName: string) => {
+    if (
+      !window.confirm(
+        `¿Volver a producción la reparación de ${customerName}? Se moverá desde Archivado a "Pendientes de Cobro".`,
+      )
+    )
+      return;
+    setRestoringId(repairId);
+    try {
+      const res = await fetch(`/api/repairs/${repairId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "pendientes_cobro" }),
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        throw new Error(b?.error ?? `HTTP ${res.status}`);
+      }
+      await fetchRepairs();
+    } catch (e) {
+      window.alert(
+        e instanceof Error ? `No se pudo restaurar: ${e.message}` : "Error",
+      );
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   const fetchRepairs = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -157,13 +189,14 @@ export default function ProductionHistory() {
               <TableHead>Mecánico</TableHead>
               <TableHead>Archivado</TableHead>
               <TableHead>Origen</TableHead>
+              <TableHead className="w-40 text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && repairs.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="text-center py-12 text-sm text-muted-foreground"
                 >
                   <Loader2 className="h-4 w-4 inline animate-spin mr-2" />
@@ -174,7 +207,7 @@ export default function ProductionHistory() {
             {!loading && filtered.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="text-center py-12 text-sm text-muted-foreground italic"
                 >
                   Sin reparaciones archivadas en este rango.
@@ -244,6 +277,23 @@ export default function ProductionHistory() {
                   ) : (
                     <span className="text-xs text-slate-400">—</span>
                   )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={restoringId === r.id}
+                    onClick={() => handleRestore(r.id, r.customerName)}
+                    title="Devolver la reparación al kanban de Producción (pasa a Pendientes de Cobro)"
+                    className="h-8 text-xs"
+                  >
+                    {restoringId === r.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                    )}
+                    Volver a producción
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}

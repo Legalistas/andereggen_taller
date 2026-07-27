@@ -193,12 +193,18 @@ export async function GET(request: Request) {
     EGRESO: number;
     TRANSFER_IN: number;
     TRANSFER_OUT: number;
+    // spec v2 · Pases: mueven plata en la caja pero no cuentan como
+    // ingreso/egreso contable del mes.
+    PASE_IN: number;
+    PASE_OUT: number;
   };
   const emptyBucket = (): MovBucket => ({
     INGRESO: 0,
     EGRESO: 0,
     TRANSFER_IN: 0,
     TRANSFER_OUT: 0,
+    PASE_IN: 0,
+    PASE_OUT: 0,
   });
   const movByBoxAll = new Map<string, MovBucket>();
   for (const r of movementsAll) {
@@ -219,8 +225,16 @@ export async function GET(request: Request) {
     const paidMonth = paidByBoxMonth.get(box.id) ?? 0;
     const mAll = movByBoxAll.get(box.id) ?? emptyBucket();
     const mMonth = movByBoxMonth.get(box.id) ?? emptyBucket();
+    // Los pases SÍ afectan el saldo (la plata realmente se movió), pero NO
+    // aparecen como ingreso/egreso del mes en las stats.
     const balance =
-      paidAll + mAll.INGRESO + mAll.TRANSFER_IN - mAll.EGRESO - mAll.TRANSFER_OUT;
+      paidAll +
+      mAll.INGRESO +
+      mAll.TRANSFER_IN +
+      mAll.PASE_IN -
+      mAll.EGRESO -
+      mAll.TRANSFER_OUT -
+      mAll.PASE_OUT;
     return {
       id: box.id,
       key: box.key,
@@ -233,6 +247,8 @@ export async function GET(request: Request) {
         egresos: mMonth.EGRESO,
         transfersIn: mMonth.TRANSFER_IN,
         transfersOut: mMonth.TRANSFER_OUT,
+        pasesIn: mMonth.PASE_IN,
+        pasesOut: mMonth.PASE_OUT,
       },
     };
   });

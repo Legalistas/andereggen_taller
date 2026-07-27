@@ -116,14 +116,30 @@ export async function POST(request: Request, ctx: RouteContext) {
     },
   });
 
-  // spec 2.1/2.15 v2 · Auto-archivado al completarse el cobro total. Sumamos
-  // el importe facturado y el cobrado en TODAS las facturas del repair; si
-  // el cobro cubre el facturado (con tolerancia de $1 para redondeos) y el
-  // repair está en un estado post-entrega, lo pasamos a "archivado".
+  // spec 2.1/2.15 v2 · Auto-archivado al completarse el cobro total.
+  //
+  // Regla mejorada (jul '26): si el repair tiene desglose "aprobado"
+  // (approvedInsurance + approvedFranchise + approvedCustomer) usamos esa
+  // suma como el TOTAL ESPERADO — solo auto-archivamos cuando el cobrado
+  // cubre ese esperado. Caso típico: se cobra la franquicia el viernes al
+  // retirar el auto, pero recién semanas después se factura al seguro; si
+  // usáramos solo `sum(invoice.amount)` archivaríamos apenas la franquicia
+  // esté paga y la reparación desaparecería del kanban aunque falte cobrar
+  // al seguro. Con approvedTotal esto ya no pasa.
+  //
+  // Si no hay approvedTotal cargado, fallback al comportamiento anterior
+  // (sum de facturas).
   try {
     const repair = await prisma.repair.findUnique({
       where: { id: invoice.repairId },
-      select: { id: true, status: true, archivedAt: true },
+      select: {
+        id: true,
+        status: true,
+        archivedAt: true,
+        approvedInsurance: true,
+        approvedFranchise: true,
+        approvedCustomer: true,
+      },
     });
     if (repair && AUTO_ARCHIVE_FROM.has(repair.status)) {
       const invoices = await prisma.repairInvoice.findMany({
@@ -142,8 +158,17 @@ export async function POST(request: Request, ctx: RouteContext) {
           a + inv.payments.reduce((b, p) => b + Number(p.amount), 0),
         0,
       );
+      const approvedTotal =
+        Number(repair.approvedInsurance ?? 0) +
+        Number(repair.approvedFranchise ?? 0) +
+        Number(repair.approvedCustomer ?? 0);
+      // Si hay approvedTotal cargado, el target es el max(approved, billed)
+      // — así el operador no puede olvidarse de facturar el seguro. Sin
+      // approvedTotal, target = totalBilled como antes.
+      const target =
+        approvedTotal > 0 ? Math.max(approvedTotal, totalBilled) : totalBilled;
       const fullyPaid =
-        totalBilled > 0 && totalPaid + PAYMENT_TOLERANCE >= totalBilled;
+        target > 0 && totalPaid + PAYMENT_TOLERANCE >= target;
       if (fullyPaid) {
         await prisma.repair.update({
           where: { id: repair.id },

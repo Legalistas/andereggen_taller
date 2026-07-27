@@ -60,6 +60,7 @@ model User {
   repairInvoicesCreated         RepairInvoice[]        @relation("RepairInvoiceCreatedBy")
   repairInvoicePaymentsCreated  RepairInvoicePayment[] @relation("RepairInvoicePaymentCreatedBy")
   cashMovementsCreated          CashMovement[]         @relation("CashMovementCreatedBy")
+  pendingCashPaymentsCreated    PendingCashPayment[]   @relation("PendingCashPaymentCreatedBy")
 }
 
 model Session {
@@ -1170,6 +1171,12 @@ enum CashMovementType {
   EGRESO // Gastos, retiros, sueldos
   TRANSFER_IN // Contraparte "recibí" de una transferencia interna
   TRANSFER_OUT // Contraparte "envié" de una transferencia interna
+  // spec v2 · "Pases" — dinero que entra o sale de la caja pero no es
+  // ingreso/egreso contable. Suele ser retiro temporal que después vuelve
+  // (ej: María se lleva $500k y los devuelve la semana siguiente). Cuentan
+  // para el saldo pero NO para "Ingresos/Egresos del mes" ni facturación.
+  PASE_IN
+  PASE_OUT
 }
 
 model CashBox {
@@ -1184,8 +1191,9 @@ model CashBox {
   sortOrder   Int     @default(0)
   archivedAt  DateTime?
 
-  movements CashMovement[]
-  payments  RepairInvoicePayment[]
+  movements       CashMovement[]
+  payments        RepairInvoicePayment[]
+  pendingPayments PendingCashPayment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1219,4 +1227,43 @@ model CashMovement {
   @@index([cashBoxId])
   @@index([paidAt])
   @@index([transferGroupId])
+}
+
+// spec v2 · Pagos preparados / para realizar.
+// Los usa el equipo para anotar "esto lo vamos a pagar el viernes" antes
+// de retirar la plata. Cuando se materializa (mark-paid), se crea el
+// CashMovement EGRESO correspondiente en la caja y el registro queda
+// como PAGADO con `paidAt` seteado.
+enum PendingCashPaymentStatus {
+  PENDIENTE
+  PAGADO
+  CANCELADO
+}
+
+model PendingCashPayment {
+  id        String                    @id @default(uuid())
+  cashBoxId String
+  cashBox   CashBox                   @relation(fields: [cashBoxId], references: [id], onDelete: Cascade)
+  amount    Decimal                   @db.Decimal(14, 2)
+  method    PaymentMethod             @default(EFECTIVO)
+  concept   String
+  reference String?
+  notes     String?                   @db.Text
+  /** Fecha estimada de pago (opcional — para ordenar por lo más próximo). */
+  dueDate   DateTime?
+  status    PendingCashPaymentStatus  @default(PENDIENTE)
+
+  /** Cuándo se materializó y a qué CashMovement se ligó. */
+  paidAt          DateTime?
+  paidByMovementId String? @unique
+
+  createdById String?
+  createdBy   User?    @relation("PendingCashPaymentCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cashBoxId])
+  @@index([status])
+  @@index([dueDate])
 }

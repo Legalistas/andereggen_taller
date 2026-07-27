@@ -50,6 +50,8 @@ export type CashBoxSummary = {
     egresos: number;
     transfersIn: number;
     transfersOut: number;
+    pasesIn: number;
+    pasesOut: number;
   };
 };
 
@@ -178,54 +180,10 @@ export default function CajaSection() {
         </Card>
       )}
 
-      {/* KPIs — spec 4.4 */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          icon={Wallet}
-          iconTint="text-[#003b73]"
-          iconBg="bg-[#003b73]/10"
-          label="Saldo total"
-          value={totals ? ARS.format(totals.balance) : "—"}
-          hint="Consolidado de las 5 cajas"
-        />
-        <KpiCard
-          icon={ArrowDownCircle}
-          iconTint="text-emerald-600"
-          iconBg="bg-emerald-50"
-          label="Cobros del mes"
-          value={totals ? ARS.format(totals.monthCollections) : "—"}
-          hint={
-            totals
-              ? `Facturado: ${ARS.format(totals.monthBilling)}`
-              : undefined
-          }
-        />
-        <KpiCard
-          icon={ArrowUpCircle}
-          iconTint="text-rose-600"
-          iconBg="bg-rose-50"
-          label="Egresos del mes"
-          value={totals ? ARS.format(totals.monthEgresos) : "—"}
-          hint="Salidas registradas en todas las cajas"
-        />
-        <KpiCard
-          icon={DollarSign}
-          iconTint="text-amber-700"
-          iconBg="bg-amber-50"
-          label="Cobros pendientes"
-          value={totals ? ARS.format(totals.pendingAmount) : "—"}
-          hint={
-            totals?.avgCollectionDaysPostDelivery !== null &&
-            totals?.avgCollectionDaysPostDelivery !== undefined
-              ? `Promedio ${Math.round(totals.avgCollectionDaysPostDelivery)} días post-entrega`
-              : "Trabajos entregados sin cobro completo"
-          }
-        />
-      </div>
-
       {/* Tabs Cobros / General */}
       {/* spec v2 · "Caja general" primero (default) porque es el flujo diario;
-          "Cobros por vehículo" queda detrás. */}
+          "Cobros por vehículo" queda detrás. Los KPIs bajan al pie como
+          sección "Estadísticas" (pedido brief 23/7). */}
       <Tabs defaultValue="general" className="w-full">
         <TabsList>
           <TabsTrigger value="general">Caja general</TabsTrigger>
@@ -243,9 +201,58 @@ export default function CajaSection() {
         </TabsContent>
       </Tabs>
 
-      {/* spec 3.3 / T16 v2 · Gráfico de Ingresos al pie de la página —
-          referencia histórica de los últimos 6 meses. Se dejó abajo para no
-          competir por atención con los KPIs y el flujo diario de las cajas. */}
+      {/* spec v2 (brief 23/7) · Estadísticas al pie — KPIs consolidados y
+          gráfico de tendencia. Los KPIs bajaron desde el header para dejar
+          el flujo diario (tabs) más limpio arriba. */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">
+          Estadísticas
+        </h2>
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          <KpiCard
+            icon={Wallet}
+            iconTint="text-[#003b73]"
+            iconBg="bg-[#003b73]/10"
+            label="Saldo total"
+            value={totals ? ARS.format(totals.balance) : "—"}
+            hint="Consolidado de las 5 cajas"
+          />
+          <KpiCard
+            icon={ArrowDownCircle}
+            iconTint="text-emerald-600"
+            iconBg="bg-emerald-50"
+            label="Cobros del mes"
+            value={totals ? ARS.format(totals.monthCollections) : "—"}
+            hint={
+              totals
+                ? `Facturado: ${ARS.format(totals.monthBilling)}`
+                : undefined
+            }
+          />
+          <KpiCard
+            icon={ArrowUpCircle}
+            iconTint="text-rose-600"
+            iconBg="bg-rose-50"
+            label="Egresos del mes"
+            value={totals ? ARS.format(totals.monthEgresos) : "—"}
+            hint="Salidas registradas en todas las cajas"
+          />
+          <KpiCard
+            icon={DollarSign}
+            iconTint="text-amber-700"
+            iconBg="bg-amber-50"
+            label="Cobros pendientes"
+            value={totals ? ARS.format(totals.pendingAmount) : "—"}
+            hint={
+              totals?.avgCollectionDaysPostDelivery !== null &&
+              totals?.avgCollectionDaysPostDelivery !== undefined
+                ? `Promedio ${Math.round(totals.avgCollectionDaysPostDelivery)} días post-entrega`
+                : "Trabajos entregados sin cobro completo"
+            }
+          />
+        </div>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Ingresos</CardTitle>

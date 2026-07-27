@@ -8,11 +8,19 @@ import {
   Trash2,
   Wallet,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { CashBoxSummary } from "./caja-section";
 import MovementDialog from "./movement-dialog";
+import PendingPaymentsPanel from "./pending-payments-panel";
 import TransferDialog from "./transfer-dialog";
 
 /**
@@ -24,7 +32,14 @@ import TransferDialog from "./transfer-dialog";
 type MovementRow = {
   id: string;
   cashBox: { id: string; name: string; key: string } | null;
-  type: "INGRESO" | "EGRESO" | "TRANSFER_IN" | "TRANSFER_OUT" | "COBRO";
+  type:
+    | "INGRESO"
+    | "EGRESO"
+    | "TRANSFER_IN"
+    | "TRANSFER_OUT"
+    | "PASE_IN"
+    | "PASE_OUT"
+    | "COBRO";
   amount: number;
   method: string;
   concept: string;
@@ -86,6 +101,16 @@ const TYPE_META: Record<
     sign: -1,
     color: "bg-slate-100 text-slate-700",
   },
+  PASE_IN: {
+    label: "Pase entra",
+    sign: 1,
+    color: "bg-violet-100 text-violet-700",
+  },
+  PASE_OUT: {
+    label: "Pase sale",
+    sign: -1,
+    color: "bg-violet-100 text-violet-700",
+  },
 };
 
 const DATE_FMT = new Intl.DateTimeFormat("es-AR", {
@@ -113,6 +138,9 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
   } | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // spec v2 · Filtro por concepto (útil para ver "cuánto gastamos en
+  // Brixar / Sueldos / Fletes este mes"). "all" = sin filtro.
+  const [conceptFilter, setConceptFilter] = useState<string>("all");
 
   const fetchMovements = useCallback(
     async (signal?: AbortSignal) => {
@@ -148,6 +176,28 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
     onReload();
     fetchMovements();
   };
+
+  // spec v2 · Resumen de EGRESOS del mes agrupados por concepto (para ver
+  // "cuánto pagamos en Brixar / Sueldos / Fletes" de un vistazo) + lista de
+  // conceptos únicos para el filtro. Sólo egresos manuales — los cobros no
+  // aplican a "rubro".
+  const egresoConcepts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of movements) {
+      if (m.type !== "EGRESO") continue;
+      map.set(m.concept, (map.get(m.concept) ?? 0) + m.amount);
+    }
+    return Array.from(map.entries())
+      .map(([concept, total]) => ({ concept, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [movements]);
+
+  const filteredMovements = useMemo(() => {
+    if (conceptFilter === "all") return movements;
+    return movements.filter(
+      (m) => m.type === "EGRESO" && m.concept === conceptFilter,
+    );
+  }, [movements, conceptFilter]);
 
   const deleteRow = async (m: MovementRow) => {
     // El id local viene prefijado por el GET (mov-… o pay-…) para distinguir
@@ -251,16 +301,27 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                       {ARS.format(box.month.transfersOut)}
                     </span>
                   </div>
+                  {(box.month.pasesIn > 0 || box.month.pasesOut > 0) && (
+                    <div className="flex justify-between">
+                      <span>Pases mes</span>
+                      <span className="tabular-nums text-violet-700">
+                        +{ARS.format(box.month.pasesIn)} / -
+                        {ARS.format(box.month.pasesOut)}
+                      </span>
+                    </div>
+                  )}
                   {/* spec v2 · Diferencia neta del mes (ingresos − egresos
-                      neto de transferencias). Sirve para chequear que los
-                      importes de la caja del mes cierren. */}
+                      neto de transferencias y pases). Sirve para chequear
+                      que los importes de la caja del mes cierren. */}
                   {(() => {
                     const saldoMes =
                       box.month.collections +
                       box.month.ingresos +
-                      box.month.transfersIn -
+                      box.month.transfersIn +
+                      box.month.pasesIn -
                       box.month.egresos -
-                      box.month.transfersOut;
+                      box.month.transfersOut -
+                      box.month.pasesOut;
                     return (
                       <div className="flex justify-between pt-1 mt-1 border-t border-slate-100">
                         <span className="font-semibold text-slate-700">
@@ -318,6 +379,11 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
         })}
       </div>
 
+      {/* spec v2 · Pagos preparados / para realizar (entre cajas y
+          movimientos del mes). Al retirar la plata se crea un EGRESO real
+          en la caja, por eso recargamos también las cajas. */}
+      <PendingPaymentsPanel boxes={boxes} onChanged={reloadAll} />
+
       {/* Acciones globales */}
       <div className="flex items-center gap-2 flex-wrap">
         <Button
@@ -342,28 +408,101 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
         )}
       </div>
 
+      {/* spec v2 · Egresos por rubro del mes — para ver rápido cuánto se
+          gastó en cada concepto (Brixar, Sueldos, etc.). Click en un chip
+          filtra el listado. */}
+      {egresoConcepts.length > 0 && (
+        <Card className="p-3">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2">
+            Egresos del mes por rubro
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {egresoConcepts.map((c) => {
+              const active = conceptFilter === c.concept;
+              return (
+                <button
+                  key={c.concept}
+                  type="button"
+                  onClick={() =>
+                    setConceptFilter(active ? "all" : c.concept)
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition ${
+                    active
+                      ? "border-[#003b73] bg-[#003b73] text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                  }`}
+                  title={`Filtrar movimientos por "${c.concept}"`}
+                >
+                  <span>{c.concept}</span>
+                  <span
+                    className={`tabular-nums font-semibold ${
+                      active ? "text-white" : "text-rose-700"
+                    }`}
+                  >
+                    {ARS.format(c.total)}
+                  </span>
+                </button>
+              );
+            })}
+            {conceptFilter !== "all" && (
+              <button
+                type="button"
+                onClick={() => setConceptFilter("all")}
+                className="text-[11px] text-[#003b73] hover:underline px-1"
+              >
+                limpiar filtro
+              </button>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Lista de movimientos */}
       <Card className="p-0 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-50">
-          <h3 className="text-sm font-semibold text-slate-700">
-            Movimientos del mes
-          </h3>
-          {loading && (
-            <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-          )}
+        <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-50 gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-700">
+              Movimientos del mes
+            </h3>
+            {conceptFilter !== "all" && (
+              <span className="text-[11px] bg-[#003b73]/10 text-[#003b73] px-2 py-0.5 rounded">
+                Filtrando: {conceptFilter}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {loading && (
+              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+            )}
+            <Select value={conceptFilter} onValueChange={setConceptFilter}>
+              <SelectTrigger className="h-8 text-xs w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los conceptos</SelectItem>
+                {egresoConcepts.map((c) => (
+                  <SelectItem key={c.concept} value={c.concept}>
+                    {c.concept} · {ARS.format(c.total)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         {error && (
           <div className="p-4 text-sm text-rose-700 bg-rose-50 border-b border-rose-200">
             {error}
           </div>
         )}
-        {movements.length === 0 && !loading ? (
+        {filteredMovements.length === 0 && !loading ? (
           <div className="p-8 text-center text-sm text-slate-500">
-            No hay movimientos en este período.
+            {conceptFilter === "all"
+              ? "No hay movimientos en este período."
+              : `No hay egresos en "${conceptFilter}" este mes.`}
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {movements.map((m) => {
+            {filteredMovements.map((m) => {
               const meta = TYPE_META[m.type];
               const isDeleting = deletingId === m.id;
               return (
@@ -389,6 +528,14 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                       {m.reference && ` · Ref: ${m.reference}`}
                       {m.createdBy && ` · ${m.createdBy}`}
                     </div>
+                    {m.notes && (
+                      <div
+                        className="text-[11px] text-slate-600 mt-0.5 whitespace-pre-wrap wrap-break-word"
+                        title={m.notes}
+                      >
+                        {m.notes}
+                      </div>
+                    )}
                   </div>
                   <span
                     className={`tabular-nums font-semibold shrink-0 ${

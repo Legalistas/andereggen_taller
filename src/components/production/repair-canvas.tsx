@@ -999,9 +999,6 @@ function BudgetSection({
   // BudgetModal local en modo ampliación. Si en el taller aparece trabajo
   // extra durante la reparación, el operador amplía sin tener que ir al CRM.
   const [extendOpen, setExtendOpen] = useState(false);
-  // BudgetModal en modo LECTURA/EDICIÓN — para ver el presupuesto ya cerrado
-  // y enviado desde la ficha del vehículo, sin salir a Cotizaciones.
-  const [viewOpen, setViewOpen] = useState(false);
   // Administrativa (cotizaciones internas, compras, fotos). Cuando el auto
   // está en producción se abre desde acá para registrar compras rápido.
   const [adminOpen, setAdminOpen] = useState(false);
@@ -1031,17 +1028,19 @@ function BudgetSection({
           <p className="font-semibold text-base text-slate-900 mt-1 tabular-nums">
             {ARS.format(Number(budget.grandTotal))}
           </p>
-          {/* Ver presupuesto cerrado — abre el BudgetModal en modo edición
-              para consultar el detalle enviado al cliente sin salir a CRM. */}
-          <button
-            type="button"
-            onClick={() => setViewOpen(true)}
+          {/* spec v2 (27/7) · Ver presupuesto cerrado abre el PDF que se
+              envió al cliente en una nueva pestaña — NO el modal editable.
+              El PDF es el mismo que ve el cliente en el mail/PDF adjunto. */}
+          <a
+            href={`/api/budgets/${budget.id}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
             className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
-            title="Ver el detalle del presupuesto que se envió al cliente"
+            title="Abre el PDF del presupuesto enviado al cliente"
           >
             <FileText className="h-3 w-3" />
-            Ver presupuesto
-          </button>
+            Ver presupuesto (PDF)
+          </a>
           <button
             type="button"
             onClick={() => setFichasOpen(true)}
@@ -1098,14 +1097,8 @@ function BudgetSection({
         onOpenChange={setExtendOpen}
         onSaved={() => setExtendOpen(false)}
       />
-      {/* BudgetModal en modo edición para ver/editar el presupuesto cerrado. */}
-      <BudgetModal
-        budgetId={viewOpen ? budget.id : undefined}
-        hideTrigger
-        open={viewOpen}
-        onOpenChange={setViewOpen}
-        onSaved={() => setViewOpen(false)}
-      />
+      {/* spec v2 (27/7) · "Ver presupuesto" ahora abre el PDF directo, ya
+          no montamos el BudgetModal en modo edición desde producción. */}
       {/* Administrativa (interno) — accesible desde producción. */}
       <BudgetAdminDialog
         budgetId={adminOpen ? budget.id : null}

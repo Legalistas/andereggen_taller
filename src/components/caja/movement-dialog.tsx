@@ -47,6 +47,7 @@ const METHODS = [
 // El operador elige uno o "Otro…" para escribir libre. Al listar movimientos
 // esto permite agrupar/filtrar por rubro sin depender del texto libre.
 const EGRESO_CONCEPTS = [
+  "Sueldos",
   "Flete",
   "Aportes entidades",
   "Gastos administrativos",
@@ -67,6 +68,16 @@ const EGRESO_CONCEPTS = [
 ];
 const EGRESO_OTHER = "__otro__";
 
+/**
+ * Convierte un `YYYY-MM-DD` (del input type="date") a ISO en mediodía local.
+ * Si mandamos el string tal cual, el server hace `new Date("2026-07-24")`
+ * que lo parsea como UTC 00:00 → en AR sale un día antes.
+ */
+function localNoonISO(v: string): string {
+  const [y, m, d] = v.split("-").map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+}
+
 export default function MovementDialog({
   type,
   cashBoxId,
@@ -86,6 +97,10 @@ export default function MovementDialog({
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // spec v2 · "Es un pase" → mueve plata en la caja pero NO cuenta como
+  // ingreso/egreso contable del mes. Al guardar mandamos PASE_IN / PASE_OUT
+  // en vez de INGRESO / EGRESO.
+  const [isPase, setIsPase] = useState(false);
 
   // spec v2 · Para INGRESO opcional: vincular el cobro a un vehículo por
   // N° interno. Si se vincula y se elige una factura, el ingreso se
@@ -165,10 +180,15 @@ export default function MovementDialog({
 
   const title = type === "INGRESO" ? "Registrar ingreso" : "Registrar egreso";
   const buttonLabel = type === "INGRESO" ? "Guardar ingreso" : "Guardar egreso";
+  // Un pase nunca se puede vincular a factura (no es un cobro real).
   const willLinkToRepair =
-    type === "INGRESO" &&
-    !!linkedRepair &&
-    !!selectedInvoiceId;
+    type === "INGRESO" && !isPase && !!linkedRepair && !!selectedInvoiceId;
+  // Efectivo tipo enviado al server: PASE_IN / PASE_OUT si es pase.
+  const effectiveType = isPase
+    ? type === "INGRESO"
+      ? "PASE_IN"
+      : "PASE_OUT"
+    : type;
 
   const handleSave = async () => {
     setSaving(true);
@@ -183,7 +203,7 @@ export default function MovementDialog({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               amount: Number(amount),
-              paidAt: new Date(paidAt).toISOString(),
+              paidAt: localNoonISO(paidAt),
               method,
               reference: reference.trim() || null,
               notes: notes.trim() || concept.trim() || null,
@@ -202,13 +222,13 @@ export default function MovementDialog({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             cashBoxId: selectedBoxId,
-            type,
+            type: effectiveType,
             amount: Number(amount),
             method,
             concept,
             reference: reference.trim() || null,
             notes: notes.trim() || null,
-            paidAt,
+            paidAt: localNoonISO(paidAt),
           }),
         });
         if (!res.ok) {
@@ -254,6 +274,35 @@ export default function MovementDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {/* spec v2 · Toggle "es un pase" — el movimiento cuenta para el
+              saldo de la caja pero no como ingreso/egreso del mes. Útil para
+              retiros temporales o entregas de plata entre personas. */}
+          <label
+            className={`flex items-start gap-2 cursor-pointer rounded-md border p-2 ${
+              isPase
+                ? "border-violet-300 bg-violet-50"
+                : "border-slate-200 bg-slate-50"
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={isPase}
+              onChange={(e) => setIsPase(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+            />
+            <div className="grid gap-0.5">
+              <span className="text-sm font-medium text-slate-800">
+                {type === "INGRESO"
+                  ? "Es un pase (dinero que entra por pase)"
+                  : "Es un retiro / pase (no es un gasto real)"}
+              </span>
+              <span className="text-[11px] text-slate-500">
+                Cuenta para el saldo de la caja pero no suma como{" "}
+                {type === "INGRESO" ? "ingreso" : "egreso"} del mes.
+              </span>
+            </div>
+          </label>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1">

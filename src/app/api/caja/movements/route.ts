@@ -89,7 +89,9 @@ export async function GET(request: Request) {
         | "INGRESO"
         | "EGRESO"
         | "TRANSFER_IN"
-        | "TRANSFER_OUT",
+        | "TRANSFER_OUT"
+        | "PASE_IN"
+        | "PASE_OUT",
       amount: Number(m.amount),
       method: m.method,
       concept: m.concept,
@@ -143,9 +145,18 @@ export async function POST(request: Request) {
   if (!cashBoxId || typeof cashBoxId !== "string") {
     return NextResponse.json({ error: "Caja es obligatoria" }, { status: 400 });
   }
-  if (type !== "INGRESO" && type !== "EGRESO") {
+  // spec v2 · Aceptamos PASE_IN / PASE_OUT además de INGRESO/EGRESO. Los
+  // pases mueven plata en la caja pero no cuentan como ingreso/egreso
+  // contable del mes.
+  const ALLOWED_TYPES = new Set([
+    "INGRESO",
+    "EGRESO",
+    "PASE_IN",
+    "PASE_OUT",
+  ]);
+  if (typeof type !== "string" || !ALLOWED_TYPES.has(type)) {
     return NextResponse.json(
-      { error: "type debe ser INGRESO o EGRESO" },
+      { error: "type debe ser INGRESO, EGRESO, PASE_IN o PASE_OUT" },
       { status: 400 },
     );
   }
@@ -172,7 +183,7 @@ export async function POST(request: Request) {
   const movement = await prisma.cashMovement.create({
     data: {
       cashBoxId,
-      type,
+      type: type as "INGRESO" | "EGRESO" | "PASE_IN" | "PASE_OUT",
       amount: parsedAmount,
       method: m,
       concept: concept.trim(),

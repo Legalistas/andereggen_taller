@@ -32,6 +32,13 @@ type Props = {
   onSaved: () => void;
 };
 
+/** `YYYY-MM-DD` (input date) → ISO al mediodía LOCAL. Evita el salto de un
+ *  día por parsing UTC en el server. */
+function paidAtLocalNoon(v: string): string {
+  const [y, m, d] = v.split("-").map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+}
+
 export default function TransferDialog({ boxes, onClose, onSaved }: Props) {
   const [fromId, setFromId] = useState(boxes[0]?.id ?? "");
   const [toId, setToId] = useState(boxes[1]?.id ?? "");
@@ -55,7 +62,9 @@ export default function TransferDialog({ boxes, onClose, onSaved }: Props) {
           amount: Number(amount),
           concept: concept.trim() || undefined,
           notes: notes.trim() || undefined,
-          paidAt,
+          // Interpretamos el YYYY-MM-DD como mediodía local — evita que
+          // `new Date(str)` del server lo lea como UTC y quede un día antes.
+          paidAt: paidAtLocalNoon(paidAt),
         }),
       });
       if (!res.ok) {
