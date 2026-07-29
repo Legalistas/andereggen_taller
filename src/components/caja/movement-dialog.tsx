@@ -46,6 +46,10 @@ const METHODS = [
 // spec v2 · Catálogo de conceptos de EGRESO que el taller usa por mes.
 // El operador elige uno o "Otro…" para escribir libre. Al listar movimientos
 // esto permite agrupar/filtrar por rubro sin depender del texto libre.
+//
+// Algunos conceptos tienen sub-categoría (ej. Impuestos → Luz / Agua / …).
+// Cuando el concepto elegido tiene subs, el `concept` guardado queda como
+// `"<Concepto> · <Sub>"` para que filtrar por texto siga funcionando.
 const EGRESO_CONCEPTS = [
   "Sueldos",
   "Flete",
@@ -59,13 +63,27 @@ const EGRESO_CONCEPTS = [
   "Varios",
   "Mano de obra tercerizada",
   "Mejoras de edificio",
-  "Impuestos (luz/gas/agua/TGI/API/patentes/seguros vehículos)",
+  "Impuestos",
   "AP seguros",
   "Gastos jefes de obras",
   "Alquileres",
   "Marketing",
   "Brixar",
 ];
+
+// Subcategorías por concepto — solo Impuestos por ahora. Extensible.
+const EGRESO_SUBCATEGORIES: Record<string, string[]> = {
+  Impuestos: [
+    "Luz",
+    "Agua",
+    "Gas",
+    "TGI",
+    "API inmobiliario",
+    "Seguros AP",
+    "Seguros vehículos",
+    "Patentes",
+  ],
+};
 const EGRESO_OTHER = "__otro__";
 
 /**
@@ -91,6 +109,9 @@ export default function MovementDialog({
   // Para EGRESO usamos un select del catálogo con opción "Otro…" que
   // habilita el input libre. INGRESO usa texto libre directo.
   const [conceptChoice, setConceptChoice] = useState<string>("");
+  // spec v2 · Sub-categoría del concepto (ej. Impuestos → "Luz").
+  // Solo se muestra si `conceptChoice` tiene subs en EGRESO_SUBCATEGORIES.
+  const [conceptSub, setConceptSub] = useState<string>("");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [selectedBoxId, setSelectedBoxId] = useState(cashBoxId);
@@ -402,9 +423,18 @@ export default function MovementDialog({
                 value={conceptChoice}
                 onValueChange={(v) => {
                   setConceptChoice(v);
-                  // Si eligen un preset, ese texto es el concepto final.
-                  // Si es "Otro…", limpiamos el concepto para que escriban.
-                  setConcept(v === EGRESO_OTHER ? "" : v);
+                  setConceptSub("");
+                  if (v === EGRESO_OTHER) {
+                    // Vacío, para que escriban.
+                    setConcept("");
+                  } else if (EGRESO_SUBCATEGORIES[v]) {
+                    // Va a pedir sub — dejamos el concept vacío hasta que
+                    // se elija la subcategoría.
+                    setConcept("");
+                  } else {
+                    // Preset sin subs → ese texto es el concepto final.
+                    setConcept(v);
+                  }
                 }}
               >
                 <SelectTrigger>
@@ -419,6 +449,33 @@ export default function MovementDialog({
                   <SelectItem value={EGRESO_OTHER}>Otro…</SelectItem>
                 </SelectContent>
               </Select>
+              {EGRESO_SUBCATEGORIES[conceptChoice] && (
+                <div className="mt-1 grid gap-1">
+                  <Label className="text-[10px] text-slate-500">
+                    Subcategoría de {conceptChoice}
+                  </Label>
+                  <Select
+                    value={conceptSub}
+                    onValueChange={(v) => {
+                      setConceptSub(v);
+                      // Concept final: "Impuestos · Luz" — así el filtro por
+                      // texto sigue funcionando en el listado de caja.
+                      setConcept(`${conceptChoice} · ${v}`);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Elegí la subcategoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EGRESO_SUBCATEGORIES[conceptChoice].map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {conceptChoice === EGRESO_OTHER && (
                 <Input
                   value={concept}

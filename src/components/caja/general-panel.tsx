@@ -460,10 +460,15 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
       {/* Lista de movimientos */}
       <Card className="p-0 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-50 gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-semibold text-slate-700">
               Movimientos del mes
             </h3>
+            {selectedBoxId && (
+              <span className="text-[11px] bg-[#003b73]/10 text-[#003b73] px-2 py-0.5 rounded">
+                {boxes.find((b) => b.id === selectedBoxId)?.name ?? "Caja"}
+              </span>
+            )}
             {conceptFilter !== "all" && (
               <span className="text-[11px] bg-[#003b73]/10 text-[#003b73] px-2 py-0.5 rounded">
                 Filtrando: {conceptFilter}
@@ -474,6 +479,26 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
             {loading && (
               <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
             )}
+            {/* spec v2 · Filtro por caja — sincronizado con el toggle de
+                las cards de arriba (mismo `selectedBoxId`). Server-side. */}
+            <Select
+              value={selectedBoxId ?? "all"}
+              onValueChange={(v) =>
+                setSelectedBoxId(v === "all" ? null : v)
+              }
+            >
+              <SelectTrigger className="h-8 text-xs w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las cajas</SelectItem>
+                {boxes.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={conceptFilter} onValueChange={setConceptFilter}>
               <SelectTrigger className="h-8 text-xs w-56">
                 <SelectValue />
