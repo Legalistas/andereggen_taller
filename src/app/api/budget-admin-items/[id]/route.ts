@@ -59,7 +59,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   const updated = await prisma.budgetAdminItem.update({
     where: { id },
     data,
-    include: { quotes: true, purchase: true },
+    include: { quotes: true, purchases: true },
   });
 
   return NextResponse.json({ item: updated });

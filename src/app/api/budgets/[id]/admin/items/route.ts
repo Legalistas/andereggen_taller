@@ -61,7 +61,8 @@ export async function POST(request: Request, ctx: RouteContext) {
     },
     include: {
       quotes: true,
-      purchase: true,
+      // spec Compras v2 · Renombrado de `purchase` (1:1) a `purchases[]` (1:N).
+      purchases: true,
     },
   });
 

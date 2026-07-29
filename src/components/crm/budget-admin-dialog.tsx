@@ -464,6 +464,175 @@ function TabButton({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Autocomplete para "Agregar repuesto" — sugiere descripciones históricas
+// (más usadas primero) para reducir tipeo y unificar nomenclatura.
+// ─────────────────────────────────────────────────────────────────────────
+
+function ItemDescriptionAutocomplete({
+  value,
+  onChange,
+  onSubmit,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+}) {
+  const [suggestions, setSuggestions] = useState<
+    Array<{ description: string; uses: number }>
+  >([]);
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
+  const [loadingSug, setLoadingSug] = useState(false);
+
+  // Debounce del fetch — 200ms.
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(async () => {
+      setLoadingSug(true);
+      try {
+        const params = new URLSearchParams();
+        if (value.trim()) params.set("q", value.trim());
+        params.set("limit", "12");
+        const res = await fetch(
+          `/api/budget-admin-items/suggestions?${params.toString()}`,
+        );
+        const raw = await res.text();
+        const body = raw ? JSON.parse(raw) : {};
+        setSuggestions(body.suggestions ?? []);
+        setHighlight(-1);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setLoadingSug(false);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [value, open]);
+
+  // Cerrar al click fuera. Marcamos el wrapper con data-autocomplete para
+  // detectar el ancestor sin depender del ref en la deps (los refs no
+  // participan en los deps de un useEffect).
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest("[data-autocomplete='item-description']")) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const pick = (s: string) => {
+    onChange(s);
+    setOpen(false);
+  };
+
+  // Filtrado local: si lo tipeado no coincide con ninguna sugerencia exacta,
+  // sumamos una fila "Crear «xxx»" para dejar claro que va a crear uno nuevo.
+  const typed = value.trim();
+  const hasExactMatch = suggestions.some(
+    (s) => s.description.toLowerCase() === typed.toLowerCase(),
+  );
+  const showCreateRow = typed.length > 0 && !hasExactMatch;
+
+  return (
+    <div
+      data-autocomplete="item-description"
+      className="relative flex-1"
+    >
+      <Input
+        placeholder="Buscar o escribir descripción (ej: paragolpes delantero)"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          if (!open) setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setOpen(true);
+            setHighlight((h) =>
+              Math.min(suggestions.length - 1 + (showCreateRow ? 1 : 0), h + 1),
+            );
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setHighlight((h) => Math.max(-1, h - 1));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (open && highlight >= 0 && highlight < suggestions.length) {
+              pick(suggestions[highlight].description);
+            } else {
+              onSubmit();
+            }
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+      />
+      {open && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-20 rounded-md border border-slate-200 bg-white shadow-lg max-h-72 overflow-y-auto">
+          {loadingSug && suggestions.length === 0 && (
+            <div className="px-3 py-2 text-xs text-slate-500 italic">
+              Buscando…
+            </div>
+          )}
+          {!loadingSug && suggestions.length === 0 && !showCreateRow && (
+            <div className="px-3 py-2 text-xs text-slate-500 italic">
+              Sin sugerencias todavía. Escribí una descripción y presioná
+              Agregar.
+            </div>
+          )}
+          {suggestions.map((s, i) => {
+            const isHighlighted = i === highlight;
+            return (
+              <button
+                key={s.description}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(s.description);
+                }}
+                onMouseEnter={() => setHighlight(i)}
+                className={`w-full text-left px-3 py-1.5 text-sm flex items-center justify-between gap-3 ${
+                  isHighlighted ? "bg-slate-100" : "hover:bg-slate-50"
+                }`}
+              >
+                <span className="truncate">{s.description}</span>
+                <span className="text-[10px] text-slate-400 tabular-nums shrink-0">
+                  {s.uses}×
+                </span>
+              </button>
+            );
+          })}
+          {showCreateRow && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSubmit();
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-1.5 text-sm border-t border-slate-100 ${
+                highlight === suggestions.length
+                  ? "bg-emerald-50"
+                  : "hover:bg-emerald-50/50"
+              }`}
+            >
+              <span className="text-emerald-700 font-medium">
+                + Crear «{typed}»
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Tab: Cotizaciones — grilla comparativa
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -488,17 +657,10 @@ function CotizacionesTab({
           Agregar repuesto a reemplazar
         </Label>
         <div className="flex gap-2 mt-1.5">
-          <Input
-            placeholder="Descripción del repuesto (ej: paragolpes delantero)"
+          <ItemDescriptionAutocomplete
             value={newItemDescription}
-            onChange={(e) => setNewItemDescription(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addItem();
-              }
-            }}
-            className="flex-1"
+            onChange={setNewItemDescription}
+            onSubmit={addItem}
           />
           <Button
             onClick={addItem}
