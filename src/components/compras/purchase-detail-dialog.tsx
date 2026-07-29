@@ -95,13 +95,23 @@ export default function PurchaseDetailDialog({
   cashBoxes,
   onClose,
   onChanged,
+  onSuppliersChanged,
 }: {
   purchaseId: string;
   suppliers: SupplierLite[];
   cashBoxes: CashBoxLite[];
   onClose: () => void;
   onChanged: () => void;
+  /** Notifica al padre que se creó un proveedor nuevo (para refetchear). */
+  onSuppliersChanged?: () => void;
 }) {
+  // Suppliers locales — arrancan de la prop y se pueden extender inline al
+  // crear un proveedor nuevo desde el modal. Se sincronizan cuando la prop
+  // cambia (padre refetchea después de crear).
+  const [localSuppliers, setLocalSuppliers] = useState<SupplierLite[]>(suppliers);
+  useEffect(() => {
+    setLocalSuppliers(suppliers);
+  }, [suppliers]);
   const [purchase, setPurchase] = useState<DetailPurchase | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -339,24 +349,18 @@ export default function PurchaseDetailDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1">
                   <Label className="text-xs">Proveedor del repuesto</Label>
-                  <Select
-                    value={supplierId || "__none__"}
-                    onValueChange={(v) =>
-                      setSupplierId(v === "__none__" ? "" : v)
-                    }
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Sin definir" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Sin definir</SelectItem>
-                      {suppliers.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SupplierPicker
+                    value={supplierId}
+                    onChange={setSupplierId}
+                    suppliers={localSuppliers}
+                    onCreated={(s) => {
+                      setLocalSuppliers((prev) =>
+                        prev.some((p) => p.id === s.id) ? prev : [...prev, s],
+                      );
+                      onSuppliersChanged?.();
+                    }}
+                    disabled={saving}
+                  />
                 </div>
                 <div className="grid gap-1">
                   <Label className="text-xs">Monto del repuesto</Label>
@@ -369,24 +373,18 @@ export default function PurchaseDetailDialog({
                 </div>
                 <div className="grid gap-1">
                   <Label className="text-xs">Proveedor del flete</Label>
-                  <Select
-                    value={freightSupplierId || "__none__"}
-                    onValueChange={(v) =>
-                      setFreightSupplierId(v === "__none__" ? "" : v)
-                    }
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Sin definir" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Sin definir</SelectItem>
-                      {suppliers.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SupplierPicker
+                    value={freightSupplierId}
+                    onChange={setFreightSupplierId}
+                    suppliers={localSuppliers}
+                    onCreated={(s) => {
+                      setLocalSuppliers((prev) =>
+                        prev.some((p) => p.id === s.id) ? prev : [...prev, s],
+                      );
+                      onSuppliersChanged?.();
+                    }}
+                    disabled={saving}
+                  />
                 </div>
                 <div className="grid gap-1">
                   <Label className="text-xs">Monto del flete</Label>
@@ -655,5 +653,158 @@ function PayDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── Sub-componente: SupplierPicker ────────────────────────────────────────
+// Select del maestro de proveedores + toggle para crear uno nuevo inline.
+// Al crear, POST /api/suppliers, notifica al padre (para refetchear la lista
+// global) y auto-selecciona el nuevo. Si el nombre ya existe (409), se
+// muestra el error; el usuario puede reintentar o elegir del select.
+function SupplierPicker({
+  value,
+  onChange,
+  suppliers,
+  onCreated,
+  disabled,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  suppliers: SupplierLite[];
+  onCreated: (s: SupplierLite) => void;
+  disabled?: boolean;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const cancel = () => {
+    setCreating(false);
+    setNewName("");
+    setErr(null);
+  };
+
+  const submit = async () => {
+    const name = newName.trim();
+    if (!name) {
+      setErr("Ingresá un nombre");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/suppliers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.status === 409) {
+        // Duplicado: intentamos encontrarlo por nombre en la lista actual y
+        // auto-seleccionar. Si no está, avisamos.
+        const existing = suppliers.find(
+          (s) => s.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (existing) {
+          onChange(existing.id);
+          cancel();
+          return;
+        }
+        setErr("Ya existe un proveedor con ese nombre.");
+        return;
+      }
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        setErr(b?.error ?? `Error HTTP ${res.status}`);
+        return;
+      }
+      const d = (await res.json()) as {
+        supplier: { id: string; name: string; isActive: boolean };
+      };
+      onCreated({
+        id: d.supplier.id,
+        name: d.supplier.name,
+        isActive: d.supplier.isActive,
+      });
+      onChange(d.supplier.id);
+      cancel();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (creating) {
+    return (
+      <div className="space-y-1">
+        <div className="flex gap-1">
+          <Input
+            autoFocus
+            className="h-9"
+            placeholder="Nombre del proveedor"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+              if (e.key === "Escape") cancel();
+            }}
+            disabled={saving}
+          />
+          <Button
+            size="sm"
+            className="h-9"
+            onClick={submit}
+            disabled={saving || !newName.trim()}
+          >
+            {saving && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
+            Guardar
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-9"
+            onClick={cancel}
+            disabled={saving}
+          >
+            Cancelar
+          </Button>
+        </div>
+        {err && <div className="text-[11px] text-rose-600">{err}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-1">
+      <Select
+        value={value || "__none__"}
+        onValueChange={(v) => onChange(v === "__none__" ? "" : v)}
+        disabled={disabled}
+      >
+        <SelectTrigger className="h-9 flex-1">
+          <SelectValue placeholder="Sin definir" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">Sin definir</SelectItem>
+          {suppliers.map((s) => (
+            <SelectItem key={s.id} value={s.id}>
+              {s.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-9 px-2 text-[11px]"
+        onClick={() => setCreating(true)}
+        disabled={disabled}
+        title="Crear un proveedor nuevo y registrarlo en el maestro"
+      >
+        + Nuevo
+      </Button>
+    </div>
   );
 }

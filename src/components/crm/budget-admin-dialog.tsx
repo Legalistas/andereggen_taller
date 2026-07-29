@@ -1244,19 +1244,26 @@ function ComprasTab({
     Array<{ id: string; name: string; key: string }>
   >([]);
 
+  // Refetch de suppliers — expuesto como callback para que el detalle de
+  // compra pueda regenerar la lista después de crear un proveedor inline.
+  const refreshSuppliers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/suppliers?pageSize=0");
+      if (!res.ok) return;
+      const d = (await res.json()) as {
+        suppliers: Array<{ id: string; name: string; isActive: boolean }>;
+      };
+      setSuppliers(d.suppliers.filter((s) => s.isActive));
+    } catch (e) {
+      console.error("Error recargando suppliers", e);
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
+      await refreshSuppliers();
       try {
-        const [supRes, boxRes] = await Promise.all([
-          fetch("/api/suppliers"),
-          fetch("/api/caja/boxes"),
-        ]);
-        if (supRes.ok) {
-          const d = (await supRes.json()) as {
-            suppliers: Array<{ id: string; name: string; isActive: boolean }>;
-          };
-          setSuppliers(d.suppliers.filter((s) => s.isActive));
-        }
+        const boxRes = await fetch("/api/caja/boxes");
         if (boxRes.ok) {
           const d = (await boxRes.json()) as {
             boxes: Array<{ id: string; name: string; key: string }>;
@@ -1264,10 +1271,10 @@ function ComprasTab({
           setCashBoxes(d.boxes);
         }
       } catch (e) {
-        console.error("Error cargando suppliers/cajas", e);
+        console.error("Error cargando cajas", e);
       }
     })();
-  }, []);
+  }, [refreshSuppliers]);
 
   if (items.length === 0) {
     return (
@@ -1299,6 +1306,7 @@ function ComprasTab({
           cashBoxes={cashBoxes}
           onClose={() => setOpenId(null)}
           onChanged={onChanged}
+          onSuppliersChanged={refreshSuppliers}
         />
       )}
     </div>
