@@ -18,49 +18,51 @@ datasource db {
 // ============================================================
 
 model User {
-  id              String    @id @default(uuid())
-  name            String
-  email           String    @unique
-  emailVerified   Boolean   @default(false)
-  image           String?
+  id               String    @id @default(uuid())
+  name             String
+  email            String    @unique
+  emailVerified    Boolean   @default(false)
+  image            String?
   // Teléfono / celular — spec 8.2 (datos mínimos del actor)
-  phone           String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  phone            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   // admin plugin (field `role` del plugin mapeado a columna adminRole)
-  adminRole       String?
-  banned          Boolean?
-  banReason       String?
-  banExpires      DateTime?
+  adminRole        String?
+  banned           Boolean?
+  banReason        String?
+  banExpires       DateTime?
   // lastLoginMethod plugin
-  lastLoginMethod String?
+  lastLoginMethod  String?
   // twoFactor plugin
-  twoFactorEnabled Boolean  @default(false)
+  twoFactorEnabled Boolean   @default(false)
 
   sessions  Session[]
   accounts  Account[]
   twoFactor TwoFactor?
 
   // Domain custom role (many-to-one con Role)
-  roleId    String?
-  role      Role?     @relation(fields: [roleId], references: [id])
-  isActive  Boolean   @default(true)
+  roleId   String?
+  role     Role?   @relation(fields: [roleId], references: [id])
+  isActive Boolean @default(true)
 
   // Business relations
-  leadsCreated        Lead[]           @relation("LeadCreatedBy")
-  leadsAsInspector    Lead[]           @relation("LeadInspector")
-  leadsAsInsurance    Lead[]           @relation("LeadInsuranceAgent")
-  budgetsCreated      Budget[]         @relation("BudgetCreatedBy")
-  budgetEmailsSent    BudgetEmailLog[] @relation("BudgetEmailSentBy")
-  partMovements       PartMovement[]   @relation("PartMovementCreatedBy")
-  toolsAssigned       Tool[]           @relation("ToolAssignedTo")
-  paymentsCreated     Payment[]        @relation("PaymentCreatedBy")
-  repairsCreated      Repair[]         @relation("RepairCreatedBy")
-  repairsAssigned     Repair[]         @relation("RepairMechanic")
-  repairInvoicesCreated         RepairInvoice[]        @relation("RepairInvoiceCreatedBy")
-  repairInvoicePaymentsCreated  RepairInvoicePayment[] @relation("RepairInvoicePaymentCreatedBy")
-  cashMovementsCreated          CashMovement[]         @relation("CashMovementCreatedBy")
-  pendingCashPaymentsCreated    PendingCashPayment[]   @relation("PendingCashPaymentCreatedBy")
+  leadsCreated                 Lead[]                 @relation("LeadCreatedBy")
+  leadsAsInspector             Lead[]                 @relation("LeadInspector")
+  leadsAsInsurance             Lead[]                 @relation("LeadInsuranceAgent")
+  budgetsCreated               Budget[]               @relation("BudgetCreatedBy")
+  budgetEmailsSent             BudgetEmailLog[]       @relation("BudgetEmailSentBy")
+  partMovements                PartMovement[]         @relation("PartMovementCreatedBy")
+  toolsAssigned                Tool[]                 @relation("ToolAssignedTo")
+  paymentsCreated              Payment[]              @relation("PaymentCreatedBy")
+  repairsCreated               Repair[]               @relation("RepairCreatedBy")
+  repairsAssigned              Repair[]               @relation("RepairMechanic")
+  repairInvoicesCreated        RepairInvoice[]        @relation("RepairInvoiceCreatedBy")
+  repairInvoicePaymentsCreated RepairInvoicePayment[] @relation("RepairInvoicePaymentCreatedBy")
+  cashMovementsCreated         CashMovement[]         @relation("CashMovementCreatedBy")
+  pendingCashPaymentsCreated   PendingCashPayment[]   @relation("PendingCashPaymentCreatedBy")
+  monthlyKpiEntriesCreated     MonthlyKpiEntry[]      @relation("MonthlyKpiEntryCreatedBy")
+  purchasesCreated             Purchase[]             @relation("PurchaseCreatedBy")
 }
 
 model Session {
@@ -230,15 +232,23 @@ model CustomerVehicle {
   year             String // Año
   domain           String // Dominio o patente
   chassis          String? // Nº de chasis
-  /** Color del vehículo — opcional, se completa cuando entra al taller. Sale en la Ficha Técnica. */
+  /**
+   * Color del vehículo — opcional, se completa cuando entra al taller. Sale en la Ficha Técnica.
+   */
   color            String?
-  /** Pintura perlada tricapa — afecta el costo de la mano de obra de pintura */
+  /**
+   * Pintura perlada tricapa — afecta el costo de la mano de obra de pintura
+   */
   perladoTricapa   Boolean  @default(false)
   secure           String // Seguro (compañía del cliente)
   thirdPartySecure String // Seguro terceros (compañía del tercero)
-  /** "todo_riesgo" | "terceros" — tipo de cobertura del seguro propio */
+  /**
+   * "todo_riesgo" | "terceros" — tipo de cobertura del seguro propio
+   */
   coverageType     String?
-  /** Importe de franquicia, solo aplica cuando coverageType == "todo_riesgo" */
+  /**
+   * Importe de franquicia, solo aplica cuando coverageType == "todo_riesgo"
+   */
   franchise        Decimal? @db.Decimal(14, 2)
 
   // Relación
@@ -285,17 +295,19 @@ enum InsuranceResponsibility {
 }
 
 model Lead {
-  id          String          @id @default(uuid())
-  customerId  String
-  vehicleId   String?
-  status      LeadStatus      @default(solicitud)
-  notes       String?         @db.Text
-  lostReason  LeadLostReason?
-  lostNotes   String?         @db.Text
-  source      String? // web, whatsapp, manual, etc.
-  /** Path de la carpeta en el bucket S3/MinIO donde el cliente subió fotos desde el form web (ej: "andereggen/juan-perez"). Se usa en el panel del presupuesto para listar las imágenes. */
-  photosFolder String?        @db.VarChar(255)
-  createdById String?
+  id           String          @id @default(uuid())
+  customerId   String
+  vehicleId    String?
+  status       LeadStatus      @default(solicitud)
+  notes        String?         @db.Text
+  lostReason   LeadLostReason?
+  lostNotes    String?         @db.Text
+  source       String? // web, whatsapp, manual, etc.
+  /**
+   * Path de la carpeta en el bucket S3/MinIO donde el cliente subió fotos desde el form web (ej: "andereggen/juan-perez"). Se usa en el panel del presupuesto para listar las imágenes.
+   */
+  photosFolder String?         @db.VarChar(255)
+  createdById  String?
 
   // Actores externos de la cotización (spec 4.3 + 8.1)
   inspectorId        String? // User con rol "inspector"
@@ -347,48 +359,62 @@ enum BudgetStatus {
 model Budget {
   id     String       @id @default(uuid())
   leadId String
-  /** Correlativo global del presupuesto. Las ampliaciones HEREDAN este
-   *  número del padre y se diferencian por `extensionSuffix`. NO es único:
-   *  el admin puede repetir el número manualmente si lo necesita (p. ej.,
-   *  para alinear con numeración externa del seguro). La identidad real
-   *  del registro es el `id` (uuid); el par (number, extensionSuffix) es
-   *  solo display. */
+  /**
+   * Correlativo global del presupuesto. Las ampliaciones HEREDAN este
+   * número del padre y se diferencian por `extensionSuffix`. NO es único:
+   * el admin puede repetir el número manualmente si lo necesita (p. ej.,
+   * para alinear con numeración externa del seguro). La identidad real
+   * del registro es el `id` (uuid); el par (number, extensionSuffix) es
+   * solo display.
+   */
   number Int
   status BudgetStatus @default(draft)
 
-  /** 0 = presupuesto original; 1, 2, 3… = ampliaciones (A1, A2…) creadas
-   *  durante la reparación cuando aparece trabajo extra que el seguro
-   *  no había contemplado. */
-  extensionSuffix Int     @default(0)
-  /** FK al presupuesto padre del que esta fila es ampliación. null si es
-   *  el original. onDelete Cascade: si borran el original, caen las
-   *  ampliaciones también. */
+  /**
+   * 0 = presupuesto original; 1, 2, 3… = ampliaciones (A1, A2…) creadas
+   * durante la reparación cuando aparece trabajo extra que el seguro
+   * no había contemplado.
+   */
+  extensionSuffix Int             @default(0)
+  /**
+   * FK al presupuesto padre del que esta fila es ampliación. null si es
+   * el original. onDelete Cascade: si borran el original, caen las
+   * ampliaciones también.
+   */
   parentBudgetId  String?
-  parentBudget    Budget?  @relation("BudgetExtensions", fields: [parentBudgetId], references: [id], onDelete: Cascade)
-  extensions      Budget[] @relation("BudgetExtensions")
-  /** Quién paga la ampliación cuando se acepta — define a qué bucket de
-   *  importes aprobados del repair se suma el grandTotal. Solo aplica si
-   *  extensionSuffix > 0. */
+  parentBudget    Budget?         @relation("BudgetExtensions", fields: [parentBudgetId], references: [id], onDelete: Cascade)
+  extensions      Budget[]        @relation("BudgetExtensions")
+  /**
+   * Quién paga la ampliación cuando se acepta — define a qué bucket de
+   * importes aprobados del repair se suma el grandTotal. Solo aplica si
+   * extensionSuffix > 0.
+   */
   extensionPayer  ExtensionPayer?
 
   // Snapshot de cliente/vehículo al emitir (inmutable para PDF histórico)
-  customerName     String
-  customerEmail    String
-  customerPhone    String
-  customerDni      String?
-  customerAddress  String?
-  customerCity     String?
-  vehicleBrand     String
-  vehicleModel     String
-  vehicleYear      String
-  vehicleDomain    String
-  vehicleChassis   String?
-  /** Pintura perlada tricapa — snapshot al momento del presupuesto */
-  vehiclePerladoTricapa Boolean @default(false)
-  vehicleInsurance String?
-  /** Tipo de cobertura: "todo_riesgo" | "terceros" — snapshot al momento del presupuesto */
+  customerName          String
+  customerEmail         String
+  customerPhone         String
+  customerDni           String?
+  customerAddress       String?
+  customerCity          String?
+  vehicleBrand          String
+  vehicleModel          String
+  vehicleYear           String
+  vehicleDomain         String
+  vehicleChassis        String?
+  /**
+   * Pintura perlada tricapa — snapshot al momento del presupuesto
+   */
+  vehiclePerladoTricapa Boolean  @default(false)
+  vehicleInsurance      String?
+  /**
+   * Tipo de cobertura: "todo_riesgo" | "terceros" — snapshot al momento del presupuesto
+   */
   insuranceCoverageType String?
-  /** Franquicia en pesos (solo si todo_riesgo) — snapshot */
+  /**
+   * Franquicia en pesos (solo si todo_riesgo) — snapshot
+   */
   insuranceFranchise    Decimal? @db.Decimal(14, 2)
 
   // Totales (materializados; se recalculan al guardar)
@@ -404,7 +430,9 @@ model Budget {
   deliveryDays     Int     @default(20)
   paymentCondition String  @default("Contado contra entrega")
   observations     String? @db.Text
-  /** Aclaración libre sobre los repuestos que se proveen (sale en el PDF junto a la tabla) */
+  /**
+   * Aclaración libre sobre los repuestos que se proveen (sale en el PDF junto a la tabla)
+   */
   partsNote        String? @db.Text
 
   sentAt     DateTime?
@@ -430,7 +458,7 @@ model Budget {
   adminItems    BudgetAdminItem[]
   repair        Repair?           @relation("BudgetRepair")
   createdById   String?
-  createdBy     User?            @relation("BudgetCreatedBy", fields: [createdById], references: [id])
+  createdBy     User?             @relation("BudgetCreatedBy", fields: [createdById], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -456,11 +484,10 @@ enum ExtensionPayer {
  * Pestaña "Administrativa" del presupuesto — uso 100% interno (no sale en PDF).
  * Reemplaza la pestaña Excel donde antes se cargaban cotizaciones de proveedores
  * (pre-cierre) y compras efectivamente realizadas (durante producción).
- *
  * Estructura:
- *   BudgetAdminItem  — un repuesto a cotizar (descripción + fotos como URLs)
- *      ├── BudgetAdminQuote (N)   — cotizaciones de N proveedores para ese repuesto
- *      └── BudgetAdminPurchase (0..1) — la compra final realmente hecha
+ * BudgetAdminItem  — un repuesto a cotizar (descripción + fotos como URLs)
+ * ├── BudgetAdminQuote (N)   — cotizaciones de N proveedores para ese repuesto
+ * └── BudgetAdminPurchase (0..1) — la compra final realmente hecha
  */
 model BudgetAdminItem {
   id          String   @id @default(uuid())
@@ -469,22 +496,28 @@ model BudgetAdminItem {
   order       Int      @default(0)
   description String   @db.Text
   notes       String?  @db.Text
-  /** URLs de imágenes (Drive, etc.) — el cliente pega links, no hay upload aún */
+  /**
+   * URLs de imágenes (Drive, etc.) — el cliente pega links, no hay upload aún
+   */
   photos      String[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  quotes   BudgetAdminQuote[]
-  purchase BudgetAdminPurchase?
+  quotes    BudgetAdminQuote[]
+  /**
+   * spec Compras v2 · Puede haber N Purchases por item (devoluciones +
+   * recompras). El "activa" es el último no ARCHIVADA.
+   */
+  purchases Purchase[]
 
   @@index([budgetId])
 }
 
 /**
  * Categoría de la cotización: define en qué columna del comparativo aparece.
- *  - OFICIAL: precio en concesionaria oficial de la marca.
- *  - ALTERNATIVO: repuesto alternativo (proveedor independiente).
- *  - DESARMADERO: repuesto usado de desarmadero.
+ * - OFICIAL: precio en concesionaria oficial de la marca.
+ * - ALTERNATIVO: repuesto alternativo (proveedor independiente).
+ * - DESARMADERO: repuesto usado de desarmadero.
  * Un mismo repuesto puede tener varias cotizaciones por categoría.
  */
 enum QuoteCategory {
@@ -497,38 +530,167 @@ model BudgetAdminQuote {
   id           String          @id @default(uuid())
   itemId       String
   item         BudgetAdminItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  /** Bucket de la grilla comparativa (concesionaria/alternativo/desarmadero). */
+  /**
+   * Bucket de la grilla comparativa (concesionaria/alternativo/desarmadero).
+   */
   category     QuoteCategory   @default(OFICIAL)
+  /**
+   * spec Compras v2 · Proveedor del catálogo (opcional). `supplierName` se
+   * mantiene como snapshot para históricos si el Supplier se borra/renombra.
+   */
+  supplierId   String?
+  supplier     Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   supplierName String
   price        Decimal         @db.Decimal(14, 2)
-  /** Código de repuesto que da el proveedor (puede repetirse entre proveedores) */
+  /**
+   * Código de repuesto que da el proveedor (puede repetirse entre proveedores)
+   */
   partCode     String?
-  /** Descuento en porcentaje 0–100 — el neto se calcula price * (1 - discount/100) */
+  /**
+   * Descuento en porcentaje 0–100 — el neto se calcula price * (1 - discount/100)
+   */
   discount     Decimal?        @db.Decimal(5, 2)
-  /** Disponibilidad declarada por el proveedor (texto libre: "En stock", "3 días", etc.) */
+  /**
+   * Disponibilidad declarada por el proveedor (texto libre: "En stock", "3 días", etc.)
+   */
   availability String?
-  /** URLs de fotos asociadas a esta cotización (Drive, etc.) */
+  /**
+   * URLs de fotos asociadas a esta cotización (Drive, etc.)
+   */
   photos       String[]
   notes        String?         @db.Text
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
+  /**
+   * Purchases que eligieron esta cotización (0..N si hubo recompras).
+   */
+  purchases Purchase[] @relation("PurchaseChosenQuote")
+
   @@index([itemId])
   @@index([itemId, category])
+  @@index([supplierId])
 }
 
-model BudgetAdminPurchase {
-  id           String          @id @default(uuid())
-  /** unique → 0..1 por item */
-  itemId       String          @unique
-  item         BudgetAdminItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  supplierName String
-  amount       Decimal         @db.Decimal(14, 2)
-  purchasedAt  DateTime        @default(now())
-  notes        String?         @db.Text
-  receiptUrl   String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+// ─────────────────────────────────────────────────────────────
+// Módulo Compras v2 — spec jul '26
+// ─────────────────────────────────────────────────────────────
+// Máquina de 7 estados para gestionar cada compra desde la cotización hasta
+// el archivo. Cada `BudgetAdminItem` puede tener N Purchases (devoluciones
+// + recompras). La "activa" es la más reciente que no esté ARCHIVADA.
+//
+// El brief pide que la compra pueda RETROCEDER de estado (ej. llegó dañada
+// y hay que volver a "En camino"). No hay guardias en el enum — todas las
+// transiciones son posibles desde la UI.
+
+enum PurchaseStatus {
+  COTIZAR // Se cargan repuestos y cotizaciones — sin decisión aún
+  DECIDIR // Cotizaciones listas, falta elegir cuál comprar
+  COMPRAR // Cotización elegida, hay que gestionar la compra con el proveedor
+  EN_CAMINO // Compra efectuada, pieza en tránsito
+  EN_TALLER // Repuesto llegó (setea receivedAt → dispara Repair.partsReceivedAt)
+  PENDIENTE_PAGO // Llegó pero todavía no se pagó (repuesto y/o flete)
+  ARCHIVADA // Compra cerrada
+}
+
+/**
+ * Catálogo único de proveedores — spec Compras v2.
+ * Usado por cotizaciones y por fletes (sin separar por tipo). Nullable en
+ * las relaciones para no perder registros históricos si un proveedor se borra.
+ */
+model Supplier {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?  @db.Text
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quotes           BudgetAdminQuote[]
+  purchases        Purchase[]         @relation("PurchasePartsSupplier")
+  freightPurchases Purchase[]         @relation("PurchaseFreightSupplier")
+
+  @@index([isActive])
+}
+
+model Purchase {
+  id     String          @id @default(uuid())
+  itemId String
+  item   BudgetAdminItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  /**
+   * spec Compras v2 · N° de compra propio, formato
+   * `<budget.number|"INT-"+internalNumber>.<seq>` (ej. 4056.1, 4056.2,
+   * INT-192.1). Único en toda la app para poder linkear desde caja.
+   */
+  number String @unique
+
+  status PurchaseStatus @default(COTIZAR)
+
+  /**
+   * Cotización elegida (opcional al inicio, obligatoria a partir de COMPRAR).
+   * Al tildar el checkbox en "Decidir", se materializa acá.
+   */
+  chosenQuoteId String?
+  chosenQuote   BudgetAdminQuote? @relation("PurchaseChosenQuote", fields: [chosenQuoteId], references: [id], onDelete: SetNull)
+
+  /**
+   * Snapshot de categoría/proveedor por si la quote se borra o cambia.
+   */
+  category     QuoteCategory?
+  supplierId   String?
+  supplier     Supplier?      @relation("PurchasePartsSupplier", fields: [supplierId], references: [id], onDelete: SetNull)
+  supplierName String?
+
+  /**
+   * Monto real pagado (puede diferir de la cotización elegida).
+   */
+  amount Decimal @default(0) @db.Decimal(14, 2)
+
+  /**
+   * Flete manual por producto. Si un envío trae varios repuestos, se
+   * prorratea manualmente cargando el importe correspondiente en cada uno.
+   */
+  freightAmount       Decimal   @default(0) @db.Decimal(14, 2)
+  freightSupplierId   String?
+  freightSupplier     Supplier? @relation("PurchaseFreightSupplier", fields: [freightSupplierId], references: [id], onDelete: SetNull)
+  freightSupplierName String?
+
+  /**
+   * Fechas clave del ciclo. `receivedAt` dispara notif de "repuestos
+   * recibidos" y setea `Repair.partsReceivedAt` si aún no estaba.
+   */
+  purchasedAt DateTime?
+  receivedAt  DateTime?
+  archivedAt  DateTime?
+
+  /**
+   * Pago separado por concepto. Cada uno se vincula al CashMovement EGRESO
+   * que se genera cuando se marca como pagado desde Caja.
+   */
+  paidPartsAt           DateTime?
+  paidPartsMovementId   String?       @unique
+  paidPartsMovement     CashMovement? @relation("PurchasePartsPayment", fields: [paidPartsMovementId], references: [id], onDelete: SetNull)
+  paidFreightAt         DateTime?
+  paidFreightMovementId String?       @unique
+  paidFreightMovement   CashMovement? @relation("PurchaseFreightPayment", fields: [paidFreightMovementId], references: [id], onDelete: SetNull)
+
+  receiptUrl String?
+  notes      String? @db.Text
+
+  createdById String?
+  createdBy   User?    @relation("PurchaseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([itemId])
+  @@index([status])
+  @@index([supplierId])
+  @@index([freightSupplierId])
+  @@index([purchasedAt])
 }
 
 /**
@@ -546,7 +708,9 @@ model BudgetEmailLog {
   recipients  Json
   subject     String
   messageBody String?  @db.Text
-  /** "sent" | "failed" */
+  /**
+   * "sent" | "failed"
+   */
   status      String   @default("sent")
   errorMsg    String?  @db.Text
   messageId   String? // nodemailer messageId para tracking
@@ -898,21 +1062,16 @@ model VehicleModel {
  * src/components/production/production-kanban.tsx COLUMNS):
  * 1. turno_asignado, 2. pendientes_repuestos, 3. chapa, 4. pintura,
  * 5. calidad, 6. pendientes_cobro, 7. experiencia_cliente, 8. archivado
- *
  * Cuando se carga la fecha de ingreso del vehículo (desde el form de la
  * card), el status pasa automáticamente de turno_asignado a chapa y se
  * dispara la notificación "vehicle_entered" al cliente.
- *
  * "pendientes_repuestos" representa el paso intermedio entre el ingreso
  * del vehículo y el comienzo de la chapa: el vehículo está en taller
  * esperando que lleguen los repuestos pedidos.
- *
  * "pendientes_cobro" es la etapa después de calidad: el trabajo está
  * terminado y falta cobrar para que el cliente pueda retirar el vehículo.
- *
  * "experiencia_cliente" es la última etapa antes del archivo: una vez
  * cobrado y entregado, se le pide al cliente que califique el servicio.
- *
  * NOTA: el orden de los valores en el enum NO coincide con el orden
  * visual — Postgres mantiene el orden histórico en el que se agregaron.
  * "ingresado" se mantiene aquí como deprecated (no se usa más en el
@@ -939,26 +1098,28 @@ enum RepairStatus {
 
 /**
  * Orden de reparación. Puede originarse:
- *  - Desde un Budget aceptado (leadId + budgetId presentes).
- *  - Directa desde el módulo de Producción (botón "Nueva Reparación" —
- *    ambos en null, directCreation=true).
+ * - Desde un Budget aceptado (leadId + budgetId presentes).
+ * - Directa desde el módulo de Producción (botón "Nueva Reparación" —
+ * ambos en null, directCreation=true).
  * Siempre tiene snapshot de cliente/vehículo (como Budget) para integridad
  * histórica aunque Customer/CustomerVehicle se editen después.
  */
 model Repair {
-  id     String       @id @default(uuid())
-  status RepairStatus @default(turno_asignado)
-  /** Nº interno del taller — correlativo único, auto-asignado al crear
-   *  (max+1), editable después. Se usa en Ficha Técnica y para
-   *  identificar la reparación visualmente. Nullable para repairs
-   *  importados antes de que existiera este campo. */
-  internalNumber Int? @unique
+  id             String       @id @default(uuid())
+  status         RepairStatus @default(turno_asignado)
+  /**
+   * Nº interno del taller — correlativo único, auto-asignado al crear
+   * (max+1), editable después. Se usa en Ficha Técnica y para
+   * identificar la reparación visualmente. Nullable para repairs
+   * importados antes de que existiera este campo.
+   */
+  internalNumber Int?         @unique
 
   // Origen (opcional — null si fue Nueva Reparación directa)
-  leadId    String?
-  lead      Lead?    @relation("LeadRepairs", fields: [leadId], references: [id], onDelete: SetNull)
-  budgetId  String?  @unique
-  budget    Budget?  @relation("BudgetRepair", fields: [budgetId], references: [id], onDelete: SetNull)
+  leadId   String?
+  lead     Lead?   @relation("LeadRepairs", fields: [leadId], references: [id], onDelete: SetNull)
+  budgetId String? @unique
+  budget   Budget? @relation("BudgetRepair", fields: [budgetId], references: [id], onDelete: SetNull)
 
   // Flag de creación directa (sin presupuesto)
   directCreation Boolean @default(false)
@@ -982,18 +1143,18 @@ model Repair {
   reason String? @db.Text
 
   // Asignación y fechas clave por etapa
-  assignedMechanicId String?
-  assignedMechanic   User?     @relation("RepairMechanic", fields: [assignedMechanicId], references: [id], onDelete: SetNull)
-  scheduledAt        DateTime? // turno asignado
-  enteredAt          DateTime? // cuando físicamente ingresa al taller
-  partsReceivedAt    DateTime? // col. "Repuestos Recibidos"
+  assignedMechanicId  String?
+  assignedMechanic    User?     @relation("RepairMechanic", fields: [assignedMechanicId], references: [id], onDelete: SetNull)
+  scheduledAt         DateTime? // turno asignado
+  enteredAt           DateTime? // cuando físicamente ingresa al taller
+  partsReceivedAt     DateTime? // col. "Repuestos Recibidos"
   estimatedDeliveryAt DateTime?
-  deliveredAt        DateTime?
-  archivedAt         DateTime?
+  deliveredAt         DateTime?
+  archivedAt          DateTime?
   // spec 2.3 v2 · El cliente pidió que lo lleven a su domicilio/trabajo al
   // dejar el vehículo. Se muestra como checkbox en el calendario y en la
   // ficha del repair. Es sobre la persona, no el vehículo.
-  needsTransport     Boolean @default(false)
+  needsTransport      Boolean   @default(false)
 
   // Compañía de seguro que paga — snapshot al crear el repair. Visible en
   // la card del kanban mientras el auto está en taller. Texto libre porque
@@ -1002,11 +1163,11 @@ model Repair {
 
   // Importes aprobados por el seguro / acordados con el cliente. Pueden
   // diferir del grandTotal del presupuesto cuando el seguro recorta.
-  approvedInsurance  Decimal?  @db.Decimal(14, 2)
-  approvedFranchise  Decimal?  @db.Decimal(14, 2)
-  approvedCustomer   Decimal?  @db.Decimal(14, 2)
-  approvedAt         DateTime?
-  approvedNotes      String?   @db.Text
+  approvedInsurance Decimal?  @db.Decimal(14, 2)
+  approvedFranchise Decimal?  @db.Decimal(14, 2)
+  approvedCustomer  Decimal?  @db.Decimal(14, 2)
+  approvedAt        DateTime?
+  approvedNotes     String?   @db.Text
 
   // Facturación + cobros (varias facturas por reparación: cliente/seguro
   // separadas, cada una con sus pagos parciales).
@@ -1041,13 +1202,19 @@ model ServiceRating {
   id          String    @id @default(uuid())
   repairId    String    @unique
   repair      Repair    @relation(fields: [repairId], references: [id], onDelete: Cascade)
-  /** Token opaco único — va en la URL pública /reviews/[token]. */
+  /**
+   * Token opaco único — va en la URL pública /reviews/[token].
+   */
   token       String    @unique
-  /** null hasta que el cliente responde. Al responder se setea 1-5. */
+  /**
+   * null hasta que el cliente responde. Al responder se setea 1-5.
+   */
   stars       Int?
   comment     String?   @db.Text
   respondedAt DateTime?
-  /** IP de quien respondió (auditoría mínima). */
+  /**
+   * IP de quien respondió (auditoría mínima).
+   */
   respondedIp String?
 
   createdAt DateTime @default(now())
@@ -1110,20 +1277,26 @@ model RepairInvoice {
   id            String           @id @default(uuid())
   repairId      String
   repair        Repair           @relation(fields: [repairId], references: [id], onDelete: Cascade)
-  /** Número/identificador de la factura (texto libre: "FACT 5187", "A-001-0042"). */
+  /**
+   * Número/identificador de la factura (texto libre: "FACT 5187", "A-001-0042").
+   */
   number        String
   issuedAt      DateTime
   recipient     InvoiceRecipient @default(CLIENTE)
-  /** Nombre legible del destinatario — la compañía de seguro o nombre del cliente. */
+  /**
+   * Nombre legible del destinatario — la compañía de seguro o nombre del cliente.
+   */
   recipientName String?
-  /** Importe total facturado (sin descontar pagos). */
+  /**
+   * Importe total facturado (sin descontar pagos).
+   */
   amount        Decimal          @db.Decimal(14, 2)
   notes         String?          @db.Text
 
-  payments      RepairInvoicePayment[]
+  payments RepairInvoicePayment[]
 
   createdById String?
-  createdBy   User?    @relation("RepairInvoiceCreatedBy", fields: [createdById], references: [id])
+  createdBy   User?   @relation("RepairInvoiceCreatedBy", fields: [createdById], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1133,22 +1306,22 @@ model RepairInvoice {
 }
 
 model RepairInvoicePayment {
-  id          String        @id @default(uuid())
-  invoiceId   String
-  invoice     RepairInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  amount      Decimal       @db.Decimal(14, 2)
-  paidAt      DateTime      @default(now())
-  method      PaymentMethod @default(EFECTIVO)
-  reference   String?
-  notes       String?       @db.Text
+  id        String        @id @default(uuid())
+  invoiceId String
+  invoice   RepairInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount    Decimal       @db.Decimal(14, 2)
+  paidAt    DateTime      @default(now())
+  method    PaymentMethod @default(EFECTIVO)
+  reference String?
+  notes     String?       @db.Text
 
   // spec 4.2 v2 · Caja destino del cobro. Nullable para cobros históricos
   // y para cobros en los que el operador no eligió caja (quedan sin imputar).
-  cashBoxId   String?
-  cashBox     CashBox? @relation(fields: [cashBoxId], references: [id], onDelete: SetNull)
+  cashBoxId String?
+  cashBox   CashBox? @relation(fields: [cashBoxId], references: [id], onDelete: SetNull)
 
   createdById String?
-  createdBy   User?    @relation("RepairInvoicePaymentCreatedBy", fields: [createdById], references: [id])
+  createdBy   User?   @relation("RepairInvoicePaymentCreatedBy", fields: [createdById], references: [id])
 
   createdAt DateTime @default(now())
 
@@ -1180,15 +1353,19 @@ enum CashMovementType {
 }
 
 model CashBox {
-  id          String  @id @default(uuid())
-  /** Slug estable — se seedea con "caja_1", "caja_2", "caja_maria",
-   *  "caja_alfredo", "caja_lucila". Se usa para features que necesitan
-   *  identificar una caja específica sin depender del UUID. */
-  key         String  @unique
+  id          String    @id @default(uuid())
+  /**
+   * Slug estable — se seedea con "caja_1", "caja_2", "caja_maria",
+   * "caja_alfredo", "caja_lucila". Se usa para features que necesitan
+   * identificar una caja específica sin depender del UUID.
+   */
+  key         String    @unique
   name        String
-  description String? @db.Text
-  /** Orden de despliegue en la UI. */
-  sortOrder   Int     @default(0)
+  description String?   @db.Text
+  /**
+   * Orden de despliegue en la UI.
+   */
+  sortOrder   Int       @default(0)
   archivedAt  DateTime?
 
   movements       CashMovement[]
@@ -1208,21 +1385,34 @@ model CashMovement {
   type      CashMovementType
   amount    Decimal          @db.Decimal(14, 2)
   method    PaymentMethod    @default(EFECTIVO)
-  /** Descripción libre — "Alquiler local", "Salario María", "Transferencia
-   *  a Caja 1", etc. Obligatorio para poder auditar el movimiento. */
+  /**
+   * Descripción libre — "Alquiler local", "Salario María", "Transferencia
+   * a Caja 1", etc. Obligatorio para poder auditar el movimiento.
+   */
   concept   String
   reference String?
   notes     String?          @db.Text
 
-  /** Para transferencias entre cajas: los dos rows (TRANSFER_OUT origen y
-   *  TRANSFER_IN destino) comparten este UUID. Permite mostrar la
-   *  contraparte y evitar contar dos veces al agregar totales globales. */
+  /**
+   * Para transferencias entre cajas: los dos rows (TRANSFER_OUT origen y
+   * TRANSFER_IN destino) comparten este UUID. Permite mostrar la
+   * contraparte y evitar contar dos veces al agregar totales globales.
+   */
   transferGroupId String?
 
   paidAt      DateTime @default(now())
   createdById String?
   createdBy   User?    @relation("CashMovementCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
+
+  /**
+   * spec Compras v2 · Un CashMovement EGRESO puede haber sido generado
+   * automáticamente al marcar como pagada la parte de repuestos o de flete
+   * de una Purchase. Ambas relaciones son inversas de Purchase (`@unique`
+   * en el lado Purchase).
+   */
+  purchasePartsPayment   Purchase? @relation("PurchasePartsPayment")
+  purchaseFreightPayment Purchase? @relation("PurchaseFreightPayment")
 
   @@index([cashBoxId])
   @@index([paidAt])
@@ -1241,24 +1431,28 @@ enum PendingCashPaymentStatus {
 }
 
 model PendingCashPayment {
-  id        String                    @id @default(uuid())
+  id        String                   @id @default(uuid())
   cashBoxId String
-  cashBox   CashBox                   @relation(fields: [cashBoxId], references: [id], onDelete: Cascade)
-  amount    Decimal                   @db.Decimal(14, 2)
-  method    PaymentMethod             @default(EFECTIVO)
+  cashBox   CashBox                  @relation(fields: [cashBoxId], references: [id], onDelete: Cascade)
+  amount    Decimal                  @db.Decimal(14, 2)
+  method    PaymentMethod            @default(EFECTIVO)
   concept   String
   reference String?
-  notes     String?                   @db.Text
-  /** Fecha estimada de pago (opcional — para ordenar por lo más próximo). */
+  notes     String?                  @db.Text
+  /**
+   * Fecha estimada de pago (opcional — para ordenar por lo más próximo).
+   */
   dueDate   DateTime?
-  status    PendingCashPaymentStatus  @default(PENDIENTE)
+  status    PendingCashPaymentStatus @default(PENDIENTE)
 
-  /** Cuándo se materializó y a qué CashMovement se ligó. */
-  paidAt          DateTime?
-  paidByMovementId String? @unique
+  /**
+   * Cuándo se materializó y a qué CashMovement se ligó.
+   */
+  paidAt           DateTime?
+  paidByMovementId String?   @unique
 
   createdById String?
-  createdBy   User?    @relation("PendingCashPaymentCreatedBy", fields: [createdById], references: [id])
+  createdBy   User?   @relation("PendingCashPaymentCreatedBy", fields: [createdById], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1266,4 +1460,37 @@ model PendingCashPayment {
   @@index([cashBoxId])
   @@index([status])
   @@index([dueDate])
+}
+
+// spec KPIs jul '26 · Valores MANUALES del tablero de KPIs.
+// La regla general es que TODO KPI calculable desde el back office debe ser
+// Automático (se calcula on-the-fly desde Lead/Repair/Cash*). Este modelo
+// existe solo para los datos que no salen del sistema — por ahora solo
+// "reclamos" del mes, pero queda genérico por si suman más manuales.
+//
+// Un valor por (metricKey, year, month). Al editar se hace upsert.
+model MonthlyKpiEntry {
+  id        String  @id @default(uuid())
+  /**
+   * Clave estable del catálogo — ej: "produccion.reclamos". Se valida
+   * contra `MANUAL_KPI_CATALOG` en runtime al guardar.
+   */
+  metricKey String  @db.VarChar(80)
+  year      Int
+  /**
+   * 1-12 (enero = 1).
+   */
+  month     Int
+  value     Decimal @db.Decimal(14, 2)
+  notes     String? @db.Text
+
+  createdById String?
+  createdBy   User?   @relation("MonthlyKpiEntryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([metricKey, year, month])
+  @@index([metricKey])
+  @@index([year, month])
 }

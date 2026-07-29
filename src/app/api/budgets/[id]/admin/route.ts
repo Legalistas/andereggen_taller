@@ -35,7 +35,11 @@ export async function GET(request: Request, ctx: RouteContext) {
     orderBy: { order: "asc" },
     include: {
       quotes: { orderBy: { createdAt: "asc" } },
-      purchase: true,
+      // spec Compras v2 · Ahora hay N Purchases por ítem (con status).
+      // Devolvemos todo — la UI vieja seguía leyendo `item.purchase` y
+      // ahora obtiene `item.purchases[]`. En FASE 5 se refactorea el
+      // BudgetAdminDialog para consumir la nueva shape.
+      purchases: { orderBy: { createdAt: "desc" } },
     },
   });
 

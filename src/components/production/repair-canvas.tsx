@@ -394,22 +394,30 @@ export function RepairCanvas({
             </SheetHeader>
 
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+              {/* spec Compras v2 · Ítem #15: orden fijo de bloques + eliminar
+                  "Mecánico asignado". El orden lo pide el brief:
+                    1. N° interno
+                    2. Fechas clave
+                    3. Presupuesto vinculado
+                    4. Importes aprobados
+                    5. Facturación y cobros
+                    6. Cliente y vehículo
+                    7. Compañía de seguros
+                    Encuesta (si existe)  ← queda antes de Notas
+                    Último. Notas internas */}
               <InternalNumberSection
                 value={repair.internalNumber}
                 onSave={(n) => patchRepair({ internalNumber: n })}
               />
 
-              <MechanicSection
-                current={repair.assignedMechanic}
-                onPick={(userId) => patchRepair({ assignedMechanicId: userId })}
-              />
-
               <DatesSection repair={repair} onPatch={patchRepair} />
 
-              <InsuranceSection
-                value={repair.insuranceCompany}
-                onSave={(v) => patchRepair({ insuranceCompany: v })}
-              />
+              {repair.budget && (
+                <BudgetSection
+                  budget={repair.budget}
+                  leadId={repair.lead?.id}
+                />
+              )}
 
               <ApprovalSection repair={repair} onPatch={patchRepair} />
 
@@ -426,23 +434,21 @@ export function RepairCanvas({
                 }
               />
 
-              {repair.budget && (
-                <BudgetSection
-                  budget={repair.budget}
-                  leadId={repair.lead?.id}
-                />
-              )}
-
               <CustomerVehicleSection repair={repair} />
 
-              <NotesSection
-                value={repair.notes ?? ""}
-                onSave={(notes) => patchRepair({ notes: notes || null })}
+              <InsuranceSection
+                value={repair.insuranceCompany}
+                onSave={(v) => patchRepair({ insuranceCompany: v })}
               />
 
               {repair.serviceRating && (
                 <RatingSection rating={repair.serviceRating} />
               )}
+
+              <NotesSection
+                value={repair.notes ?? ""}
+                onSave={(notes) => patchRepair({ notes: notes || null })}
+              />
             </div>
           </>
         )}
@@ -621,148 +627,10 @@ function InternalNumberSection({
   );
 }
 
-function MechanicSection({
-  current,
-  onPick,
-}: {
-  current: UserLite | null;
-  onPick: (userId: string | null) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [users, setUsers] = useState<UserLite[] | null>(null);
-  const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    if (!open || users !== null) return;
-    fetch("/api/users?role=mecanico")
-      .then((r) => r.json())
-      .then((b) => setUsers((b.users ?? []) as UserLite[]))
-      .catch(() => setUsers([]));
-  }, [open, users]);
-
-  const filtered = (users ?? []).filter((u) => {
-    if (!search) return true;
-    const t = search.toLowerCase();
-    return (
-      (u.name ?? "").toLowerCase().includes(t) ||
-      (u.email ?? "").toLowerCase().includes(t)
-    );
-  });
-
-  return (
-    <SectionCard
-      icon={UserIcon}
-      title="Mecánico asignado"
-      iconTint="text-cyan-600"
-      iconBg="bg-cyan-50"
-    >
-      <div className="flex items-center justify-between gap-2">
-        {current ? (
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="h-8 w-8 rounded-full bg-[#003b73] text-white flex items-center justify-center text-[10px] font-semibold shrink-0">
-              {getInitials(current.name)}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium truncate">
-                {current.name ?? "—"}
-              </p>
-              {current.email && (
-                <p className="text-[11px] text-muted-foreground truncate">
-                  {current.email}
-                </p>
-              )}
-            </div>
-          </div>
-        ) : (
-          <p className="text-xs text-slate-400 italic">Sin asignar</p>
-        )}
-
-        <div className="flex items-center gap-1 shrink-0">
-          {current && (
-            <button
-              type="button"
-              onClick={() => onPick(null)}
-              className="text-[11px] text-slate-500 hover:text-rose-600 transition-colors px-2 py-1"
-            >
-              Quitar
-            </button>
-          )}
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-cyan-700 bg-cyan-50 hover:bg-cyan-100 transition-colors"
-              >
-                {current ? "Cambiar" : "Asignar"}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="end"
-              className="w-72 p-0"
-              onMouseDown={(e) => e.preventDefault()}
-            >
-              <div className="p-2 border-b">
-                <Input
-                  placeholder="Buscar mecánico…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-8"
-                />
-              </div>
-              <div className="max-h-64 overflow-y-auto p-1">
-                {users === null && (
-                  <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin mr-2" /> Cargando…
-                  </div>
-                )}
-                {users !== null && filtered.length === 0 && (
-                  <p className="px-2 py-6 text-xs text-center text-muted-foreground italic">
-                    {search
-                      ? "Sin resultados"
-                      : "No hay usuarios con rol mecánico cargados."}
-                  </p>
-                )}
-                {filtered.map((u) => {
-                  const isCurrent = current?.id === u.id;
-                  return (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => {
-                        if (isCurrent) return;
-                        onPick(u.id);
-                        setOpen(false);
-                      }}
-                      disabled={isCurrent}
-                      className={`w-full flex items-center gap-2 px-2 py-2 text-xs rounded transition-colors ${
-                        isCurrent ? "bg-muted/50" : "hover:bg-accent"
-                      }`}
-                    >
-                      <div className="h-6 w-6 rounded-full bg-[#003b73] text-white flex items-center justify-center text-[10px] font-semibold shrink-0">
-                        {getInitials(u.name)}
-                      </div>
-                      <div className="flex-1 min-w-0 text-left">
-                        <p className="font-medium truncate">{u.name ?? "—"}</p>
-                        {u.email && (
-                          <p className="text-muted-foreground truncate">
-                            {u.email}
-                          </p>
-                        )}
-                      </div>
-                      {isCurrent && (
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </PopoverContent>
-          </Popover>
-        </div>
-      </div>
-    </SectionCard>
-  );
-}
+// spec Compras v2 · Ítem #15: bloque "Mecánico asignado" eliminado del
+// panel de la ficha. La asignación del mecánico sigue existiendo en el
+// modelo Prisma (`Repair.assignedMechanicId`) y en la lista/kanban, pero
+// ya no se ve/edita desde este drawer.
 
 function DatesSection({
   repair,
@@ -790,12 +658,18 @@ function DatesSection({
           value={repair.enteredAt}
           onSave={(v) => onPatch({ enteredAt: v })}
         />
-        <DateField
-          label="Repuestos recibidos"
-          value={repair.partsReceivedAt}
-          onSave={(v) => onPatch({ partsReceivedAt: v })}
-          readonly
-        />
+        <div className="grid gap-1">
+          <DateField
+            label="Repuestos recibidos"
+            value={repair.partsReceivedAt}
+            onSave={(v) => onPatch({ partsReceivedAt: v })}
+            readonly
+          />
+          <p className="text-[10px] text-slate-500 italic">
+            Se completa automáticamente cuando marcás la primera compra como
+            recibida en el módulo Compras.
+          </p>
+        </div>
         <DateField
           label="Entrega estimada"
           value={repair.estimatedDeliveryAt}
@@ -1829,6 +1703,13 @@ function InvoiceCard({
 
 type CashBoxOption = { id: string; key: string; name: string };
 
+/** `YYYY-MM-DD` (input date) → ISO al mediodía LOCAL. Evita el salto de un
+ *  día por parsing UTC en el server. */
+function paidAtLocalNoon(v: string): string {
+  const [y, m, d] = v.split("-").map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+}
+
 function PaymentsList({
   invoiceId,
   payments,
@@ -1870,7 +1751,11 @@ function PaymentsList({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             amount: amt,
-            paidAt: new Date(draft.paidAt).toISOString(),
+            // Bug histórico: `new Date("YYYY-MM-DD").toISOString()` interpreta
+            // como UTC 00:00 → en AR (UTC-3) se muestra el día anterior.
+            // Parseamos el YYYY-MM-DD como mediodía LOCAL para preservar
+            // la fecha que eligió el usuario.
+            paidAt: paidAtLocalNoon(draft.paidAt),
             method: draft.method,
             reference: draft.reference.trim() || null,
             cashBoxId: draft.cashBoxId,
@@ -2050,14 +1935,3 @@ function formatShortDate(iso: string): string {
   });
 }
 
-function getInitials(name: string | null | undefined): string {
-  const s = (name ?? "").trim();
-  if (!s) return "?";
-  return (
-    s
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() ?? "")
-      .join("") || "?"
-  );
-}

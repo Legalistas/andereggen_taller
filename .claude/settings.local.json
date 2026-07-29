@@ -2,10 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(mkdir -p \"c:/Proyect/LexiasTech/Andereggen_Taller_Backoffices/src/app/api/budgets/[id]/fichas-overrides\")",
-      "Bash(node scripts/check-caja.mjs)"
+      "Bash(node scripts/check-caja.mjs)",
+      "Bash(mkdir -p \"c:/Proyect/LexiasTech/Andereggen_Taller_Backoffices/src/app/api/kpis/matrix\" \"c:/Proyect/LexiasTech/Andereggen_Taller_Backoffices/src/app/api/kpis/manual/[id]\")",
+      "Bash(mkdir -p \"c:/Proyect/LexiasTech/Andereggen_Taller_Backoffices/src/app/api/suppliers/[id]\")",
+      "Bash(mkdir -p \"c:/Proyect/LexiasTech/Andereggen_Taller_Backoffices/src/app/api/purchases/[id]/mark-paid\")"
     ],
     "additionalDirectories": [
-      "c:\\Proyect\\LexiasTech\\Andereggen_Taller_Backoffices\\src\\app\\api\\budgets\\[id]"
+      "c:\\Proyect\\LexiasTech\\Andereggen_Taller_Backoffices\\src\\app\\api\\budgets\\[id]",
+      "c:\\Proyect\\LexiasTech\\Andereggen_Taller_Backoffices\\src\\app\\api\\kpis\\manual",
+      "c:\\Proyect\\LexiasTech\\Andereggen_Taller_Backoffices\\src\\app\\api\\suppliers",
+      "c:\\Proyect\\LexiasTech\\Andereggen_Taller_Backoffices\\src\\app\\api\\purchases\\[id]"
     ]
   }
 }

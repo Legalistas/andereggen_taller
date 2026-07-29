@@ -1,88 +1,27 @@
 /**
- * PUT /api/budget-admin-items/[id]/purchase
- *   Upsert de la compra realizada para el item.
- *   Body: { supplierName, amount, purchasedAt?, notes?, receiptUrl? }
+ * Endpoint LEGACY — reemplazado por el módulo Compras v2.
  *
- * DELETE /api/budget-admin-items/[id]/purchase
- *   Quita la marca de compra (vuelve a "no comprado todavía").
+ * spec Compras v2 · La tabla `BudgetAdminPurchase` fue reemplazada por
+ * `Purchase` (N por ítem, con máquina de 7 estados). Este endpoint queda
+ * como stub que devuelve 410 Gone para cortar cualquier consumidor viejo
+ * mientras se termina el frontend nuevo (`/api/purchases/*`).
  *
- * Data interna — no sale en el PDF al cliente.
+ * Se puede borrar completamente cuando `BudgetAdminDialog` migre a la nueva
+ * API. Los datos históricos ya fueron migrados a `Purchase` (status =
+ * ARCHIVADA, `number` con prefijo `legacy-`).
  */
 
 import { NextResponse } from "next/server";
-import { verifyAuth } from "@/lib/auth-utils";
-import { prisma } from "@/lib/prisma";
 
-type RouteContext = { params: Promise<{ id: string }> };
+const GONE_BODY = {
+  error:
+    "Este endpoint fue reemplazado por /api/purchases. La tabla BudgetAdminPurchase ya no existe.",
+};
 
-export async function PUT(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request);
-  if (authError) return authError;
-  const { id } = await ctx.params;
-
-  const body = await request.json().catch(() => null);
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Body inválido" }, { status: 400 });
-  }
-
-  const item = await prisma.budgetAdminItem.findUnique({ where: { id } });
-  if (!item) {
-    return NextResponse.json({ error: "Item no encontrado" }, { status: 404 });
-  }
-
-  const { supplierName, amount, purchasedAt, notes, receiptUrl } = body as Record<
-    string,
-    unknown
-  >;
-
-  if (typeof supplierName !== "string" || supplierName.trim() === "") {
-    return NextResponse.json(
-      { error: "supplierName es requerido" },
-      { status: 400 },
-    );
-  }
-  const amt = Number(amount);
-  if (!Number.isFinite(amt) || amt < 0) {
-    return NextResponse.json(
-      { error: "amount debe ser un número >= 0" },
-      { status: 400 },
-    );
-  }
-
-  let when = new Date();
-  if (typeof purchasedAt === "string" && purchasedAt.trim() !== "") {
-    const parsed = new Date(purchasedAt);
-    if (!Number.isNaN(parsed.getTime())) when = parsed;
-  }
-
-  const data = {
-    supplierName: supplierName.trim(),
-    amount: amt,
-    purchasedAt: when,
-    notes:
-      typeof notes === "string" && notes.trim() !== "" ? notes.trim() : null,
-    receiptUrl:
-      typeof receiptUrl === "string" && receiptUrl.trim() !== ""
-        ? receiptUrl.trim()
-        : null,
-  };
-
-  const purchase = await prisma.budgetAdminPurchase.upsert({
-    where: { itemId: id },
-    create: { itemId: id, ...data },
-    update: data,
-  });
-
-  return NextResponse.json({ purchase });
+export async function PUT() {
+  return NextResponse.json(GONE_BODY, { status: 410 });
 }
 
-export async function DELETE(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request);
-  if (authError) return authError;
-  const { id } = await ctx.params;
-
-  await prisma.budgetAdminPurchase
-    .delete({ where: { itemId: id } })
-    .catch(() => null); // si no había, no rompemos
-  return NextResponse.json({ ok: true });
+export async function DELETE() {
+  return NextResponse.json(GONE_BODY, { status: 410 });
 }

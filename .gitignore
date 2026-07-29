@@ -75,3 +75,8 @@ tmp/
 convert-to-upload/
 scripts/
 *.code-workspace
+
+# ─── docs internos (briefs, PDFs de requerimientos, notas) ────
+# No versionamos por peso y porque a veces contienen info sensible.
+# Los briefs oficiales viven en Drive/Notion; acá solo referencia local.
+docs/

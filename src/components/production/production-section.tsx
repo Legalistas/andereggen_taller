@@ -145,11 +145,16 @@ export default function ProductionSection() {
       )
         return false;
       if (t) {
+        // spec v2 · También matchea por N° interno (con o sin "#" y con o
+        // sin ceros a la izquierda). Ej: "192", "#192", "0192" → repair 192.
+        const cleaned = t.replace(/^#/, "").replace(/^0+/, "");
         const matches =
           r.customerName.toLowerCase().includes(t) ||
           `${r.vehicleBrand} ${r.vehicleModel} ${r.vehicleDomain}`
             .toLowerCase()
-            .includes(t);
+            .includes(t) ||
+          (r.internalNumber !== null &&
+            String(r.internalNumber) === cleaned);
         if (!matches) return false;
       }
       return true;
@@ -697,7 +702,7 @@ export default function ProductionSection() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
           <Input
-            placeholder="Buscar por cliente, patente, modelo…"
+            placeholder="Buscar por cliente, patente, modelo o N° interno…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9 bg-white"

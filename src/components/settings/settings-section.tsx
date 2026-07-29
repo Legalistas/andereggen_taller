@@ -11,6 +11,7 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   Tag,
+  Truck,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
@@ -24,6 +25,7 @@ import InsurancesTab from "./tabs/insurances-tab";
 import IntegrationsTab from "./tabs/integrations-tab";
 import NotificationsTab from "./tabs/notifications-tab";
 import SourcesTab from "./tabs/sources-tab";
+import SuppliersTab from "./tabs/suppliers-tab";
 import VehiclesTab from "./tabs/vehicles-tab";
 
 export type AppSettings = {
@@ -144,6 +146,9 @@ export default function SettingsSection() {
             <TabsTrigger value="insurances">
               <ShieldCheck className="h-4 w-4" /> Seguros
             </TabsTrigger>
+            <TabsTrigger value="suppliers">
+              <Truck className="h-4 w-4" /> Proveedores
+            </TabsTrigger>
             <TabsTrigger value="vehicles">
               <Car className="h-4 w-4" /> Vehículos
             </TabsTrigger>
@@ -170,6 +175,9 @@ export default function SettingsSection() {
             </TabsContent>
             <TabsContent value="insurances">
               <InsurancesTab />
+            </TabsContent>
+            <TabsContent value="suppliers">
+              <SuppliersTab />
             </TabsContent>
             <TabsContent value="vehicles">
               <VehiclesTab />

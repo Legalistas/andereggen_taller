@@ -19,15 +19,19 @@ import {
   Camera,
   Check,
   ClipboardList,
+  Eye,
+  Loader2,
   Lock,
   Maximize2,
   Minus,
   Pencil,
   Plus,
+  ShoppingCart,
   Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import PurchaseDetailDialog from "@/components/compras/purchase-detail-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -69,13 +73,29 @@ function netPrice(q: Pick<Quote, "price" | "discount">): number {
   return p * (1 - d / 100);
 }
 
-type Purchase = {
+// spec Compras v2 · shape que devuelve /api/budgets/[id]/admin — items[].purchases (plural).
+// Un mismo ítem puede tener N compras (devoluciones, recompras, etc.).
+type PurchaseSummary = {
   id: string;
-  supplierName: string;
+  number: string;
+  status:
+    | "COTIZAR"
+    | "DECIDIR"
+    | "COMPRAR"
+    | "EN_CAMINO"
+    | "EN_TALLER"
+    | "PENDIENTE_PAGO"
+    | "ARCHIVADA";
+  category: QuoteCategory | null;
+  supplierName: string | null;
   amount: string | number;
-  purchasedAt: string;
+  freightAmount: string | number;
+  freightSupplierName: string | null;
+  purchasedAt: string | null;
+  receivedAt: string | null;
+  paidPartsAt: string | null;
+  paidFreightAt: string | null;
   notes: string | null;
-  receiptUrl: string | null;
 };
 
 type Item = {
@@ -85,7 +105,7 @@ type Item = {
   notes: string | null;
   photos: string[];
   quotes: Quote[];
-  purchase: Purchase | null;
+  purchases: PurchaseSummary[];
 };
 
 type Props = {
@@ -173,13 +193,25 @@ export function BudgetAdminDialog({
     refresh();
   }, [open, budgetId, refresh]);
 
+  // spec Compras v2 · "Efectiva" = cualquier compra que dejó COTIZAR/DECIDIR
+  // (ya tiene proveedor y monto — está gestionándose). Sumamos repuesto + flete.
   const totalSpent = (items ?? []).reduce((sum, it) => {
-    if (!it.purchase) return sum;
-    return sum + Number(it.purchase.amount);
+    return (
+      sum +
+      it.purchases.reduce((s, p) => {
+        if (p.status === "COTIZAR" || p.status === "DECIDIR") return s;
+        return s + Number(p.amount) + Number(p.freightAmount);
+      }, 0)
+    );
   }, 0);
 
+  // "Estimado pendiente" — items sin compra efectiva todavía: la cotización
+  // más baja como aproximación de lo que queda por gastar.
   const totalQuoted = (items ?? []).reduce((sum, it) => {
-    if (it.purchase) return sum;
+    const hasEffective = it.purchases.some(
+      (p) => p.status !== "COTIZAR" && p.status !== "DECIDIR",
+    );
+    if (hasEffective) return sum;
     if (it.quotes.length === 0) return sum;
     const min = Math.min(...it.quotes.map((q) => netPrice(q)));
     return sum + min;
@@ -313,11 +345,17 @@ export function BudgetAdminDialog({
                   onClick={() => setTab("compras")}
                 >
                   Compras
-                  {items?.some((it) => it.purchase) ? (
-                    <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">
-                      {items.filter((it) => it.purchase).length}
-                    </span>
-                  ) : null}
+                  {(() => {
+                    const total = (items ?? []).reduce(
+                      (n, it) => n + it.purchases.length,
+                      0,
+                    );
+                    return total > 0 ? (
+                      <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">
+                        {total}
+                      </span>
+                    ) : null;
+                  })()}
                 </TabButton>
               </div>
 
@@ -1017,8 +1055,17 @@ function QuoteInlineForm({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Tab: Compras
+// Tab: Compras · spec Compras v2
 // ─────────────────────────────────────────────────────────────────────────
+//
+// Consume la nueva shape `items[].purchases[]` — un ítem puede tener N
+// compras (devoluciones, recompras). El circuito completo (Cotizar →
+// Archivada) se gestiona en el detalle modal reutilizable.
+//
+// Botones:
+//  · "Iniciar compra" (ítem sin compras): POST /api/purchases con status
+//    inicial = COTIZAR o COMPRAR (si hay quote elegida, se usa esa).
+//  · "Ver" (ojo): abre PurchaseDetailDialog reutilizable.
 
 function ComprasTab({
   items,
@@ -1027,9 +1074,38 @@ function ComprasTab({
   items: Item[];
   onChanged: () => void;
 }) {
-  // Items con compra primero; los sin compra abajo (para registrar)
-  const withPurchase = items.filter((it) => it.purchase);
-  const withoutPurchase = items.filter((it) => !it.purchase);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [suppliers, setSuppliers] = useState<
+    Array<{ id: string; name: string; isActive: boolean }>
+  >([]);
+  const [cashBoxes, setCashBoxes] = useState<
+    Array<{ id: string; name: string; key: string }>
+  >([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [supRes, boxRes] = await Promise.all([
+          fetch("/api/suppliers"),
+          fetch("/api/caja/boxes"),
+        ]);
+        if (supRes.ok) {
+          const d = (await supRes.json()) as {
+            suppliers: Array<{ id: string; name: string; isActive: boolean }>;
+          };
+          setSuppliers(d.suppliers.filter((s) => s.isActive));
+        }
+        if (boxRes.ok) {
+          const d = (await boxRes.json()) as {
+            boxes: Array<{ id: string; name: string; key: string }>;
+          };
+          setCashBoxes(d.boxes);
+        }
+      } catch (e) {
+        console.error("Error cargando suppliers/cajas", e);
+      }
+    })();
+  }, []);
 
   if (items.length === 0) {
     return (
@@ -1037,7 +1113,7 @@ function ComprasTab({
         <ClipboardList className="h-10 w-10 mx-auto text-muted-foreground/40 mb-2" />
         <p className="text-sm text-muted-foreground">
           Cargá repuestos en la pestaña <strong>Cotizaciones</strong> antes de
-          registrar compras.
+          iniciar compras.
         </p>
       </Card>
     );
@@ -1045,327 +1121,220 @@ function ComprasTab({
 
   return (
     <div className="space-y-4">
-      {withPurchase.length > 0 && (
-        <div className="rounded-md border bg-white overflow-x-auto">
-          <table className="w-full text-xs border-collapse">
-            <thead className="bg-emerald-50 sticky top-0 z-10">
-              <tr>
-                <th className="border-b border-r border-emerald-100 px-2.5 py-2 text-left font-semibold text-emerald-800 min-w-65">
-                  Repuesto
-                </th>
-                <th className="border-b border-r border-emerald-100 px-2.5 py-2 text-left font-semibold text-emerald-800 min-w-45">
-                  Proveedor
-                </th>
-                <th className="border-b border-r border-emerald-100 px-2.5 py-2 text-right font-semibold text-emerald-800 min-w-30">
-                  Monto
-                </th>
-                <th className="border-b border-r border-emerald-100 px-2.5 py-2 text-left font-semibold text-emerald-800 min-w-27.5">
-                  Fecha
-                </th>
-                <th className="border-b border-r border-emerald-100 px-2.5 py-2 text-left font-semibold text-emerald-800">
-                  Notas / Comprobante
-                </th>
-                <th className="border-b border-emerald-100 px-1 py-2 w-24"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {withPurchase.map((item) => (
-                <PurchaseRow key={item.id} item={item} onChanged={onChanged} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {items.map((item) => (
+        <ItemPurchasesBlock
+          key={item.id}
+          item={item}
+          onOpenDetail={setOpenId}
+          onChanged={onChanged}
+        />
+      ))}
 
-      {withoutPurchase.length > 0 && (
-        <Card className="p-3 bg-slate-50">
-          <div className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">
-            Sin compra registrada ({withoutPurchase.length})
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-            {withoutPurchase.map((item) => (
-              <PendingPurchaseCard
-                key={item.id}
-                item={item}
-                onChanged={onChanged}
-              />
-            ))}
-          </div>
-        </Card>
+      {openId && (
+        <PurchaseDetailDialog
+          purchaseId={openId}
+          suppliers={suppliers}
+          cashBoxes={cashBoxes}
+          onClose={() => setOpenId(null)}
+          onChanged={onChanged}
+        />
       )}
     </div>
   );
 }
 
-function PurchaseRow({
+function ItemPurchasesBlock({
   item,
+  onOpenDetail,
   onChanged,
 }: {
   item: Item;
+  onOpenDetail: (id: string) => void;
   onChanged: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
-
-  if (!item.purchase) return null;
-  const p = item.purchase;
-
-  const remove = async () => {
-    if (!confirm("¿Quitar la marca de compra?")) return;
-    const res = await fetch(`/api/budget-admin-items/${item.id}/purchase`, {
-      method: "DELETE",
-    });
-    if (res.ok) onChanged();
-  };
-
-  if (editing) {
-    return (
-      <tr>
-        <td colSpan={6} className="border-b border-slate-200 p-2 bg-emerald-50/30">
-          <PurchaseForm
-            item={item}
-            onSaved={() => {
-              setEditing(false);
-              onChanged();
-            }}
-            onCancel={() => setEditing(false)}
-          />
-        </td>
-      </tr>
-    );
-  }
-
-  return (
-    <tr className="border-b border-slate-100 hover:bg-emerald-50/30">
-      <td className="border-r border-slate-200 px-2.5 py-2 align-top">
-        <div className="font-medium text-slate-800">{item.description}</div>
-        {item.notes ? (
-          <div className="text-[10px] text-slate-500 mt-0.5">{item.notes}</div>
-        ) : null}
-      </td>
-      <td className="border-r border-slate-200 px-2.5 py-2 align-top text-slate-800">
-        {p.supplierName}
-      </td>
-      <td className="border-r border-slate-200 px-2.5 py-2 align-top text-right font-mono font-semibold text-emerald-700">
-        {ARS.format(Number(p.amount))}
-      </td>
-      <td className="border-r border-slate-200 px-2.5 py-2 align-top text-slate-700">
-        {new Date(p.purchasedAt).toLocaleDateString("es-AR")}
-      </td>
-      <td className="border-r border-slate-200 px-2.5 py-2 align-top">
-        {p.notes ? (
-          <div className="text-slate-700">{p.notes}</div>
-        ) : null}
-        {p.receiptUrl ? (
-          <a
-            href={p.receiptUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline mt-0.5"
-          >
-            <Camera className="h-2.5 w-2.5" />
-            Comprobante
-          </a>
-        ) : null}
-        {!p.notes && !p.receiptUrl ? (
-          <span className="text-slate-400 italic">—</span>
-        ) : null}
-      </td>
-      <td className="px-1 py-2 align-top text-center">
-        <div className="flex flex-col gap-0.5">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="h-6 px-1.5 inline-flex items-center justify-center gap-1 text-[10px] text-slate-600 hover:bg-slate-100 rounded"
-          >
-            <Pencil className="h-2.5 w-2.5" />
-            Editar
-          </button>
-          <button
-            type="button"
-            onClick={remove}
-            className="h-6 px-1.5 inline-flex items-center justify-center gap-1 text-[10px] text-destructive hover:bg-destructive/10 rounded"
-          >
-            <X className="h-2.5 w-2.5" />
-            Quitar
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function PendingPurchaseCard({
-  item,
-  onChanged,
-}: {
-  item: Item;
-  onChanged: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
+  const [starting, setStarting] = useState(false);
   const minNet =
     item.quotes.length > 0
       ? Math.min(...item.quotes.map((q) => netPrice(q)))
       : null;
   const minQuote =
     minNet !== null
-      ? item.quotes.find((q) => netPrice(q) === minNet) ?? null
+      ? (item.quotes.find((q) => netPrice(q) === minNet) ?? null)
       : null;
 
-  if (editing) {
-    return (
-      <Card className="p-2 border-emerald-300 bg-white">
-        <PurchaseForm
-          item={item}
-          prefill={
-            minQuote
-              ? { supplierName: minQuote.supplierName, amount: minNet ?? 0 }
-              : undefined
-          }
-          onSaved={() => {
-            setEditing(false);
-            onChanged();
-          }}
-          onCancel={() => setEditing(false)}
-        />
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="p-2 bg-white">
-      <div className="font-medium text-sm text-slate-800 truncate">
-        {item.description}
-      </div>
-      {minQuote ? (
-        <div className="text-[10px] text-slate-500 mt-0.5">
-          Min cotización: {minQuote.supplierName} · {ARS.format(minNet ?? 0)}
-        </div>
-      ) : (
-        <div className="text-[10px] text-slate-400 italic mt-0.5">
-          Sin cotizaciones
-        </div>
-      )}
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => setEditing(true)}
-        className="h-7 text-[10px] mt-1.5 w-full gap-1"
-      >
-        <Plus className="h-3 w-3" />
-        Registrar compra
-      </Button>
-    </Card>
-  );
-}
-
-function PurchaseForm({
-  item,
-  prefill,
-  onSaved,
-  onCancel,
-}: {
-  item: Item;
-  prefill?: { supplierName: string; amount: number };
-  onSaved: () => void;
-  onCancel: () => void;
-}) {
-  const existing = item.purchase;
-  const [supplier, setSupplier] = useState(
-    existing?.supplierName ?? prefill?.supplierName ?? "",
-  );
-  const [amount, setAmount] = useState(
-    existing
-      ? String(existing.amount)
-      : prefill
-      ? String(prefill.amount)
-      : "",
-  );
-  const [notes, setNotes] = useState(existing?.notes ?? "");
-  const [receiptUrl, setReceiptUrl] = useState(existing?.receiptUrl ?? "");
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    if (!supplier.trim() || !amount.trim()) return;
-    setSaving(true);
+  // Inicia una compra vacía en COTIZAR. La decisión de quote / proveedor
+  // se toma en el detalle modal.
+  const initiate = async (chosenQuoteId?: string) => {
+    setStarting(true);
     try {
-      const res = await fetch(
-        `/api/budget-admin-items/${item.id}/purchase`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            supplierName: supplier.trim(),
-            amount: Number(amount),
-            notes: notes.trim() || undefined,
-            receiptUrl: receiptUrl.trim() || undefined,
-          }),
-        },
-      );
-      if (res.ok) {
-        onSaved();
-      } else {
+      const res = await fetch("/api/purchases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemId: item.id,
+          ...(chosenQuoteId && { chosenQuoteId, status: "COMPRAR" }),
+        }),
+      });
+      if (!res.ok) {
         const b = await res.json().catch(() => ({}));
-        alert(b?.error ?? "Error al guardar compra");
+        alert(b?.error ?? `Error HTTP ${res.status}`);
+        return;
       }
+      const d = (await res.json()) as { purchase: { id: string } };
+      onChanged();
+      onOpenDetail(d.purchase.id);
     } finally {
-      setSaving(false);
+      setStarting(false);
     }
   };
 
   return (
-    <div className="space-y-1.5">
-      <div className="text-[11px] font-semibold text-slate-700 truncate">
-        {item.description}
+    <Card className="p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold text-sm text-slate-800 truncate">
+            {item.description}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            {item.quotes.length > 0
+              ? `${item.quotes.length} cotización${item.quotes.length === 1 ? "" : "es"}`
+              : "Sin cotizaciones cargadas"}
+            {minQuote && (
+              <>
+                {" · "}
+                <span className="text-slate-600">
+                  Mín: {minQuote.supplierName} · {ARS.format(minNet ?? 0)}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          {minQuote && item.purchases.length === 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => initiate(minQuote.id)}
+              disabled={starting}
+              className="h-7 text-[11px] gap-1"
+              title="Crea la compra directamente en 'Comprar' usando la cotización más barata"
+            >
+              {starting && <Loader2 className="h-3 w-3 animate-spin" />}
+              <ShoppingCart className="h-3 w-3" />
+              Comprar la mínima
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => initiate()}
+            disabled={starting}
+            className="h-7 text-[11px] gap-1"
+          >
+            {starting && <Loader2 className="h-3 w-3 animate-spin" />}
+            <Plus className="h-3 w-3" />
+            Nueva compra
+          </Button>
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-1.5">
-        <Input
-          placeholder="Proveedor"
-          value={supplier}
-          onChange={(e) => setSupplier(e.target.value)}
-          className="h-7 text-xs"
-          autoFocus
-        />
-        <Input
-          placeholder="$ Monto pagado"
-          type="number"
-          min="0"
-          step="0.01"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="h-7 text-xs"
-        />
-        <Input
-          placeholder="Notas (opcional)"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="h-7 text-xs"
-        />
-        <Input
-          placeholder="URL comprobante (opcional)"
-          value={receiptUrl}
-          onChange={(e) => setReceiptUrl(e.target.value)}
-          className="h-7 text-xs"
-        />
-      </div>
-      <div className="flex gap-1.5">
-        <Button
-          size="sm"
-          onClick={save}
-          disabled={!supplier.trim() || !amount.trim() || saving}
-          className="h-7 text-xs gap-1"
+
+      {item.purchases.length > 0 && (
+        <div className="mt-2 rounded-md border overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                  N° compra
+                </th>
+                <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                  Proveedor
+                </th>
+                <th className="border-b border-r border-slate-100 px-2 py-1.5 text-right font-semibold text-slate-600">
+                  Monto
+                </th>
+                <th className="border-b border-r border-slate-100 px-2 py-1.5 text-right font-semibold text-slate-600">
+                  Flete
+                </th>
+                <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                  Estado
+                </th>
+                <th className="border-b border-slate-100 px-1 py-1.5 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {item.purchases.map((p) => (
+                <PurchaseInlineRow
+                  key={p.id}
+                  purchase={p}
+                  onOpen={() => onOpenDetail(p.id)}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const STATUS_TONE: Record<
+  PurchaseSummary["status"],
+  { bg: string; text: string; dot: string; label: string }
+> = {
+  COTIZAR: { bg: "bg-slate-100", text: "text-slate-700", dot: "bg-slate-500", label: "Cotizar" },
+  DECIDIR: { bg: "bg-violet-100", text: "text-violet-700", dot: "bg-violet-500", label: "Decidir" },
+  COMPRAR: { bg: "bg-blue-100", text: "text-blue-700", dot: "bg-blue-500", label: "Comprar" },
+  EN_CAMINO: { bg: "bg-amber-100", text: "text-amber-700", dot: "bg-amber-500", label: "En camino" },
+  EN_TALLER: { bg: "bg-cyan-100", text: "text-cyan-700", dot: "bg-cyan-500", label: "En taller" },
+  PENDIENTE_PAGO: { bg: "bg-orange-100", text: "text-orange-700", dot: "bg-orange-500", label: "Pdte. pago" },
+  ARCHIVADA: { bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500", label: "Archivada" },
+};
+
+function PurchaseInlineRow({
+  purchase,
+  onOpen,
+}: {
+  purchase: PurchaseSummary;
+  onOpen: () => void;
+}) {
+  const tone = STATUS_TONE[purchase.status];
+  return (
+    <tr className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50">
+      <td className="border-r border-slate-100 px-2 py-1.5 font-mono text-[11px]">
+        {purchase.number}
+      </td>
+      <td className="border-r border-slate-100 px-2 py-1.5">
+        {purchase.supplierName ?? <span className="text-slate-400 italic">—</span>}
+      </td>
+      <td className="border-r border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums">
+        {Number(purchase.amount) > 0
+          ? ARS.format(Number(purchase.amount))
+          : <span className="text-slate-400">—</span>}
+      </td>
+      <td className="border-r border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums">
+        {Number(purchase.freightAmount) > 0
+          ? ARS.format(Number(purchase.freightAmount))
+          : <span className="text-slate-400">—</span>}
+      </td>
+      <td className="border-r border-slate-100 px-2 py-1.5">
+        <span
+          className={`inline-flex items-center gap-1 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold ${tone.bg} ${tone.text}`}
         >
-          <Check className="h-3 w-3" />
-          {existing ? "Guardar cambios" : "Marcar como comprado"}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onCancel}
-          className="h-7 text-xs"
+          <span className={`h-1 w-1 rounded-full ${tone.dot}`} />
+          {tone.label}
+        </span>
+      </td>
+      <td className="px-1 py-1.5 text-center">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-slate-100 text-slate-600"
+          title="Ver detalle"
+          aria-label="Ver detalle"
         >
-          Cancelar
-        </Button>
-      </div>
-    </div>
+          <Eye className="h-3.5 w-3.5" />
+        </button>
+      </td>
+    </tr>
   );
 }
