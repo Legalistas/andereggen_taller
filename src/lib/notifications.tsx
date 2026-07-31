@@ -222,6 +222,14 @@ export async function buildRepairContext(repairId: string) {
   // spec 2.1 v2 · Formateo de fecha/hora del turno para el mail
   // turn_assigned. Si el repair no tiene scheduledAt cargado, queda
   // undefined y el template usa el copy sin fecha.
+  //
+  // IMPORTANTE: forzamos `timeZone: "America/Argentina/Buenos_Aires"` porque
+  // en producción el server corre en UTC y sin timezone la hora sale
+  // desfasada (un turno guardado a las 8 AM AR = 11:00 UTC → se muestra
+  // "11:00" al cliente; peor, un scheduledAt guardado como midnight UTC
+  // se muestra "12:00 a. m." — que fue el bug reportado).
+  // También forzamos `hour12: false` para evitar el "a. m." / "p. m." de
+  // Intl (los usuarios AR leen mejor "20:30" que "8:30 p. m.").
   const turnDateFormatted = repair.scheduledAt
     ? new Intl.DateTimeFormat("es-AR", {
         weekday: "long",
@@ -229,6 +237,8 @@ export async function buildRepairContext(repairId: string) {
         month: "long",
         hour: "2-digit",
         minute: "2-digit",
+        hour12: false,
+        timeZone: "America/Argentina/Buenos_Aires",
       }).format(repair.scheduledAt)
     : undefined;
 

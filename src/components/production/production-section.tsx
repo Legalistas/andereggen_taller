@@ -50,6 +50,24 @@ type MechanicOption = {
 
 type SortBy = "recent" | "oldest" | "name_asc";
 
+/** `YYYY-MM-DDTHH:mm` (datetime-local) interpretado como hora LOCAL del
+ *  navegador → ISO UTC. Sin este helper, mandar el string tal cual hace
+ *  que el server (UTC en producción) lo parsee como si la hora fuera UTC. */
+function parseLocalDateTimeInput(v: string): string | null {
+  if (!v) return null;
+  const [datePart, timePart] = v.split("T");
+  const [y, m, d] = datePart.split("-").map(Number);
+  const [h, min] = timePart.split(":").map(Number);
+  return new Date(y, m - 1, d, h, min, 0).toISOString();
+}
+
+/** `YYYY-MM-DD` → ISO al mediodía LOCAL (evita saltos de día por UTC). */
+function parseLocalDateInput(v: string): string | null {
+  if (!v) return null;
+  const [y, m, d] = v.split("-").map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+}
+
 export default function ProductionSection() {
   const [repairs, setRepairs] = useState<KanbanRepair[]>([]);
   const [loading, setLoading] = useState(false);
@@ -257,8 +275,12 @@ export default function ProductionSection() {
     const payload: Record<string, unknown> = {
       reason: reason.trim() || null,
       assignedMechanicId: newMechanicId || null,
-      scheduledAt: scheduledAt || null,
-      estimatedDeliveryAt: estimatedDeliveryAt || null,
+      // spec 2.1 v2 · Parseamos la fecha/hora como LOCAL del navegador
+      // antes de mandarla — sin esto, el server (UTC en producción) toma
+      // la hora como UTC y el mail sale desfasado (bug reportado: turno
+      // cargado a las 8 AM AR mostraba "12:00 a. m.").
+      scheduledAt: parseLocalDateTimeInput(scheduledAt),
+      estimatedDeliveryAt: parseLocalDateInput(estimatedDeliveryAt),
       notes: notes.trim() || null,
     };
 
@@ -609,10 +631,12 @@ export default function ProductionSection() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-2">
-                  <Label htmlFor="scheduledAt">Turno asignado (fecha)</Label>
+                  <Label htmlFor="scheduledAt">
+                    Turno asignado (fecha y hora)
+                  </Label>
                   <Input
                     id="scheduledAt"
-                    type="date"
+                    type="datetime-local"
                     value={scheduledAt}
                     onChange={(e) => setScheduledAt(e.target.value)}
                   />
