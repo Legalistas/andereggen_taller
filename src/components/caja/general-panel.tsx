@@ -310,11 +310,12 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                       </span>
                     </div>
                   )}
-                  {/* spec v2 · Diferencia neta del mes (ingresos − egresos
-                      neto de transferencias y pases). Sirve para chequear
-                      que los importes de la caja del mes cierren. */}
+                  {/* spec v2 · Saldo inicial (arrastre del mes anterior)
+                      + Saldo del mes = saldo inicial + neto del mes. Así el
+                      Saldo del mes refleja lo que hay hoy en la caja
+                      considerando lo que venía. */}
                   {(() => {
-                    const saldoMes =
+                    const netoMes =
                       box.month.collections +
                       box.month.ingresos +
                       box.month.transfersIn +
@@ -322,22 +323,31 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                       box.month.egresos -
                       box.month.transfersOut -
                       box.month.pasesOut;
+                    const saldoMes = box.openingBalance + netoMes;
                     return (
-                      <div className="flex justify-between pt-1 mt-1 border-t border-slate-100">
-                        <span className="font-semibold text-slate-700">
-                          Saldo del mes
-                        </span>
-                        <span
-                          className={`tabular-nums font-semibold ${
-                            saldoMes >= 0
-                              ? "text-emerald-700"
-                              : "text-rose-700"
-                          }`}
-                        >
-                          {saldoMes >= 0 ? "+" : "−"}
-                          {ARS.format(Math.abs(saldoMes))}
-                        </span>
-                      </div>
+                      <>
+                        <div className="flex justify-between pt-1 mt-1 border-t border-slate-100">
+                          <span>Saldo inicial</span>
+                          <span className="tabular-nums text-slate-700">
+                            {ARS.format(box.openingBalance)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-semibold text-slate-700">
+                            Saldo del mes
+                          </span>
+                          <span
+                            className={`tabular-nums font-semibold ${
+                              saldoMes >= 0
+                                ? "text-emerald-700"
+                                : "text-rose-700"
+                            }`}
+                          >
+                            {saldoMes >= 0 ? "+" : "−"}
+                            {ARS.format(Math.abs(saldoMes))}
+                          </span>
+                        </div>
+                      </>
                     );
                   })()}
                 </div>

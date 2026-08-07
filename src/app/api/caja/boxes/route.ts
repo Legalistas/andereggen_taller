@@ -69,8 +69,10 @@ export async function GET(request: Request) {
   const [
     boxes,
     paymentsAll, // saldo histórico por caja
+    paymentsBefore, // cobros ANTES del mes → saldo inicial
     paymentsMonth, // ingresos del mes por caja
     movementsAll, // saldo histórico por caja (manual)
+    movementsBefore, // movs manuales ANTES del mes → saldo inicial
     movementsMonth, // por caja + tipo
     officialPaymentsMonth, // facturación del mes = cobros a cajas oficiales
     pendingCollections, // cobros pendientes (histórico)
@@ -87,6 +89,15 @@ export async function GET(request: Request) {
       where: { cashBoxId: { not: null } },
       _sum: { amount: true },
     }),
+    // Cobros ANTES del mes → componente del saldo inicial.
+    prisma.repairInvoicePayment.groupBy({
+      by: ["cashBoxId"],
+      where: {
+        cashBoxId: { not: null },
+        paidAt: { lt: startOfMonth },
+      },
+      _sum: { amount: true },
+    }),
     prisma.repairInvoicePayment.groupBy({
       by: ["cashBoxId"],
       where: {
@@ -97,6 +108,12 @@ export async function GET(request: Request) {
     }),
     prisma.cashMovement.groupBy({
       by: ["cashBoxId", "type"],
+      _sum: { amount: true },
+    }),
+    // Movimientos manuales ANTES del mes → componente del saldo inicial.
+    prisma.cashMovement.groupBy({
+      by: ["cashBoxId", "type"],
+      where: { paidAt: { lt: startOfMonth } },
       _sum: { amount: true },
     }),
     prisma.cashMovement.groupBy({
@@ -186,6 +203,11 @@ export async function GET(request: Request) {
     if (!r.cashBoxId) continue;
     paidByBoxMonth.set(r.cashBoxId, Number(r._sum.amount ?? 0));
   }
+  const paidByBoxBefore = new Map<string, number>();
+  for (const r of paymentsBefore) {
+    if (!r.cashBoxId) continue;
+    paidByBoxBefore.set(r.cashBoxId, Number(r._sum.amount ?? 0));
+  }
 
   // ── Movimientos manuales por caja: acumulamos por tipo
   type MovBucket = {
@@ -218,13 +240,21 @@ export async function GET(request: Request) {
     b[r.type] += Number(r._sum.amount ?? 0);
     movByBoxMonth.set(r.cashBoxId, b);
   }
+  const movByBoxBefore = new Map<string, MovBucket>();
+  for (const r of movementsBefore) {
+    const b = movByBoxBefore.get(r.cashBoxId) ?? emptyBucket();
+    b[r.type] += Number(r._sum.amount ?? 0);
+    movByBoxBefore.set(r.cashBoxId, b);
+  }
 
   // ── Ensamble de las cajas con saldo + del mes
   const boxesOut = boxes.map((box) => {
     const paidAll = paidByBoxAll.get(box.id) ?? 0;
     const paidMonth = paidByBoxMonth.get(box.id) ?? 0;
+    const paidBefore = paidByBoxBefore.get(box.id) ?? 0;
     const mAll = movByBoxAll.get(box.id) ?? emptyBucket();
     const mMonth = movByBoxMonth.get(box.id) ?? emptyBucket();
+    const mBefore = movByBoxBefore.get(box.id) ?? emptyBucket();
     // Los pases SÍ afectan el saldo (la plata realmente se movió), pero NO
     // aparecen como ingreso/egreso del mes en las stats.
     const balance =
@@ -235,12 +265,23 @@ export async function GET(request: Request) {
       mAll.EGRESO -
       mAll.TRANSFER_OUT -
       mAll.PASE_OUT;
+    // Saldo al 1er día del mes seleccionado — arrastre del/los mes(es)
+    // anteriores. Sirve como "arrancamos con esto" en la card.
+    const openingBalance =
+      paidBefore +
+      mBefore.INGRESO +
+      mBefore.TRANSFER_IN +
+      mBefore.PASE_IN -
+      mBefore.EGRESO -
+      mBefore.TRANSFER_OUT -
+      mBefore.PASE_OUT;
     return {
       id: box.id,
       key: box.key,
       name: box.name,
       description: box.description,
       balance,
+      openingBalance,
       month: {
         collections: paidMonth,
         ingresos: mMonth.INGRESO,

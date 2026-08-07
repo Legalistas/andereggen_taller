@@ -44,6 +44,8 @@ export type CashBoxSummary = {
   name: string;
   description: string | null;
   balance: number;
+  /** Saldo al 1er día del mes — arrastre del mes anterior. */
+  openingBalance: number;
   month: {
     collections: number;
     ingresos: number;
