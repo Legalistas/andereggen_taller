@@ -36,7 +36,7 @@ export function computeSummary(purchases: PurchaseRow[]): Summary {
   let estimatedPending = 0;
 
   for (const p of purchases) {
-    items.add(p.item.id);
+    items.add(p.item?.id ?? p.id);
     const amt = Number(p.amount);
     // "Comprado" = pasó de COTIZAR/DECIDIR (tiene proveedor + monto)
     if (p.status !== "COTIZAR" && p.status !== "DECIDIR") {

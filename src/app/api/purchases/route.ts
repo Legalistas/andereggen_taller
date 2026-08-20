@@ -20,32 +20,38 @@
 import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { PURCHASE_STATUS_KEYS } from "@/lib/purchases/catalog";
-import { nextPurchaseNumber } from "@/lib/purchases/number";
+import {
+  nextPurchaseNumber,
+  nextPurchaseNumberDirect,
+} from "@/lib/purchases/number";
 import { prisma } from "@/lib/prisma";
 import type { PurchaseStatus } from "../../../../generated/prisma/client";
+
+// v3 · Shape del budget para compras directas y para el include del item.
+const BUDGET_SELECT = {
+  id: true,
+  number: true,
+  extensionSuffix: true,
+  repair: {
+    select: {
+      id: true,
+      internalNumber: true,
+      vehicleBrand: true,
+      vehicleModel: true,
+      vehicleDomain: true,
+      customerName: true,
+    },
+  },
+} as const;
 
 const PURCHASE_INCLUDE = {
   item: {
     include: {
-      budget: {
-        select: {
-          id: true,
-          number: true,
-          extensionSuffix: true,
-          repair: {
-            select: {
-              id: true,
-              internalNumber: true,
-              vehicleBrand: true,
-              vehicleModel: true,
-              vehicleDomain: true,
-              customerName: true,
-            },
-          },
-        },
-      },
+      budget: { select: BUDGET_SELECT },
     },
   },
+  // v3 · Budget directo (compras sin item, con presupuesto opcional).
+  budget: { select: BUDGET_SELECT },
   chosenQuote: {
     select: {
       id: true,
@@ -149,6 +155,7 @@ export async function GET(request: Request) {
     prisma.purchase.findMany({
       where: baseWhere,
       select: {
+        id: true,
         itemId: true,
         status: true,
         amount: true,
@@ -166,7 +173,10 @@ export async function GET(request: Request) {
   let totalPurchased = 0;
   let estimatedPending = 0;
   for (const p of summaryRaw) {
-    items.add(p.itemId);
+    // v3: itemId ahora es nullable (compras directas). Contamos por
+    // itemId cuando existe; las directas cuentan como ítem propio (id de
+    // la purchase — no colisiona porque uuid).
+    items.add(p.itemId ?? p.id);
     const amt = Number(p.amount) + Number(p.freightAmount);
     if (p.status !== "COTIZAR" && p.status !== "DECIDIR") {
       totalPurchased += amt;
@@ -201,27 +211,32 @@ export async function POST(request: Request) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
-  const { itemId, chosenQuoteId, status } = body as Record<string, unknown>;
+  const { itemId, chosenQuoteId, status, budgetId, productDescription } =
+    body as Record<string, unknown>;
 
-  if (typeof itemId !== "string" || !itemId) {
+  // spec v3 · Dos modos de creación:
+  //   (A) desde un item existente (itemId) — flujo original
+  //   (B) compra directa (sin itemId) — requiere productDescription;
+  //       budgetId es opcional. Si no hay budgetId ni item, es una
+  //       compra suelta (insumos/herramientas).
+  const hasItem = typeof itemId === "string" && itemId.length > 0;
+  const hasProduct =
+    typeof productDescription === "string" && productDescription.trim().length > 0;
+
+  if (!hasItem && !hasProduct) {
     return NextResponse.json(
-      { error: "itemId es obligatorio" },
+      { error: "Necesitás itemId o productDescription" },
       { status: 400 },
     );
   }
+
   const initialStatus: PurchaseStatus =
     typeof status === "string" && PURCHASE_STATUS_KEYS.has(status as PurchaseStatus)
       ? (status as PurchaseStatus)
       : "COTIZAR";
 
   const purchase = await prisma.$transaction(async (tx) => {
-    const item = await tx.budgetAdminItem.findUnique({
-      where: { id: itemId },
-    });
-    if (!item) throw new Error("Item no encontrado");
-
-    // Si viene chosenQuoteId, snapshoteamos categoría + supplier de la
-    // cotización al momento de la creación.
+    // Snapshot desde chosenQuote (solo modo A — quotes viven en items).
     let snapshot: {
       chosenQuoteId?: string;
       category?: "OFICIAL" | "ALTERNATIVO" | "DESARMADERO";
@@ -229,38 +244,62 @@ export async function POST(request: Request) {
       supplierName?: string;
       amount?: number;
     } = {};
-    if (typeof chosenQuoteId === "string" && chosenQuoteId) {
-      const q = await tx.budgetAdminQuote.findUnique({
-        where: { id: chosenQuoteId },
-        select: {
-          id: true,
-          itemId: true,
-          category: true,
-          supplierId: true,
-          supplierName: true,
-          price: true,
-          discount: true,
-        },
+
+    if (hasItem) {
+      const item = await tx.budgetAdminItem.findUnique({
+        where: { id: itemId as string },
       });
-      if (!q || q.itemId !== itemId) {
-        throw new Error("Cotización inválida para este ítem");
+      if (!item) throw new Error("Item no encontrado");
+
+      if (typeof chosenQuoteId === "string" && chosenQuoteId) {
+        const q = await tx.budgetAdminQuote.findUnique({
+          where: { id: chosenQuoteId },
+          select: {
+            id: true,
+            itemId: true,
+            category: true,
+            supplierId: true,
+            supplierName: true,
+            price: true,
+            discount: true,
+          },
+        });
+        if (!q || q.itemId !== itemId) {
+          throw new Error("Cotización inválida para este ítem");
+        }
+        const discount = Number(q.discount ?? 0);
+        const net = Number(q.price) * (1 - discount / 100);
+        snapshot = {
+          chosenQuoteId: q.id,
+          category: q.category,
+          supplierId: q.supplierId,
+          supplierName: q.supplierName,
+          amount: net,
+        };
       }
-      const discount = Number(q.discount ?? 0);
-      const net = Number(q.price) * (1 - discount / 100);
-      snapshot = {
-        chosenQuoteId: q.id,
-        category: q.category,
-        supplierId: q.supplierId,
-        supplierName: q.supplierName,
-        amount: net,
-      };
+    } else if (typeof budgetId === "string" && budgetId) {
+      // Validamos que el budget exista antes de vincularlo.
+      const b = await tx.budget.findUnique({
+        where: { id: budgetId },
+        select: { id: true },
+      });
+      if (!b) throw new Error("Presupuesto no encontrado");
     }
 
-    const number = await nextPurchaseNumber(tx, itemId);
+    const number = hasItem
+      ? await nextPurchaseNumber(tx, itemId as string)
+      : await nextPurchaseNumberDirect(
+          tx,
+          typeof budgetId === "string" && budgetId ? budgetId : null,
+        );
 
     return tx.purchase.create({
       data: {
-        itemId,
+        ...(hasItem && { itemId: itemId as string }),
+        ...(!hasItem &&
+          typeof budgetId === "string" &&
+          budgetId && { budgetId }),
+        ...(!hasItem && { productDescription: (productDescription as string).trim() }),
         number,
         status: initialStatus,
         ...(snapshot.chosenQuoteId && { chosenQuoteId: snapshot.chosenQuoteId }),

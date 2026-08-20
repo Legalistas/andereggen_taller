@@ -74,19 +74,22 @@ function toDateInput(iso: string | null): string {
 }
 
 type DetailPurchase = PurchaseRow & {
-  item: PurchaseRow["item"] & {
-    quotes: Array<{
-      id: string;
-      category: "OFICIAL" | "ALTERNATIVO" | "DESARMADERO";
-      supplierName: string;
-      supplier: { id: string; name: string } | null;
-      price: string | number;
-      discount: string | number | null;
-      partCode: string | null;
-      availability: string | null;
-      notes: string | null;
-    }>;
-  };
+  // v3: item puede ser null en compras directas (sin cotizaciones).
+  item:
+    | (NonNullable<PurchaseRow["item"]> & {
+        quotes: Array<{
+          id: string;
+          category: "OFICIAL" | "ALTERNATIVO" | "DESARMADERO";
+          supplierName: string;
+          supplier: { id: string; name: string } | null;
+          price: string | number;
+          discount: string | number | null;
+          partCode: string | null;
+          availability: string | null;
+          notes: string | null;
+        }>;
+      })
+    | null;
 };
 
 export default function PurchaseDetailDialog({
@@ -126,8 +129,9 @@ export default function PurchaseDetailDialog({
   const [receivedAt, setReceivedAt] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
 
+  // spec v3 · which = PARTS | FREIGHT (kind del enum PurchasePaymentKind).
   const [payDialogOpen, setPayDialogOpen] = useState<{
-    which: "parts" | "freight" | "both";
+    which: "PARTS" | "FREIGHT";
   } | null>(null);
 
   const fetchPurchase = useCallback(async () => {
@@ -208,25 +212,35 @@ export default function PurchaseDetailDialog({
                 </span>
               )}
             </DialogTitle>
-            {purchase && (
-              <DialogDescription>
-                {purchase.item.description}
-                {purchase.item.budget?.repair && (
-                  <>
-                    {" · "}
-                    <Link
-                      href={`/produccion?repairId=${purchase.item.budget.repair.id}`}
-                      className="text-[#003b73] hover:underline"
-                    >
-                      {purchase.item.budget.repair.customerName} ·{" "}
-                      {purchase.item.budget.repair.vehicleBrand}{" "}
-                      {purchase.item.budget.repair.vehicleModel} ·{" "}
-                      {purchase.item.budget.repair.vehicleDomain}
-                    </Link>
-                  </>
-                )}
-              </DialogDescription>
-            )}
+            {purchase &&
+              (() => {
+                // v3: fallback a productDescription cuando no hay item
+                // (compra directa). Budget/repair puede venir del item o
+                // del propio Purchase.
+                const label =
+                  purchase.item?.description ??
+                  purchase.productDescription ??
+                  "—";
+                const repair =
+                  purchase.item?.budget?.repair ?? purchase.budget?.repair;
+                return (
+                  <DialogDescription>
+                    {label}
+                    {repair && (
+                      <>
+                        {" · "}
+                        <Link
+                          href={`/produccion?repairId=${repair.id}`}
+                          className="text-[#003b73] hover:underline"
+                        >
+                          {repair.customerName} · {repair.vehicleBrand}{" "}
+                          {repair.vehicleModel} · {repair.vehicleDomain}
+                        </Link>
+                      </>
+                    )}
+                  </DialogDescription>
+                );
+              })()}
           </DialogHeader>
 
           {loading ? (
@@ -271,12 +285,17 @@ export default function PurchaseDetailDialog({
                 </div>
               </div>
 
-              {/* Cotizaciones (elegida + descartadas) */}
+              {/* Cotizaciones (elegida + descartadas) — solo si hay item
+                  del circuito lead. Compras directas no tienen quotes. */}
               <div className="rounded-md border border-slate-200 bg-white">
                 <div className="px-3 py-2 border-b bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
                   Cotizaciones del ítem
                 </div>
-                {purchase.item.quotes.length === 0 ? (
+                {!purchase.item ? (
+                  <div className="p-3 text-xs text-slate-500 italic">
+                    Compra directa — sin cotizaciones asociadas.
+                  </div>
+                ) : purchase.item.quotes.length === 0 ? (
                   <div className="p-3 text-xs text-slate-500 italic">
                     Sin cotizaciones cargadas todavía. Cargálas desde el ítem
                     en la ficha administrativa.
@@ -428,86 +447,14 @@ export default function PurchaseDetailDialog({
                 />
               </div>
 
-              {/* Estado de pago */}
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
-                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
-                  Estado de pago
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <Package className="h-3.5 w-3.5 text-slate-500" />
-                      <span className="text-xs text-slate-600">Repuesto</span>
-                    </div>
-                    {purchase.paidPartsAt ? (
-                      <div className="mt-1">
-                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">
-                          ✓ Pagado {DATE_FMT.format(new Date(purchase.paidPartsAt))}
-                        </span>
-                      </div>
-                    ) : Number(purchase.amount) > 0 ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-1 h-8 gap-1.5"
-                        onClick={() => setPayDialogOpen({ which: "parts" })}
-                        disabled={saving}
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                        Marcar pagado
-                      </Button>
-                    ) : (
-                      <div className="text-[11px] text-slate-400 italic mt-1">
-                        Sin monto
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <Truck className="h-3.5 w-3.5 text-slate-500" />
-                      <span className="text-xs text-slate-600">Flete</span>
-                    </div>
-                    {purchase.paidFreightAt ? (
-                      <div className="mt-1">
-                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">
-                          ✓ Pagado{" "}
-                          {DATE_FMT.format(new Date(purchase.paidFreightAt))}
-                        </span>
-                      </div>
-                    ) : Number(purchase.freightAmount) > 0 ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-1 h-8 gap-1.5"
-                        onClick={() => setPayDialogOpen({ which: "freight" })}
-                        disabled={saving}
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                        Marcar pagado
-                      </Button>
-                    ) : (
-                      <div className="text-[11px] text-slate-400 italic mt-1">
-                        Sin flete
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {Number(purchase.amount) > 0 &&
-                  Number(purchase.freightAmount) > 0 &&
-                  !purchase.paidPartsAt &&
-                  !purchase.paidFreightAt && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full h-8 gap-1.5"
-                      onClick={() => setPayDialogOpen({ which: "both" })}
-                      disabled={saving}
-                    >
-                      Pagar ambos
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-              </div>
+              {/* spec v3 · Pagos parciales — total / pagado / saldo por
+                  concepto (Repuesto y Flete). Botón "Agregar pago" abre
+                  el sub-dialog que crea 1 PurchasePayment + 1 EGRESO. */}
+              <PaymentsPanel
+                purchase={purchase}
+                saving={saving}
+                onOpenPayDialog={(kind) => setPayDialogOpen({ which: kind })}
+              />
             </div>
           ) : null}
 
@@ -542,6 +489,177 @@ export default function PurchaseDetailDialog({
   );
 }
 
+// spec v3 · Panel de pagos parciales. Muestra total/pagado/saldo por
+// concepto (Repuesto y Flete) + historial de pagos + botón para agregar
+// un pago nuevo. Al agregar, el server crea 1 PurchasePayment + 1
+// CashMovement EGRESO. La compra queda en PENDIENTE_PAGO hasta que
+// saldo === 0; ahí auto-transiciona a ARCHIVADA.
+function PaymentsPanel({
+  purchase,
+  saving,
+  onOpenPayDialog,
+}: {
+  purchase: DetailPurchase;
+  saving: boolean;
+  onOpenPayDialog: (kind: "PARTS" | "FREIGHT") => void;
+}) {
+  const partsTotal = Number(purchase.amount);
+  const freightTotal = Number(purchase.freightAmount);
+  const payments = (purchase.payments ?? []) as Array<{
+    id: string;
+    kind: "PARTS" | "FREIGHT";
+    amount: string | number;
+    paidAt: string;
+    notes: string | null;
+  }>;
+  const partsPaid = payments
+    .filter((p) => p.kind === "PARTS")
+    .reduce((s, p) => s + Number(p.amount), 0);
+  const freightPaid = payments
+    .filter((p) => p.kind === "FREIGHT")
+    .reduce((s, p) => s + Number(p.amount), 0);
+  const partsRem = Math.max(0, partsTotal - partsPaid);
+  const freightRem = Math.max(0, freightTotal - freightPaid);
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-3">
+      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+        Pagos
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <PaymentSummary
+          icon={<Package className="h-3.5 w-3.5 text-slate-500" />}
+          label="Repuesto"
+          total={partsTotal}
+          paid={partsPaid}
+          remaining={partsRem}
+          canAddPayment={partsTotal > 0 && partsRem > 0 && !saving}
+          onAddPayment={() => onOpenPayDialog("PARTS")}
+        />
+        <PaymentSummary
+          icon={<Truck className="h-3.5 w-3.5 text-slate-500" />}
+          label="Flete"
+          total={freightTotal}
+          paid={freightPaid}
+          remaining={freightRem}
+          canAddPayment={freightTotal > 0 && freightRem > 0 && !saving}
+          onAddPayment={() => onOpenPayDialog("FREIGHT")}
+        />
+      </div>
+
+      {payments.length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+            Historial de pagos
+          </div>
+          <ul className="divide-y divide-slate-200 rounded border bg-white text-xs">
+            {payments.map((p) => (
+              <li
+                key={p.id}
+                className="px-2 py-1.5 flex items-center justify-between gap-2"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
+                      p.kind === "PARTS"
+                        ? "bg-slate-100 text-slate-700"
+                        : "bg-blue-100 text-blue-700"
+                    }`}
+                  >
+                    {p.kind === "PARTS" ? "Repuesto" : "Flete"}
+                  </span>
+                  <span className="text-slate-500">
+                    {DATE_FMT.format(new Date(p.paidAt))}
+                  </span>
+                  {p.notes && (
+                    <span className="text-slate-400 truncate">· {p.notes}</span>
+                  )}
+                </div>
+                <span className="tabular-nums font-semibold text-emerald-700">
+                  {ARS.format(Number(p.amount))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PaymentSummary({
+  icon,
+  label,
+  total,
+  paid,
+  remaining,
+  canAddPayment,
+  onAddPayment,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  total: number;
+  paid: number;
+  remaining: number;
+  canAddPayment: boolean;
+  onAddPayment: () => void;
+}) {
+  const fullyPaid = total > 0 && remaining <= 0.01;
+  return (
+    <div className="rounded border bg-white p-2 space-y-1">
+      <div className="flex items-center gap-1.5">
+        {icon}
+        <span className="text-xs font-semibold text-slate-700">{label}</span>
+        {fullyPaid && (
+          <span className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">
+            <CheckCircle2 className="h-3 w-3" />
+            Pagado
+          </span>
+        )}
+      </div>
+      {total === 0 ? (
+        <div className="text-[11px] text-slate-400 italic">Sin monto</div>
+      ) : (
+        <>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-slate-500">Total</span>
+            <span className="tabular-nums">{ARS.format(total)}</span>
+          </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-slate-500">Pagado</span>
+            <span className="tabular-nums text-emerald-700">
+              {ARS.format(paid)}
+            </span>
+          </div>
+          <div className="flex justify-between text-[11px] pt-1 border-t border-slate-100">
+            <span className="text-slate-700 font-semibold">Saldo</span>
+            <span
+              className={`tabular-nums font-semibold ${
+                fullyPaid ? "text-slate-400" : "text-rose-700"
+              }`}
+            >
+              {ARS.format(remaining)}
+            </span>
+          </div>
+          {canAddPayment && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full h-7 mt-1 gap-1 text-[11px]"
+              onClick={onAddPayment}
+            >
+              <ArrowRight className="h-3 w-3" />
+              Agregar pago parcial
+            </Button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// spec v3 · Dialog para registrar UN pago (parcial o total).
 function PayDialog({
   purchase,
   which,
@@ -550,21 +668,29 @@ function PayDialog({
   onPaid,
 }: {
   purchase: DetailPurchase;
-  which: "parts" | "freight" | "both";
+  which: "PARTS" | "FREIGHT";
   cashBoxes: CashBoxLite[];
   onClose: () => void;
   onPaid: () => void;
 }) {
+  // Saldo pendiente del concepto = default sugerido.
+  const payments = (purchase.payments ?? []) as Array<{
+    kind: "PARTS" | "FREIGHT";
+    amount: string | number;
+  }>;
+  const alreadyPaid = payments
+    .filter((p) => p.kind === which)
+    .reduce((s, p) => s + Number(p.amount), 0);
+  const due =
+    which === "PARTS" ? Number(purchase.amount) : Number(purchase.freightAmount);
+  const remaining = Math.max(0, due - alreadyPaid);
+
   const [cashBoxId, setCashBoxId] = useState(cashBoxes[0]?.id ?? "");
   const [method, setMethod] = useState("EFECTIVO");
+  const [amount, setAmount] = useState<string>(String(remaining));
+  const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const total =
-    (which === "parts" || which === "both" ? Number(purchase.amount) : 0) +
-    (which === "freight" || which === "both"
-      ? Number(purchase.freightAmount)
-      : 0);
 
   const handlePay = async () => {
     setSaving(true);
@@ -573,12 +699,17 @@ function PayDialog({
       const res = await fetch(`/api/purchases/${purchase.id}/mark-paid`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ which, cashBoxId, method }),
+        body: JSON.stringify({
+          kind: which,
+          amount: Number(amount),
+          cashBoxId,
+          method,
+          notes: notes.trim() || undefined,
+        }),
       });
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({}));
-        throw new Error(b?.error ?? `HTTP ${res.status}`);
-      }
+      const raw = await res.text();
+      const b = raw ? JSON.parse(raw) : {};
+      if (!res.ok) throw new Error(b?.error ?? `HTTP ${res.status}`);
       onPaid();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
@@ -592,19 +723,30 @@ function PayDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            Registrar pago —{" "}
-            {which === "parts"
-              ? "Repuesto"
-              : which === "freight"
-                ? "Flete"
-                : "Repuesto + Flete"}
+            Registrar pago — {which === "PARTS" ? "Repuesto" : "Flete"}
           </DialogTitle>
           <DialogDescription>
-            Se va a crear un EGRESO en la caja seleccionada por{" "}
-            {ARS.format(total)}.
+            Saldo pendiente: <strong>{ARS.format(remaining)}</strong>. Se va a
+            crear un EGRESO en la caja seleccionada por el importe indicado.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
+          <div className="grid gap-1">
+            <Label className="text-xs">Importe *</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              onWheel={(e) => e.currentTarget.blur()}
+            />
+            <p className="text-[10px] text-slate-500">
+              Podés registrar un pago parcial (menor al saldo). El resto queda
+              en Pendiente de pago hasta cancelarse.
+            </p>
+          </div>
           <div className="grid gap-1">
             <Label className="text-xs">Caja</Label>
             <Select value={cashBoxId} onValueChange={setCashBoxId}>
@@ -636,6 +778,14 @@ function PayDialog({
               </SelectContent>
             </Select>
           </div>
+          <div className="grid gap-1">
+            <Label className="text-xs">Notas</Label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ej: N° recibo, seña, etc."
+            />
+          </div>
           {error && (
             <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
               {error}
@@ -646,7 +796,10 @@ function PayDialog({
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={handlePay} disabled={saving || !cashBoxId}>
+          <Button
+            onClick={handlePay}
+            disabled={saving || !cashBoxId || Number(amount) <= 0}
+          >
             {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             Registrar pago
           </Button>

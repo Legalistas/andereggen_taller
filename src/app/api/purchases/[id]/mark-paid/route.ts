@@ -1,32 +1,31 @@
 /**
  * POST /api/purchases/[id]/mark-paid
  *
- * spec Compras v2 · Marca como PAGADO el repuesto y/o el flete de una
- * compra. Genera un CashMovement EGRESO por cada concepto pagado, en la
- * caja seleccionada, y linkea al Purchase por `paidPartsMovementId` /
- * `paidFreightMovementId`.
+ * spec Compras v3 · Agrega UN pago (parcial o total) a la compra. Crea un
+ * PurchasePayment + un CashMovement EGRESO en la caja seleccionada.
  *
  * Body:
  *   {
- *     which: "parts" | "freight" | "both",
+ *     kind: "PARTS" | "FREIGHT",     // sobre qué concepto se paga
+ *     amount: number,                  // monto del pago (>0)
  *     cashBoxId: string,
- *     method?: "EFECTIVO" | "TRANSFERENCIA" | ...,
- *     paidAt?: ISO,
+ *     method?: PaymentMethod,          // default EFECTIVO
+ *     paidAt?: ISO,                    // default now
  *     notes?: string,
  *   }
  *
- * Idempotencia: si la parte ya está pagada, no crea duplicados — devuelve
- * el movimiento existente en el response.
- *
- * Al marcar como pagado, la Purchase pasa automáticamente a ARCHIVADA si
- * quedan cubiertos AMBOS conceptos (repuesto + flete). Si el flete es 0
- * (no aplica), basta con marcar repuestos.
+ * Auto-archiva la compra cuando Σ pagos ≥ amount + freightAmount (o cuando
+ * amount y freightAmount son 0). Mientras haya saldo, queda en el status
+ * actual (o transiciona a PENDIENTE_PAGO si venía sin pagos previos).
  */
 
 import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
-import type { PaymentMethod } from "../../../../../../generated/prisma/client";
+import type {
+  PaymentMethod,
+  PurchasePaymentKind,
+} from "../../../../../../generated/prisma/client";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -39,6 +38,8 @@ const VALID_METHODS = new Set<PaymentMethod>([
   "OTRO",
 ]);
 
+const VALID_KINDS = new Set<PurchasePaymentKind>(["PARTS", "FREIGHT"]);
+
 export async function POST(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
   if (authError) return authError;
@@ -49,14 +50,21 @@ export async function POST(request: Request, ctx: RouteContext) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
-  const { which, cashBoxId, method, paidAt, notes } = body as Record<
+  const { kind, amount, cashBoxId, method, paidAt, notes } = body as Record<
     string,
     unknown
   >;
 
-  if (which !== "parts" && which !== "freight" && which !== "both") {
+  if (typeof kind !== "string" || !VALID_KINDS.has(kind as PurchasePaymentKind)) {
     return NextResponse.json(
-      { error: "which debe ser 'parts', 'freight' o 'both'" },
+      { error: "kind debe ser 'PARTS' o 'FREIGHT'" },
+      { status: 400 },
+    );
+  }
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    return NextResponse.json(
+      { error: "amount debe ser un número > 0" },
       { status: 400 },
     );
   }
@@ -74,6 +82,8 @@ export async function POST(request: Request, ctx: RouteContext) {
   if (Number.isNaN(when.getTime())) {
     return NextResponse.json({ error: "paidAt inválido" }, { status: 400 });
   }
+  const notesText =
+    typeof notes === "string" && notes.trim() ? notes.trim() : null;
 
   const box = await prisma.cashBox.findUnique({ where: { id: cashBoxId } });
   if (!box) {
@@ -89,6 +99,7 @@ export async function POST(request: Request, ctx: RouteContext) {
       item: { select: { description: true } },
       supplier: { select: { name: true } },
       freightSupplier: { select: { name: true } },
+      payments: { select: { kind: true, amount: true } },
     },
   });
   if (!purchase) {
@@ -98,86 +109,97 @@ export async function POST(request: Request, ctx: RouteContext) {
     );
   }
 
-  const notesText =
-    typeof notes === "string" && notes.trim() ? notes.trim() : null;
+  // Sobrepago: rechazamos si el pago supera el saldo del concepto.
+  const paidPrevKind = purchase.payments
+    .filter((p) => p.kind === kind)
+    .reduce((s, p) => s + Number(p.amount), 0);
+  const dueKind =
+    kind === "PARTS" ? Number(purchase.amount) : Number(purchase.freightAmount);
+  const remainingKind = dueKind - paidPrevKind;
+  if (amt > remainingKind + 0.01) {
+    return NextResponse.json(
+      {
+        error: `El pago (${amt}) supera el saldo del ${
+          kind === "PARTS" ? "repuesto" : "flete"
+        } (${remainingKind.toFixed(2)}).`,
+      },
+      { status: 400 },
+    );
+  }
+
+  const productLabel =
+    purchase.item?.description ?? purchase.productDescription ?? "—";
+  const supplierLabel =
+    kind === "PARTS"
+      ? (purchase.supplierName ?? purchase.supplier?.name ?? "—")
+      : (purchase.freightSupplierName ??
+        purchase.freightSupplier?.name ??
+        "—");
+  const concept =
+    `${kind === "PARTS" ? "Repuesto" : "Flete"} · Compra ${purchase.number} · ${supplierLabel} · ${productLabel}`.slice(
+      0,
+      500,
+    );
 
   const result = await prisma.$transaction(async (tx) => {
-    const patch: Record<string, unknown> = {};
+    const movement = await tx.cashMovement.create({
+      data: {
+        cashBoxId,
+        type: "EGRESO",
+        amount: amt,
+        method: m,
+        concept,
+        notes: notesText,
+        paidAt: when,
+        createdById: session?.user?.id ?? null,
+      },
+    });
 
-    // ── Repuesto ──
-    const wantsParts = which === "parts" || which === "both";
-    if (wantsParts && !purchase.paidPartsMovementId) {
-      const amt = Number(purchase.amount);
-      if (amt > 0) {
-        const partsMovement = await tx.cashMovement.create({
-          data: {
-            cashBoxId,
-            type: "EGRESO",
-            amount: amt,
-            method: m,
-            concept: `Repuesto · Compra ${purchase.number} · ${
-              purchase.supplierName ?? purchase.supplier?.name ?? "—"
-            } · ${purchase.item.description}`.slice(0, 500),
-            notes: notesText,
-            paidAt: when,
-            createdById: session?.user?.id ?? null,
-          },
-        });
-        patch.paidPartsAt = when;
-        patch.paidPartsMovementId = partsMovement.id;
-      }
-    }
+    const payment = await tx.purchasePayment.create({
+      data: {
+        purchaseId: id,
+        kind: kind as PurchasePaymentKind,
+        amount: amt,
+        cashMovementId: movement.id,
+        paidAt: when,
+        notes: notesText,
+        createdById: session?.user?.id ?? null,
+      },
+    });
 
-    // ── Flete ──
-    const wantsFreight = which === "freight" || which === "both";
-    if (wantsFreight && !purchase.paidFreightMovementId) {
-      const amt = Number(purchase.freightAmount);
-      if (amt > 0) {
-        const freightMovement = await tx.cashMovement.create({
-          data: {
-            cashBoxId,
-            type: "EGRESO",
-            amount: amt,
-            method: m,
-            concept: `Flete · Compra ${purchase.number} · ${
-              purchase.freightSupplierName ?? purchase.freightSupplier?.name ?? "—"
-            } · ${purchase.item.description}`.slice(0, 500),
-            notes: notesText,
-            paidAt: when,
-            createdById: session?.user?.id ?? null,
-          },
-        });
-        patch.paidFreightAt = when;
-        patch.paidFreightMovementId = freightMovement.id;
-      }
-    }
+    // Recalcular saldos post-pago y actualizar campos denormalizados +
+    // auto-transición.
+    const totalPartsPaid = purchase.payments
+      .filter((p) => p.kind === "PARTS")
+      .reduce((s, p) => s + Number(p.amount), 0) + (kind === "PARTS" ? amt : 0);
+    const totalFreightPaid = purchase.payments
+      .filter((p) => p.kind === "FREIGHT")
+      .reduce((s, p) => s + Number(p.amount), 0) +
+      (kind === "FREIGHT" ? amt : 0);
 
-    // ── Auto-transición a ARCHIVADA cuando todo lo debido está pagado ──
     const partsCovered =
       Number(purchase.amount) === 0 ||
-      purchase.paidPartsMovementId !== null ||
-      patch.paidPartsMovementId !== undefined;
+      totalPartsPaid + 0.01 >= Number(purchase.amount);
     const freightCovered =
       Number(purchase.freightAmount) === 0 ||
-      purchase.paidFreightMovementId !== null ||
-      patch.paidFreightMovementId !== undefined;
+      totalFreightPaid + 0.01 >= Number(purchase.freightAmount);
+
+    const patch: Record<string, unknown> = {};
+    if (kind === "PARTS") patch.paidPartsAt = when;
+    if (kind === "FREIGHT") patch.paidFreightAt = when;
+
     if (partsCovered && freightCovered) {
       patch.status = "ARCHIVADA";
       patch.archivedAt = when;
+    } else {
+      // Saldo abierto → dejar en PENDIENTE_PAGO para que aparezca en ese tab.
+      patch.status = "PENDIENTE_PAGO";
     }
 
-    if (Object.keys(patch).length === 0) {
-      return purchase;
-    }
-    return tx.purchase.update({
-      where: { id },
-      data: patch,
-      include: {
-        paidPartsMovement: true,
-        paidFreightMovement: true,
-      },
-    });
+    await tx.purchase.update({ where: { id }, data: patch });
+
+    return { payment, movement };
   });
 
-  return NextResponse.json({ purchase: result });
+  return NextResponse.json(result, { status: 201 });
 }

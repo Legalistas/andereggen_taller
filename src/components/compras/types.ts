@@ -26,10 +26,35 @@ export type PurchaseRow = {
   paidPartsMovementId: string | null;
   paidFreightAt: string | null;
   paidFreightMovementId: string | null;
+  // spec v3 · Pagos parciales — el detail dialog los usa para calcular
+  // saldo pendiente y renderizar el historial.
+  payments?: Array<{
+    id: string;
+    kind: "PARTS" | "FREIGHT";
+    amount: string | number;
+    paidAt: string;
+    notes: string | null;
+  }>;
   receiptUrl: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  // spec v3 · Compras directas (insumos/herramientas) sin item ni vehículo.
+  // Cuando item === null, la descripción sale de productDescription.
+  productDescription: string | null;
+  budget: {
+    id: string;
+    number: number;
+    extensionSuffix: number | null;
+    repair: {
+      id: string;
+      internalNumber: number | null;
+      vehicleBrand: string;
+      vehicleModel: string;
+      vehicleDomain: string;
+      customerName: string;
+    } | null;
+  } | null;
   item: {
     id: string;
     description: string;
@@ -46,7 +71,7 @@ export type PurchaseRow = {
         customerName: string;
       } | null;
     } | null;
-  };
+  } | null;
   chosenQuote: {
     id: string;
     category: QuoteCategory;

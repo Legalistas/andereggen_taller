@@ -1,10 +1,13 @@
 /**
- * Catálogo de estados del módulo Compras — spec Compras v2.
+ * Catálogo de estados del módulo Compras — spec Compras v3.
  *
- * 7 estados que forman los tabs del módulo. La transición NO tiene
+ * 8 estados que forman los tabs del módulo. La transición NO tiene
  * guardias en el enum: el brief pide que la compra pueda retroceder
  * (devoluciones/recompras), así que cualquier estado → cualquier estado
  * es válido desde el UI.
+ *
+ * v3: renombrado label "Decidir" → "Definir" y agregada etapa SEGURO
+ * entre EN_CAMINO y EN_TALLER (compras gestionadas por la aseguradora).
  */
 
 import type { PurchaseStatus } from "../../../generated/prisma/client";
@@ -33,9 +36,9 @@ export const PURCHASE_STATUS_META: Record<PurchaseStatus, PurchaseStatusMeta> = 
   },
   DECIDIR: {
     key: "DECIDIR",
-    label: "Decidir",
+    label: "Definir",
     description:
-      "Cotizaciones listas. Falta elegir cuál se compra (checkbox).",
+      "Cotizaciones listas. Falta definir cuál se compra (checkbox).",
     order: 2,
     tone: {
       bg: "bg-violet-100",
@@ -62,19 +65,31 @@ export const PURCHASE_STATUS_META: Record<PurchaseStatus, PurchaseStatusMeta> = 
       dot: "bg-amber-500",
     },
   },
+  SEGURO: {
+    key: "SEGURO",
+    label: "Seguro",
+    description:
+      "La compra la gestiona la aseguradora. Cuando llega al taller, pasar manualmente a 'En taller'.",
+    order: 5,
+    tone: {
+      bg: "bg-teal-100",
+      text: "text-teal-700",
+      dot: "bg-teal-500",
+    },
+  },
   EN_TALLER: {
     key: "EN_TALLER",
     label: "En taller",
     description:
       "Repuesto recibido. Fecha de recepción vinculada a 'Repuestos recibidos' de Producción.",
-    order: 5,
+    order: 6,
     tone: { bg: "bg-cyan-100", text: "text-cyan-700", dot: "bg-cyan-500" },
   },
   PENDIENTE_PAGO: {
     key: "PENDIENTE_PAGO",
     label: "Pendiente de pago",
     description: "Llegó pero todavía no se pagó (repuesto y/o flete).",
-    order: 6,
+    order: 7,
     tone: {
       bg: "bg-orange-100",
       text: "text-orange-700",
@@ -85,7 +100,7 @@ export const PURCHASE_STATUS_META: Record<PurchaseStatus, PurchaseStatusMeta> = 
     key: "ARCHIVADA",
     label: "Archivada",
     description: "Compra cerrada.",
-    order: 7,
+    order: 8,
     tone: {
       bg: "bg-emerald-100",
       text: "text-emerald-700",

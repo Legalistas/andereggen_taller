@@ -63,6 +63,7 @@ model User {
   pendingCashPaymentsCreated   PendingCashPayment[]   @relation("PendingCashPaymentCreatedBy")
   monthlyKpiEntriesCreated     MonthlyKpiEntry[]      @relation("MonthlyKpiEntryCreatedBy")
   purchasesCreated             Purchase[]             @relation("PurchaseCreatedBy")
+  purchasePaymentsCreated      PurchasePayment[]      @relation("PurchasePaymentCreatedBy")
 }
 
 model Session {
@@ -449,16 +450,19 @@ model Budget {
   //                 customerAddress, customerLocality, customerPhone } }
   fichasOverrides Json?
 
-  lead          Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  concepts      BudgetConcept[]
-  parts         BudgetPart[]
-  partMovements PartMovement[]
-  payments      Payment[]
-  emailLogs     BudgetEmailLog[]
-  adminItems    BudgetAdminItem[]
-  repair        Repair?           @relation("BudgetRepair")
-  createdById   String?
-  createdBy     User?             @relation("BudgetCreatedBy", fields: [createdById], references: [id])
+  lead            Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  concepts        BudgetConcept[]
+  parts           BudgetPart[]
+  partMovements   PartMovement[]
+  payments        Payment[]
+  emailLogs       BudgetEmailLog[]
+  adminItems      BudgetAdminItem[]
+  // spec v3 · Purchases directas asociadas al presupuesto pero sin item
+  // (insumos/herramientas cargados desde el módulo Compras).
+  directPurchases Purchase[]        @relation("BudgetDirectPurchases")
+  repair          Repair?           @relation("BudgetRepair")
+  createdById     String?
+  createdBy       User?             @relation("BudgetCreatedBy", fields: [createdById], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -585,12 +589,21 @@ model BudgetAdminQuote {
 
 enum PurchaseStatus {
   COTIZAR // Se cargan repuestos y cotizaciones — sin decisión aún
-  DECIDIR // Cotizaciones listas, falta elegir cuál comprar
+  DECIDIR // Cotizaciones listas, falta elegir cuál comprar (label UI: "Definir")
   COMPRAR // Cotización elegida, hay que gestionar la compra con el proveedor
   EN_CAMINO // Compra efectuada, pieza en tránsito
+  SEGURO // spec v3 · Compra gestionada por la aseguradora (entre EN_CAMINO y EN_TALLER)
   EN_TALLER // Repuesto llegó (setea receivedAt → dispara Repair.partsReceivedAt)
   PENDIENTE_PAGO // Llegó pero todavía no se pagó (repuesto y/o flete)
   ARCHIVADA // Compra cerrada
+}
+
+// spec v3 · Quién financia/gestiona la compra de repuestos, se define al
+// marcar el lead como Ganado. Determina el status inicial de las Purchases
+// auto-creadas (TALLER → DECIDIR, SEGURO → SEGURO).
+enum PartsPurchaser {
+  TALLER
+  SEGURO
 }
 
 /**
@@ -617,14 +630,28 @@ model Supplier {
 }
 
 model Purchase {
-  id     String          @id @default(uuid())
-  itemId String
-  item   BudgetAdminItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  id String @id @default(uuid())
+
+  // spec v3 · itemId nullable: las compras directas (insumos, herramientas)
+  // no vienen de un BudgetAdminItem. Si viene, la description sale del item;
+  // si no, se usa `productDescription`.
+  itemId String?
+  item   BudgetAdminItem? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  // spec v3 · Compra directa asociada a un presupuesto (pero sin item del
+  // circuito lead → admin). Nullable.
+  budgetId String?
+  budget   Budget? @relation("BudgetDirectPurchases", fields: [budgetId], references: [id], onDelete: SetNull)
+
+  // spec v3 · Descripción del producto para compras directas (sin item).
+  // Reemplaza a `item.description` en esos casos. Column "Producto" en UI.
+  productDescription String?
 
   /**
    * spec Compras v2 · N° de compra propio, formato
    * `<budget.number|"INT-"+internalNumber>.<seq>` (ej. 4056.1, 4056.2,
    * INT-192.1). Único en toda la app para poder linkear desde caja.
+   * Para compras directas sin presupuesto: `DIR.<seq>`.
    */
   number String @unique
 
@@ -686,11 +713,46 @@ model Purchase {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // spec v3 · Pagos parciales. Reemplazan el flujo viejo de un solo
+  // movimiento por parts + un solo por freight. Los campos paidPartsAt/
+  // paidFreightAt de arriba quedan como resumen (última fecha).
+  payments PurchasePayment[]
+
   @@index([itemId])
+  @@index([budgetId])
   @@index([status])
   @@index([supplierId])
   @@index([freightSupplierId])
   @@index([purchasedAt])
+}
+
+// spec v3 · Pagos parciales de una compra. Cada uno genera un CashMovement
+// EGRESO en la caja seleccionada. `kind` distingue si el pago es sobre el
+// repuesto o el flete (mismo tratamiento contable, solo cambia el label).
+// La compra queda en PENDIENTE_PAGO hasta que Σ payments === amount + freight.
+enum PurchasePaymentKind {
+  PARTS
+  FREIGHT
+}
+
+model PurchasePayment {
+  id         String              @id @default(uuid())
+  purchaseId String
+  purchase   Purchase            @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  kind       PurchasePaymentKind @default(PARTS)
+  amount     Decimal             @db.Decimal(14, 2)
+
+  cashMovementId String?       @unique
+  cashMovement   CashMovement? @relation("PurchasePartialPayment", fields: [cashMovementId], references: [id], onDelete: SetNull)
+
+  paidAt      DateTime @default(now())
+  notes       String?
+  createdById String?
+  createdBy   User?    @relation("PurchasePaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([purchaseId])
+  @@index([paidAt])
 }
 
 /**
@@ -1161,6 +1223,14 @@ model Repair {
   // en directCreation puede no haber FK a InsuranceCompany.
   insuranceCompany String?
 
+  // spec v3 · Quién financia la compra de repuestos (Taller o Seguro).
+  // Se elige al marcar el lead como Ganado. Al setearlo se auto-crean
+  // Purchases para cada BudgetAdminItem del budget:
+  //   TALLER → status DECIDIR (van al circuito administrativo normal)
+  //   SEGURO → status SEGURO + supplierName = "Seguro"
+  // Nullable = todavía no se decidió (repairs viejos, o falta setearlo).
+  partsPurchaser PartsPurchaser?
+
   // Importes aprobados por el seguro / acordados con el cliente. Pueden
   // diferir del grandTotal del presupuesto cuando el seguro recorta.
   approvedInsurance Decimal?  @db.Decimal(14, 2)
@@ -1411,8 +1481,10 @@ model CashMovement {
    * de una Purchase. Ambas relaciones son inversas de Purchase (`@unique`
    * en el lado Purchase).
    */
-  purchasePartsPayment   Purchase? @relation("PurchasePartsPayment")
-  purchaseFreightPayment Purchase? @relation("PurchaseFreightPayment")
+  purchasePartsPayment   Purchase?        @relation("PurchasePartsPayment")
+  purchaseFreightPayment Purchase?        @relation("PurchaseFreightPayment")
+  // spec v3 · Pagos parciales de Purchase (reemplazan a los dos de arriba).
+  purchasePartialPayment PurchasePayment? @relation("PurchasePartialPayment")
 
   @@index([cashBoxId])
   @@index([paidAt])

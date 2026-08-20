@@ -192,8 +192,29 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
       .sort((a, b) => b.total - a.total);
   }, [movements]);
 
+  // Totales por tipo para labels del filtro (COBROS / INGRESOS).
+  const typeTotals = useMemo(() => {
+    let cobros = 0;
+    let ingresos = 0;
+    for (const m of movements) {
+      if (m.type === "COBRO") cobros += m.amount;
+      if (m.type === "INGRESO") ingresos += m.amount;
+    }
+    return { cobros, ingresos };
+  }, [movements]);
+
   const filteredMovements = useMemo(() => {
     if (conceptFilter === "all") return movements;
+    // Filtros especiales por tipo (prefijo `__type:`) vs filtro por concepto
+    // específico de EGRESO (texto del concepto).
+    if (conceptFilter === "__type:COBRO") {
+      return movements.filter((m) => m.type === "COBRO");
+    }
+    if (conceptFilter === "__type:INGRESO") {
+      return movements.filter(
+        (m) => m.type === "INGRESO" || m.type === "COBRO",
+      );
+    }
     return movements.filter(
       (m) => m.type === "EGRESO" && m.concept === conceptFilter,
     );
@@ -481,7 +502,12 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
             )}
             {conceptFilter !== "all" && (
               <span className="text-[11px] bg-[#003b73]/10 text-[#003b73] px-2 py-0.5 rounded">
-                Filtrando: {conceptFilter}
+                Filtrando:{" "}
+                {conceptFilter === "__type:COBRO"
+                  ? "Cobros"
+                  : conceptFilter === "__type:INGRESO"
+                    ? "Ingresos + cobros"
+                    : conceptFilter}
               </span>
             )}
           </div>
@@ -514,7 +540,16 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos los conceptos</SelectItem>
+                <SelectItem value="all">Todos los movimientos</SelectItem>
+                <SelectItem value="__type:COBRO">
+                  Cobros · {ARS.format(typeTotals.cobros)}
+                </SelectItem>
+                {typeTotals.ingresos > 0 && (
+                  <SelectItem value="__type:INGRESO">
+                    Ingresos + cobros ·{" "}
+                    {ARS.format(typeTotals.ingresos + typeTotals.cobros)}
+                  </SelectItem>
+                )}
                 {egresoConcepts.map((c) => (
                   <SelectItem key={c.concept} value={c.concept}>
                     {c.concept} · {ARS.format(c.total)}
@@ -533,7 +568,11 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
           <div className="p-8 text-center text-sm text-slate-500">
             {conceptFilter === "all"
               ? "No hay movimientos en este período."
-              : `No hay egresos en "${conceptFilter}" este mes.`}
+              : conceptFilter === "__type:COBRO"
+                ? "No hay cobros en este período."
+                : conceptFilter === "__type:INGRESO"
+                  ? "No hay ingresos ni cobros en este período."
+                  : `No hay egresos en "${conceptFilter}" este mes.`}
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">

@@ -394,15 +394,15 @@ export function RepairCanvas({
             </SheetHeader>
 
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-              {/* spec Compras v2 · Ítem #15: orden fijo de bloques + eliminar
-                  "Mecánico asignado". El orden lo pide el brief:
+              {/* Orden de bloques (spec 10/8 · Compañía sube pegada a
+                  Fechas porque es dato crítico al ingresar):
                     1. N° interno
                     2. Fechas clave
-                    3. Presupuesto vinculado
-                    4. Importes aprobados
-                    5. Facturación y cobros
-                    6. Cliente y vehículo
-                    7. Compañía de seguros
+                    3. Compañía de seguros
+                    4. Presupuesto vinculado
+                    5. Importes aprobados
+                    6. Facturación y cobros
+                    7. Cliente y vehículo
                     Encuesta (si existe)  ← queda antes de Notas
                     Último. Notas internas */}
               <InternalNumberSection
@@ -411,6 +411,11 @@ export function RepairCanvas({
               />
 
               <DatesSection repair={repair} onPatch={patchRepair} />
+
+              <InsuranceSection
+                value={repair.insuranceCompany}
+                onSave={(v) => patchRepair({ insuranceCompany: v })}
+              />
 
               {repair.budget && (
                 <BudgetSection
@@ -435,11 +440,6 @@ export function RepairCanvas({
               />
 
               <CustomerVehicleSection repair={repair} />
-
-              <InsuranceSection
-                value={repair.insuranceCompany}
-                onSave={(v) => patchRepair({ insuranceCompany: v })}
-              />
 
               {repair.serviceRating && (
                 <RatingSection rating={repair.serviceRating} />

@@ -1300,9 +1300,14 @@ function ConceptBlock({
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="1"
+                  onWheel={(e) => e.currentTarget.blur()}
                   value={concept.fixedAmount}
-                  onChange={(e) => onChange({ fixedAmount: e.target.value })}
+                  onChange={(e) =>
+                    onChange({
+                      fixedAmount: e.target.value.replace(/[.,].*/, ""),
+                    })
+                  }
                 />
               </div>
               <div className="grid gap-1.5">
@@ -1331,9 +1336,14 @@ function ConceptBlock({
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="1"
+                  onWheel={(e) => e.currentTarget.blur()}
                   value={concept.unitValue}
-                  onChange={(e) => onChange({ unitValue: e.target.value })}
+                  onChange={(e) =>
+                    onChange({
+                      unitValue: e.target.value.replace(/[.,].*/, ""),
+                    })
+                  }
                 />
               </div>
               <div className="grid gap-1.5">
@@ -1366,9 +1376,14 @@ function ConceptBlock({
             <Input
               type="number"
               min="0"
-              step="0.01"
+              step="1"
+              onWheel={(e) => e.currentTarget.blur()}
               value={concept.fixedAmount}
-              onChange={(e) => onChange({ fixedAmount: e.target.value })}
+              onChange={(e) =>
+                onChange({
+                  fixedAmount: e.target.value.replace(/[.,].*/, ""),
+                })
+              }
             />
           </div>
         </div>

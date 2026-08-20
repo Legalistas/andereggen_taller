@@ -54,7 +54,10 @@ export async function GET(request: Request) {
         cashBox: { select: { id: true, key: true, name: true } },
         createdBy: { select: { name: true } },
       },
-      orderBy: { paidAt: "desc" },
+      // Desempate por createdAt: el paidAt suele guardarse a mediodía local
+      // (input type=date sin hora) → todos los movimientos del mismo día
+      // quedan con paidAt idéntico y el orden real lo da createdAt.
+      orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
     }),
     prisma.repairInvoicePayment.findMany({
       where: {
@@ -77,7 +80,7 @@ export async function GET(request: Request) {
           },
         },
       },
-      orderBy: { paidAt: "desc" },
+      orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
     }),
   ]);
 
@@ -98,6 +101,7 @@ export async function GET(request: Request) {
       reference: m.reference,
       notes: m.notes,
       paidAt: m.paidAt.toISOString(),
+      createdAt: m.createdAt.toISOString(),
       createdBy: m.createdBy?.name ?? null,
       source: "manual" as const,
       transferGroupId: m.transferGroupId,
@@ -115,6 +119,7 @@ export async function GET(request: Request) {
       reference: p.reference,
       notes: p.notes,
       paidAt: p.paidAt.toISOString(),
+      createdAt: p.createdAt.toISOString(),
       createdBy: null,
       source: "payment" as const,
       transferGroupId: null,
@@ -125,7 +130,12 @@ export async function GET(request: Request) {
         vehicleDomain: p.invoice.repair.vehicleDomain,
       },
     })),
-  ].sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+  ].sort((a, b) => {
+    // Desempate por createdAt cuando paidAt es igual (todos los movs del
+    // mismo día tienen paidAt idéntico si se cargaron con input date sin hora).
+    const byPaid = b.paidAt.localeCompare(a.paidAt);
+    return byPaid !== 0 ? byPaid : b.createdAt.localeCompare(a.createdAt);
+  });
 
   return NextResponse.json({ rows });
 }

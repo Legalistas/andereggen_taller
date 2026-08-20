@@ -5,10 +5,12 @@ import {
   sendRepairEventNotification,
 } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import { autoCreatePurchasesForItems } from "@/lib/purchases/auto-create";
 import type {
   InsuranceResponsibility,
   LeadLostReason,
   LeadStatus,
+  PartsPurchaser,
 } from "../../../../../../generated/prisma/client";
 
 const ALL_STATUSES: LeadStatus[] = [
@@ -32,6 +34,7 @@ const INSURANCE_RESPONSIBILITIES: InsuranceResponsibility[] = [
   "tercero",
   "particular",
 ];
+const PARTS_PURCHASERS: PartsPurchaser[] = ["TALLER", "SEGURO"];
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -123,6 +126,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     insuranceAgentId,
     insuranceCompanyId,
     insuranceResponsibility,
+    partsPurchaser,
   } = body as {
     status?: LeadStatus;
     notes?: string | null;
@@ -133,6 +137,9 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     insuranceAgentId?: string | null;
     insuranceCompanyId?: string | null;
     insuranceResponsibility?: InsuranceResponsibility | null;
+    // spec v3 · Compras v3: quién financia la compra de repuestos.
+    // Obligatorio al pasar el lead a Ganado si aún no hay Repair.
+    partsPurchaser?: PartsPurchaser | null;
   };
 
   if (status && !ALL_STATUSES.includes(status)) {
@@ -171,6 +178,31 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       },
       { status: 400 },
     );
+  }
+
+  // spec v3 · partsPurchaser obligatorio al pasar a Ganado si aún no hay Repair.
+  if (partsPurchaser !== undefined && partsPurchaser !== null) {
+    if (!PARTS_PURCHASERS.includes(partsPurchaser)) {
+      return NextResponse.json(
+        { error: "partsPurchaser inválido (TALLER | SEGURO)" },
+        { status: 400 },
+      );
+    }
+  }
+  if (status === "ganado" && existing.status !== "ganado") {
+    const existingRepair = await prisma.repair.findFirst({
+      where: { leadId: id },
+      select: { id: true },
+    });
+    if (!existingRepair && !partsPurchaser) {
+      return NextResponse.json(
+        {
+          error:
+            "Elegí quién compra los repuestos (Taller / Seguro) antes de pasar el lead a Ganado.",
+        },
+        { status: 400 },
+      );
+    }
   }
 
   // Validar que los actores asignados existan y tengan el rol correcto.
@@ -317,9 +349,22 @@ export async function PATCH(request: Request, ctx: RouteContext) {
               vehicleYear: lastBudget.vehicleYear,
               vehicleDomain: lastBudget.vehicleDomain,
               insuranceCompany: lastBudget.vehicleInsurance,
+              partsPurchaser: partsPurchaser ?? null,
               createdById: session?.user?.id ?? null,
             },
           });
+
+          // spec v3 · Auto-crear Purchases por cada BudgetAdminItem del
+          // budget. Solo se ejecuta al ganar el lead (dentro del bloque
+          // !existingRepair, con lastBudget presente).
+          if (partsPurchaser) {
+            await autoCreatePurchasesForItems(
+              tx,
+              lastBudget.id,
+              partsPurchaser,
+              session?.user?.id ?? null,
+            );
+          }
         } else if (updated.customer && updated.vehicle) {
           // Lead ganado sin budget — snapshot directo desde customer/vehicle
           await tx.repair.create({
@@ -340,6 +385,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
               vehicleYear: updated.vehicle.year,
               vehicleDomain: updated.vehicle.domain,
               insuranceCompany: updated.vehicle.secure || null,
+              partsPurchaser: partsPurchaser ?? null,
               createdById: session?.user?.id ?? null,
             },
           });

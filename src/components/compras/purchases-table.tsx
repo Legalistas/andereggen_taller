@@ -2,7 +2,7 @@
 
 /**
  * Tabla del módulo Compras — spec Compras v2.
- * Columnas: N° presupuesto (clickeable) · N° compra · Vehículo · Repuesto ·
+ * Columnas: N° presupuesto (clickeable) · N° compra · Vehículo · Producto ·
  * Categoría/Proveedor · Monto · Proveedor flete · Flete · Estado · Ojo.
  */
 
@@ -52,7 +52,7 @@ export default function PurchasesTable({
           <TableHead className="w-24">N° Ppto</TableHead>
           <TableHead className="w-24">N° Compra</TableHead>
           <TableHead>Vehículo</TableHead>
-          <TableHead>Repuesto</TableHead>
+          <TableHead>Producto</TableHead>
           <TableHead>Categoría / Proveedor</TableHead>
           <TableHead className="text-right">Monto</TableHead>
           <TableHead>Proveedor flete</TableHead>
@@ -74,11 +74,16 @@ export default function PurchasesTable({
         )}
         {rows.map((r) => {
           const meta = PURCHASE_STATUS_META[r.status];
-          const repair = r.item.budget?.repair;
-          const budgetLabel = r.item.budget
-            ? r.item.budget.extensionSuffix && r.item.budget.extensionSuffix > 0
-              ? `${r.item.budget.number}-A${r.item.budget.extensionSuffix}`
-              : String(r.item.budget.number)
+          // v3: item puede ser null (compra directa). Fallback: budget
+          // directo del Purchase, luego repair.internalNumber. Producto:
+          // item.description ?? productDescription.
+          const budget = r.item?.budget ?? r.budget;
+          const repair = budget?.repair;
+          const productLabel = r.item?.description ?? r.productDescription ?? "—";
+          const budgetLabel = budget
+            ? budget.extensionSuffix && budget.extensionSuffix > 0
+              ? `${budget.number}-A${budget.extensionSuffix}`
+              : String(budget.number)
             : repair?.internalNumber
               ? `INT-${repair.internalNumber}`
               : "—";
@@ -116,8 +121,8 @@ export default function PurchasesTable({
                 )}
               </TableCell>
               <TableCell className="max-w-64">
-                <div className="text-sm truncate" title={r.item.description}>
-                  {r.item.description}
+                <div className="text-sm truncate" title={productLabel}>
+                  {productLabel}
                 </div>
                 {repair?.customerName && (
                   <div className="text-[10px] text-slate-400 truncate">

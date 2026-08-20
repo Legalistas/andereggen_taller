@@ -23,27 +23,27 @@ import type { PurchaseStatus } from "../../../../../generated/prisma/client";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+const BUDGET_SELECT = {
+  id: true,
+  number: true,
+  extensionSuffix: true,
+  repair: {
+    select: {
+      id: true,
+      internalNumber: true,
+      vehicleBrand: true,
+      vehicleModel: true,
+      vehicleDomain: true,
+      customerName: true,
+      partsReceivedAt: true,
+    },
+  },
+} as const;
+
 const PURCHASE_INCLUDE = {
   item: {
     include: {
-      budget: {
-        select: {
-          id: true,
-          number: true,
-          extensionSuffix: true,
-          repair: {
-            select: {
-              id: true,
-              internalNumber: true,
-              vehicleBrand: true,
-              vehicleModel: true,
-              vehicleDomain: true,
-              customerName: true,
-              partsReceivedAt: true,
-            },
-          },
-        },
-      },
+      budget: { select: BUDGET_SELECT },
       // Todas las quotes del ítem — para la vista OJO (elegida + descartadas).
       quotes: {
         orderBy: { createdAt: "asc" },
@@ -51,6 +51,8 @@ const PURCHASE_INCLUDE = {
       },
     },
   },
+  // v3 · Budget directo (compras sin item, con presupuesto opcional).
+  budget: { select: BUDGET_SELECT },
   chosenQuote: {
     include: { supplier: { select: { id: true, name: true } } },
   },
@@ -61,6 +63,14 @@ const PURCHASE_INCLUDE = {
   },
   paidFreightMovement: {
     select: { id: true, paidAt: true, cashBoxId: true, method: true },
+  },
+  // spec v3 · Pagos parciales, ordenados por fecha ASC (cronológicos).
+  payments: {
+    orderBy: { paidAt: "asc" },
+    include: {
+      cashMovement: { select: { id: true, cashBoxId: true, method: true } },
+      createdBy: { select: { name: true } },
+    },
   },
 } as const;
 

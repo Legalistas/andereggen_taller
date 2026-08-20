@@ -312,25 +312,47 @@ export default function LeadsSection() {
     setCreateError(null);
   };
 
+  // spec v3 · Al pasar a "ganado" (drag o click de status), el server exige
+  // partsPurchaser antes de crear el Repair. Abrimos un modal para elegir
+  // Taller/Seguro y recién ahí disparamos el PATCH real.
+  const [winModal, setWinModal] = useState<{ leadId: string } | null>(null);
+
+  const applyStatusChange = useCallback(
+    async (leadId: string, next: LeadStatus, extra: Record<string, unknown> = {}) => {
+      setLeads((prev) =>
+        prev.map((l) =>
+          l.id === leadId
+            ? { ...l, status: next, updatedAt: new Date().toISOString() }
+            : l,
+        ),
+      );
+      try {
+        const res = await fetch(`/api/crm/leads/${leadId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: next, ...extra }),
+        });
+        if (!res.ok) {
+          const b = await res.json().catch(() => ({}));
+          throw new Error(b?.error ?? `HTTP ${res.status}`);
+        }
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : "Error al actualizar");
+        await fetchLeads();
+      }
+    },
+    [fetchLeads],
+  );
+
   const handleStatusChange = async (leadId: string, next: LeadStatus) => {
-    // Update optimista — revertimos con un reload si el backend falla.
-    setLeads((prev) =>
-      prev.map((l) =>
-        l.id === leadId
-          ? { ...l, status: next, updatedAt: new Date().toISOString() }
-          : l,
-      ),
-    );
-    try {
-      const res = await fetch(`/api/crm/leads/${leadId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: next }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch {
-      await fetchLeads();
+    if (next === "ganado") {
+      const current = leads.find((l) => l.id === leadId);
+      // Si ya está ganado (reordenar dentro de la columna), no re-preguntamos.
+      if (current?.status === "ganado") return;
+      setWinModal({ leadId });
+      return;
     }
+    await applyStatusChange(leadId, next);
   };
 
   const handleAssignActor = async (
@@ -850,6 +872,23 @@ export default function LeadsSection() {
         onDelete={handleDeleteLead}
       />
 
+      {/* spec v3 · Modal Ganar Lead — pide "Compra de repuestos" (Taller/Seguro)
+          antes de crear el Repair y disparar las Purchases. */}
+      {winModal && (
+        <WinLeadDialog
+          leadId={winModal.leadId}
+          onCancel={() => {
+            setWinModal(null);
+            fetchLeads();
+          }}
+          onConfirm={async (partsPurchaser) => {
+            const leadId = winModal.leadId;
+            setWinModal(null);
+            await applyStatusChange(leadId, "ganado", { partsPurchaser });
+          }}
+        />
+      )}
+
       {/* Budget modal (controlado) */}
       <BudgetModal
         leadId={budgetFor?.leadId}
@@ -913,5 +952,82 @@ function FilterPill({
       {Icon ? <Icon className="h-3 w-3" /> : null}
       {children}
     </button>
+  );
+}
+
+// spec v3 · Dialog al pasar un lead a Ganado. Pide quién compra los
+// repuestos (Taller / Seguro). El server lo usa para: (1) guardarlo en
+// el Repair, (2) auto-crear las Purchases con status inicial adecuado
+// (DECIDIR para Taller, SEGURO para Seguro).
+function WinLeadDialog({
+  leadId: _leadId,
+  onCancel,
+  onConfirm,
+}: {
+  leadId: string;
+  onCancel: () => void;
+  onConfirm: (partsPurchaser: "TALLER" | "SEGURO") => void;
+}) {
+  const [choice, setChoice] = useState<"TALLER" | "SEGURO" | null>(null);
+  const [saving, setSaving] = useState(false);
+  return (
+    <Dialog open onOpenChange={(v) => !v && !saving && onCancel()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Marcar como Ganado</DialogTitle>
+          <DialogDescription>
+            ¿Quién financia la compra de los repuestos? Esto define cómo
+            entran las cotizaciones al módulo Compras.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2">
+          <button
+            type="button"
+            onClick={() => setChoice("TALLER")}
+            className={`text-left rounded-md border px-3 py-2 transition ${
+              choice === "TALLER"
+                ? "border-[#003b73] ring-2 ring-[#003b73]/20 bg-[#003b73]/5"
+                : "border-slate-200 hover:border-slate-300"
+            }`}
+          >
+            <div className="font-semibold text-sm text-slate-800">Taller</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              Las cotizaciones entran a la etapa <strong>Definir</strong> para
+              gestionarlas nosotros.
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setChoice("SEGURO")}
+            className={`text-left rounded-md border px-3 py-2 transition ${
+              choice === "SEGURO"
+                ? "border-teal-500 ring-2 ring-teal-500/20 bg-teal-50"
+                : "border-slate-200 hover:border-slate-300"
+            }`}
+          >
+            <div className="font-semibold text-sm text-slate-800">Seguro</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              La compra la gestiona la aseguradora. Entran a la etapa{" "}
+              <strong>Seguro</strong> con proveedor = "Seguro".
+            </div>
+          </button>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button
+            disabled={!choice || saving}
+            onClick={() => {
+              if (!choice) return;
+              setSaving(true);
+              onConfirm(choice);
+            }}
+          >
+            Confirmar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

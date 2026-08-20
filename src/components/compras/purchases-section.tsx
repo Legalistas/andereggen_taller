@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Plus,
   Search,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -29,6 +30,7 @@ import {
   PURCHASE_STATUSES_IN_ORDER,
 } from "@/lib/purchases/catalog";
 import type { PurchaseStatus } from "../../../generated/prisma/client";
+import NewDirectPurchaseDialog from "./new-direct-purchase-dialog";
 import PurchaseDetailDialog from "./purchase-detail-dialog";
 import PurchasesTable from "./purchases-table";
 import type { CashBoxLite, PurchaseRow, SupplierLite } from "./types";
@@ -70,6 +72,7 @@ export default function PurchasesSection() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
 
   const fetchPurchases = useCallback(async () => {
     setLoading(true);
@@ -175,6 +178,18 @@ export default function PurchasesSection() {
               ))}
             </SelectContent>
           </Select>
+          {/* spec v3 · Botón "Agregar" para cargar compras directas
+              (con o sin presupuesto/vehículo). Vale en Cotizar y en Todas. */}
+          {(tab === "COTIZAR" || tab === "TODAS") && (
+            <Button
+              size="sm"
+              className="gap-1.5 h-9"
+              onClick={() => setNewOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Agregar
+            </Button>
+          )}
           {loading && (
             <div className="text-xs text-slate-500 inline-flex items-center gap-1.5">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -282,6 +297,17 @@ export default function PurchasesSection() {
           cashBoxes={cashBoxes}
           onClose={() => setOpenId(null)}
           onChanged={fetchPurchases}
+        />
+      )}
+
+      {newOpen && (
+        <NewDirectPurchaseDialog
+          onClose={() => setNewOpen(false)}
+          onCreated={(id) => {
+            setNewOpen(false);
+            fetchPurchases();
+            setOpenId(id);
+          }}
         />
       )}
     </div>

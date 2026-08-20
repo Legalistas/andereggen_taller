@@ -62,8 +62,36 @@ export async function nextPurchaseNumber(
   itemId: string,
 ): Promise<string> {
   const prefix = await resolvePurchasePrefix(tx, itemId);
-  const like = `${prefix}.%`;
+  return nextPurchaseNumberForPrefix(tx, prefix);
+}
 
+/**
+ * spec v3 · Variante para compras directas (sin item). Toma un prefix
+ * calculado según:
+ *   - Si hay budgetId → número del budget.
+ *   - Si no → "DIR" (compra directa suelta, sin presupuesto/vehículo).
+ */
+export async function nextPurchaseNumberDirect(
+  tx: PrismaLike,
+  budgetId: string | null,
+): Promise<string> {
+  let prefix = "DIR";
+  if (budgetId) {
+    const b = await tx.budget.findUnique({
+      where: { id: budgetId },
+      select: { number: true },
+    });
+    if (b?.number !== undefined && b?.number !== null) {
+      prefix = String(b.number);
+    }
+  }
+  return nextPurchaseNumberForPrefix(tx, prefix);
+}
+
+async function nextPurchaseNumberForPrefix(
+  tx: PrismaLike,
+  prefix: string,
+): Promise<string> {
   const existing = await tx.purchase.findMany({
     where: { number: { startsWith: `${prefix}.` } },
     select: { number: true },
@@ -75,6 +103,5 @@ export async function nextPurchaseNumber(
     const n = Number(suffix);
     if (Number.isInteger(n) && n > max) max = n;
   }
-  void like; // documentación — no se usa directo, mostramos la intención.
   return `${prefix}.${max + 1}`;
 }
