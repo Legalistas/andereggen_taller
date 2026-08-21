@@ -959,7 +959,8 @@ function FilterPill({
 // repuestos (Taller / Seguro). El server lo usa para: (1) guardarlo en
 // el Repair, (2) auto-crear las Purchases con status inicial adecuado
 // (DECIDIR para Taller, SEGURO para Seguro).
-function WinLeadDialog({
+// Exportado: reutilizado por LeadCanvas para interceptar el status picker.
+export function WinLeadDialog({
   leadId: _leadId,
   onCancel,
   onConfirm,

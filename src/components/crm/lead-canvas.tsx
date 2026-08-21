@@ -61,6 +61,7 @@ import { parseWebLeadNotes } from "@/lib/parse-web-lead-notes";
 import { BudgetAdminDialog } from "./budget-admin-dialog";
 import { BudgetHistoryButton } from "./budget-history-button";
 import { FichasDialog } from "./fichas-dialog";
+import { WinLeadDialog } from "./leads-section";
 import { SendBudgetDialog } from "./send-budget-dialog";
 import { BrandField, ModelField, YearField } from "./vehicle-fields";
 
@@ -269,6 +270,10 @@ export function LeadCanvas({
   const [deletingBudget, setDeletingBudget] = useState<BudgetLite | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // spec v3 · Interceptor del StatusPicker: al pasar a "ganado" abrimos el
+  // modal Taller/Seguro en lugar de mandar el PATCH directo (que el server
+  // rechazaría con un alert feo).
+  const [winModalOpen, setWinModalOpen] = useState(false);
 
   const handleDeleteBudget = useCallback(async () => {
     if (!deletingBudget) return;
@@ -494,7 +499,13 @@ export function LeadCanvas({
               <div className="mt-4 flex items-center gap-2 flex-wrap">
                 <StatusPicker
                   status={lead.status}
-                  onChange={(status) => patchLead({ status })}
+                  onChange={async (status) => {
+                    if (status === "ganado" && lead.status !== "ganado") {
+                      setWinModalOpen(true);
+                      return;
+                    }
+                    await patchLead({ status });
+                  }}
                 />
                 <SavingIndicator state={savingIndicator} />
               </div>
@@ -661,6 +672,19 @@ export function LeadCanvas({
           onChanged?.();
         }}
       />
+
+      {/* spec v3 · Ganar el lead: pide Taller/Seguro y patchea con ambos. */}
+      {winModalOpen && leadId && (
+        <WinLeadDialog
+          leadId={leadId}
+          onCancel={() => setWinModalOpen(false)}
+          onConfirm={async (partsPurchaser) => {
+            setWinModalOpen(false);
+            await patchLead({ status: "ganado", partsPurchaser });
+            onChanged?.();
+          }}
+        />
+      )}
     </Sheet>
   );
 }
