@@ -184,6 +184,9 @@ type LeadDetail = {
   insuranceAgent: UserLite | null;
   insuranceCompany: InsuranceCompanyLite | null;
   insuranceResponsibility: InsuranceResponsibility | null;
+  // spec v3 · Quién compra los repuestos — se elige al lado del seguro
+  // pagador. Al ganar se copia al Repair.
+  partsPurchaser: "TALLER" | "SEGURO" | null;
   budgets: BudgetLite[];
   repairs: RepairLite[];
 };
@@ -500,7 +503,13 @@ export function LeadCanvas({
                 <StatusPicker
                   status={lead.status}
                   onChange={async (status) => {
-                    if (status === "ganado" && lead.status !== "ganado") {
+                    // spec v3 · Si ya definió partsPurchaser en la ficha,
+                    // pasa directo. Si no, abrimos el modal para pedirlo.
+                    if (
+                      status === "ganado" &&
+                      lead.status !== "ganado" &&
+                      !lead.partsPurchaser
+                    ) {
                       setWinModalOpen(true);
                       return;
                     }
@@ -530,6 +539,7 @@ export function LeadCanvas({
                   vehicle={lead.vehicle}
                   onPatch={patchVehicle}
                   insuranceResponsibility={lead.insuranceResponsibility}
+                  partsPurchaser={lead.partsPurchaser}
                   onPatchLead={patchLead}
                 />
               ) : (
@@ -1430,11 +1440,13 @@ function VehicleSection({
   vehicle,
   onPatch,
   insuranceResponsibility,
+  partsPurchaser,
   onPatchLead,
 }: {
   vehicle: VehicleDetail;
   onPatch: (patch: Record<string, unknown>) => Promise<void>;
   insuranceResponsibility: InsuranceResponsibility | null;
+  partsPurchaser: "TALLER" | "SEGURO" | null;
   onPatchLead: (patch: Record<string, unknown>) => Promise<void>;
 }) {
   return (
@@ -1502,37 +1514,65 @@ function VehicleSection({
             onSave={(v) => onPatch({ thirdPartySecure: v })}
           />
         </div>
-        <div className="grid gap-1">
-          <Label className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
-            Seguro Responsable
-          </Label>
-          <Select
-            value={insuranceResponsibility ?? "none"}
-            onValueChange={(v) =>
-              onPatchLead({
-                insuranceResponsibility: v === "none" ? null : v,
-              })
-            }
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Sin definir" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Sin definir</SelectItem>
-              <SelectItem value="propio">
-                Seguro Propio — titular del vehículo
-              </SelectItem>
-              <SelectItem value="tercero">
-                Seguro del Tercero — causante del siniestro
-              </SelectItem>
-              <SelectItem value="particular">
-                Particular — cliente paga
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-[10px] text-slate-500">
-            Obligatorio antes de pasar a &quot;Ganado&quot;.
-          </p>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="grid gap-1">
+            <Label className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+              Seguro Responsable
+            </Label>
+            <Select
+              value={insuranceResponsibility ?? "none"}
+              onValueChange={(v) =>
+                onPatchLead({
+                  insuranceResponsibility: v === "none" ? null : v,
+                })
+              }
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Sin definir" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin definir</SelectItem>
+                <SelectItem value="propio">
+                  Seguro Propio — titular del vehículo
+                </SelectItem>
+                <SelectItem value="tercero">
+                  Seguro del Tercero — causante del siniestro
+                </SelectItem>
+                <SelectItem value="particular">
+                  Particular — cliente paga
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-500">
+              Obligatorio antes de pasar a &quot;Ganado&quot;.
+            </p>
+          </div>
+          {/* spec Compras v3 · Compra de repuestos al lado del pagador. */}
+          <div className="grid gap-1">
+            <Label className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+              Compra de repuestos
+            </Label>
+            <Select
+              value={partsPurchaser ?? "none"}
+              onValueChange={(v) =>
+                onPatchLead({
+                  partsPurchaser: v === "none" ? null : v,
+                })
+              }
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Sin definir" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin definir</SelectItem>
+                <SelectItem value="TALLER">Taller</SelectItem>
+                <SelectItem value="SEGURO">Seguro</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-500">
+              Obligatorio antes de pasar a &quot;Ganado&quot;.
+            </p>
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="grid gap-1">

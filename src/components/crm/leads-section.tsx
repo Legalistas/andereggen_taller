@@ -349,6 +349,11 @@ export default function LeadsSection() {
       const current = leads.find((l) => l.id === leadId);
       // Si ya está ganado (reordenar dentro de la columna), no re-preguntamos.
       if (current?.status === "ganado") return;
+      // spec v3 · Si ya eligió Compra de repuestos en la ficha, pasa directo.
+      if ((current as { partsPurchaser?: string | null })?.partsPurchaser) {
+        await applyStatusChange(leadId, "ganado");
+        return;
+      }
       setWinModal({ leadId });
       return;
     }

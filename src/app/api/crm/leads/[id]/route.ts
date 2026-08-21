@@ -189,12 +189,16 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       );
     }
   }
+  // spec v3 · Valor efectivo: el que viene en el body pisa al ya guardado.
+  const effectivePartsPurchaser =
+    partsPurchaser !== undefined ? partsPurchaser : existing.partsPurchaser;
+
   if (status === "ganado" && existing.status !== "ganado") {
     const existingRepair = await prisma.repair.findFirst({
       where: { leadId: id },
       select: { id: true },
     });
-    if (!existingRepair && !partsPurchaser) {
+    if (!existingRepair && !effectivePartsPurchaser) {
       return NextResponse.json(
         {
           error:
@@ -281,6 +285,10 @@ export async function PATCH(request: Request, ctx: RouteContext) {
         ...(insuranceResponsibility !== undefined && {
           insuranceResponsibility,
         }),
+        // spec v3 · partsPurchaser vive en el lead (misma pantalla que el
+        // seguro pagador). Se puede setear en cualquier momento; al ganar,
+        // el Repair lo copia desde acá si no vino en el body.
+        ...(partsPurchaser !== undefined && { partsPurchaser }),
         ...(shouldSetOrderReceivedAt && { orderReceivedAt: new Date() }),
       },
       include: {
@@ -349,7 +357,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
               vehicleYear: lastBudget.vehicleYear,
               vehicleDomain: lastBudget.vehicleDomain,
               insuranceCompany: lastBudget.vehicleInsurance,
-              partsPurchaser: partsPurchaser ?? null,
+              partsPurchaser: effectivePartsPurchaser ?? null,
               createdById: session?.user?.id ?? null,
             },
           });
@@ -357,11 +365,11 @@ export async function PATCH(request: Request, ctx: RouteContext) {
           // spec v3 · Auto-crear Purchases por cada BudgetAdminItem del
           // budget. Solo se ejecuta al ganar el lead (dentro del bloque
           // !existingRepair, con lastBudget presente).
-          if (partsPurchaser) {
+          if (effectivePartsPurchaser) {
             await autoCreatePurchasesForItems(
               tx,
               lastBudget.id,
-              partsPurchaser,
+              effectivePartsPurchaser,
               session?.user?.id ?? null,
             );
           }
@@ -385,7 +393,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
               vehicleYear: updated.vehicle.year,
               vehicleDomain: updated.vehicle.domain,
               insuranceCompany: updated.vehicle.secure || null,
-              partsPurchaser: partsPurchaser ?? null,
+              partsPurchaser: effectivePartsPurchaser ?? null,
               createdById: session?.user?.id ?? null,
             },
           });

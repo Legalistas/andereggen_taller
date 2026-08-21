@@ -319,6 +319,12 @@ model Lead {
   // el Lead a "ganado" (validación aplicada en la API de cambio de estado).
   insuranceResponsibility InsuranceResponsibility?
 
+  // spec Compras v3 · Quién compra los repuestos (Taller o Seguro). Se
+  // completa en la ficha del lead (misma pantalla que el seguro pagador).
+  // Al ganar se copia al Repair y determina el status inicial de las
+  // Purchases auto-creadas.
+  partsPurchaser PartsPurchaser?
+
   // spec 1.1 + 3.1 v2 · Fecha en que se recibió la orden de trabajo (Lead
   // ganado). Las métricas de "ganados por mes" y "presupuestos por compañía"
   // se imputan a este mes, no al mes de creación del lead.
