@@ -264,7 +264,9 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     existing.status !== "ganado" &&
     !existing.orderReceivedAt;
 
-  const lead = await prisma.$transaction(async (tx) => {
+  let lead;
+  try {
+    lead = await prisma.$transaction(async (tx) => {
     // Ojo con el `include` de este update: el frontend hace merge shallow
     // (`{...prev, ...body.lead}`) al recibir el PATCH, así que si acá
     // devolvemos `vehicle` o `customer` con un select reducido, pisamos los
@@ -401,8 +403,22 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       }
     }
 
-    return updated;
-  });
+      return updated;
+    });
+  } catch (e) {
+    // spec v3 · Exponemos el error real (útil para diagnosticar 500s en
+    // el flujo de auto-crear Purchases / marcar budget aceptado / etc.).
+    console.error("[PATCH /api/crm/leads/[id]] transaction failed:", e);
+    return NextResponse.json(
+      {
+        error:
+          e instanceof Error
+            ? e.message
+            : "Error al procesar el cambio del lead.",
+      },
+      { status: 500 },
+    );
+  }
 
   // spec 1.3 v2 · Mail de refuerzo comercial cuando el lead entra en
   // "refuerzo". Solo si es una transición efectiva (existing.status !==
