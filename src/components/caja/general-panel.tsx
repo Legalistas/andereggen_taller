@@ -605,7 +605,18 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                   : `No hay egresos en "${conceptFilter}" este mes.`}
           </div>
         ) : (
-          <ul className="divide-y divide-slate-100">
+          <>
+            {/* Header de columnas — alineado con la layout del <li>.
+                Espejo exacto de los anchos usados en cada row. */}
+            <div className="px-4 py-2 flex items-center gap-3 border-b bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 font-semibold sticky top-0">
+              <span className="w-20 shrink-0">Tipo</span>
+              <span className="w-16 shrink-0">Fecha</span>
+              <span className="flex-1 min-w-0">Concepto</span>
+              <span className="w-32 shrink-0 text-right">Importe</span>
+              <span className="w-32 shrink-0 text-right pl-3">Saldo</span>
+              <span className="w-5 shrink-0" aria-hidden />
+            </div>
+            <ul className="divide-y divide-slate-100">
             {filteredMovements.map((m) => {
               const meta = TYPE_META[m.type];
               const isDeleting = deletingId === m.id;
@@ -683,7 +694,8 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                 </li>
               );
             })}
-          </ul>
+            </ul>
+          </>
         )}
       </Card>
 
