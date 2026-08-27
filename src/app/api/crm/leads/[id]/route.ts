@@ -404,6 +404,12 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     }
 
       return updated;
+    }, {
+      // spec v3 · Default 5s no alcanza cuando el budget tiene muchos
+      // BudgetAdminItem (auto-crear Purchases + snapshots). 20s cubre
+      // holgado incluso con la DB remota.
+      timeout: 20_000,
+      maxWait: 10_000,
     });
   } catch (e) {
     // spec v3 · Exponemos el error real (útil para diagnosticar 500s en
