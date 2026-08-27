@@ -46,6 +46,9 @@ type MovementRow = {
   reference: string | null;
   notes: string | null;
   paidAt: string;
+  // spec v3 · Desempate cronológico dentro de un mismo día (mov con paidAt
+  // idéntico → orden por momento de carga real).
+  createdAt: string;
   createdBy: string | null;
   source: "manual" | "payment";
   transferGroupId: string | null;
@@ -191,6 +194,33 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
       .map(([concept, total]) => ({ concept, total }))
       .sort((a, b) => b.total - a.total);
   }, [movements]);
+
+  // spec v3 · Saldo running post-movimiento (statement bancario). Procesa
+  // los movimientos en orden cronológico ASC arrancando desde el opening
+  // balance (arrastre del mes anterior). Sin filtro por caja usa el
+  // consolidado; con filtro usa el opening de esa caja. Las transferencias
+  // entre cajas no afectan el consolidado (se cancelan), pero sí afectan
+  // el saldo de una caja individual.
+  const runningBalances = useMemo(() => {
+    const opening = selectedBoxId
+      ? (boxes.find((b) => b.id === selectedBoxId)?.openingBalance ?? 0)
+      : boxes.reduce((s, b) => s + b.openingBalance, 0);
+    const asc = [...movements].sort((a, b) => {
+      const byPaid = a.paidAt.localeCompare(b.paidAt);
+      return byPaid !== 0 ? byPaid : a.createdAt.localeCompare(b.createdAt);
+    });
+    const map = new Map<string, number>();
+    let running = opening;
+    for (const m of asc) {
+      const sign = TYPE_META[m.type].sign;
+      const affects =
+        selectedBoxId !== null ||
+        (m.type !== "TRANSFER_IN" && m.type !== "TRANSFER_OUT");
+      if (affects) running += sign * m.amount;
+      map.set(m.id, running);
+    }
+    return map;
+  }, [movements, boxes, selectedBoxId]);
 
   // Totales por tipo para labels del filtro (COBROS / INGRESOS).
   const typeTotals = useMemo(() => {
@@ -612,12 +642,19 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                     )}
                   </div>
                   <span
-                    className={`tabular-nums font-semibold shrink-0 ${
+                    className={`tabular-nums font-semibold shrink-0 text-right w-32 ${
                       meta.sign > 0 ? "text-emerald-700" : "text-rose-700"
                     }`}
                   >
                     {meta.sign > 0 ? "+" : "−"}
                     {ARS.format(m.amount)}
+                  </span>
+                  {/* spec v3 · Saldo running post-movimiento (statement). */}
+                  <span
+                    className="tabular-nums text-slate-700 shrink-0 text-right w-32 border-l border-slate-200 pl-3"
+                    title="Saldo después de este movimiento"
+                  >
+                    {ARS.format(runningBalances.get(m.id) ?? 0)}
                   </span>
                   <button
                     type="button"
