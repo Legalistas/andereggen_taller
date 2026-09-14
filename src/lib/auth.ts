@@ -18,12 +18,22 @@ import { prisma } from "./prisma";
 
 const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 
+// Perf: la sesión se resuelve en cada request y la DB está en otro servidor
+// que Vercel, así que cada consulta suma ~50-100 ms de red. Ambos cachés
+// duran 60 s: un logout forzado, un ban o un cambio de rol/activo tardan
+// como máximo ese tiempo en aplicar.
+const AUTH_CACHE_SECONDS = 60;
+
 const authOptions = {
   appName: "Andereggen Taller",
   baseURL: BASE_URL,
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+  session: {
+    // Sesión en cookie firmada: evita leer Session + User de la DB por request.
+    cookieCache: { enabled: true, maxAge: AUTH_CACHE_SECONDS },
+  },
   emailVerification: {
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
@@ -132,45 +142,74 @@ const authOptions = {
   trustedOrigins: [BASE_URL],
 } satisfies BetterAuthOptions;
 
+async function loadUserExtras(userId: string) {
+  const dbUser = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      role: {
+        include: {
+          permissions: {
+            include: {
+              permission: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return {
+    isActive: dbUser?.isActive ?? true,
+    domainRole: dbUser?.role
+      ? {
+          id: dbUser.role.id,
+          name: dbUser.role.name,
+          label: dbUser.role.label,
+          type: dbUser.role.type,
+          permissions: dbUser.role.permissions.map((rp) => ({
+            permission: {
+              name: rp.permission.name,
+              description: rp.permission.description ?? "",
+            },
+          })),
+        }
+      : null,
+  };
+}
+
+// Rol + permisos por usuario, por instancia del servidor. Guardamos la
+// promesa para que llamadas concurrentes del mismo usuario (ej. verifyAuth
+// y getServerSession en la misma ruta) compartan una sola consulta.
+// ponytail: sin eviction — el set está acotado a los usuarios del taller (~100).
+const userExtrasCache = new Map<
+  string,
+  { expires: number; value: ReturnType<typeof loadUserExtras> }
+>();
+
+function getUserExtras(userId: string) {
+  const now = Date.now();
+  const hit = userExtrasCache.get(userId);
+  if (hit && hit.expires > now) return hit.value;
+  const value = loadUserExtras(userId);
+  userExtrasCache.set(userId, {
+    expires: now + AUTH_CACHE_SECONDS * 1000,
+    value,
+  });
+  value.catch(() => userExtrasCache.delete(userId));
+  return value;
+}
+
 export const auth = betterAuth({
   ...authOptions,
   plugins: [
     ...(authOptions.plugins ?? []),
     customSession(
       async ({ user, session }) => {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: user.id },
-          include: {
-            role: {
-              include: {
-                permissions: {
-                  include: {
-                    permission: true,
-                  },
-                },
-              },
-            },
-          },
-        });
-
+        const extras = await getUserExtras(user.id);
         return {
           user: {
             ...user,
-            isActive: dbUser?.isActive ?? true,
-            domainRole: dbUser?.role
-              ? {
-                  id: dbUser.role.id,
-                  name: dbUser.role.name,
-                  label: dbUser.role.label,
-                  type: dbUser.role.type,
-                  permissions: dbUser.role.permissions.map((rp) => ({
-                    permission: {
-                      name: rp.permission.name,
-                      description: rp.permission.description ?? "",
-                    },
-                  })),
-                }
-              : null,
+            ...extras,
           },
           session,
         };

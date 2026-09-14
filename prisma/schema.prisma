@@ -5,8 +5,12 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  // Perf: resuelve los `include` anidados en 1 query con JOIN en vez de 1
+  // query por nivel. La DB está en otro servidor que Vercel, así que cada
+  // viaje suma latencia de red.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
