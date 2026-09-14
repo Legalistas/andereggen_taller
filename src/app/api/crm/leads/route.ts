@@ -13,14 +13,113 @@ const ACTIVE_STATUSES: LeadStatus[] = [
 const CLOSED_STATUSES: LeadStatus[] = ["ganado", "perdido"];
 const ALL_STATUSES: LeadStatus[] = [...ACTIVE_STATUSES, ...CLOSED_STATUSES];
 
+const LEAD_INCLUDE = {
+  customer: { select: { id: true, name: true, email: true, phone: true } },
+  vehicle: {
+    select: {
+      id: true,
+      brand: true,
+      model: true,
+      year: true,
+      domain: true,
+    },
+  },
+  inspector: { select: { id: true, name: true, email: true, image: true } },
+  insuranceAgent: {
+    select: { id: true, name: true, email: true, image: true },
+  },
+  budgets: {
+    orderBy: { createdAt: "desc" as const },
+    take: 1,
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      grandTotal: true,
+      updatedAt: true,
+    },
+  },
+  repairs: {
+    orderBy: { createdAt: "desc" as const },
+    take: 1,
+    select: {
+      id: true,
+      status: true,
+      updatedAt: true,
+    },
+  },
+} as const;
+
+/**
+ * Perf audit: cuántos leads "ganado" se traen cuando el kanban muestra esa
+ * columna. Hay ~430 históricos y el switch existe para revisar los
+ * recientes, no todo el archivo — Producción es la vista para eso.
+ */
+const RECENT_WON_LIMIT = 50;
+
 export async function GET(request: Request) {
   const authError = await verifyAuth(request);
   if (authError) return authError;
 
   const url = new URL(request.url);
-  const tab = url.searchParams.get("tab"); // "activas" | "cerradas" | null
+  // "activas" | "cerradas" | "kanban" (activas + ganados recientes) | null
+  const tab = url.searchParams.get("tab");
   const search = url.searchParams.get("search")?.trim() ?? "";
   const statusParam = url.searchParams.get("status") as LeadStatus | null;
+
+  const searchWhere = search
+    ? {
+        OR: [
+          {
+            customer: {
+              name: { contains: search, mode: "insensitive" as const },
+            },
+          },
+          {
+            customer: {
+              email: { contains: search, mode: "insensitive" as const },
+            },
+          },
+          {
+            vehicle: {
+              domain: { contains: search, mode: "insensitive" as const },
+            },
+          },
+          {
+            vehicle: {
+              brand: { contains: search, mode: "insensitive" as const },
+            },
+          },
+          {
+            vehicle: {
+              model: { contains: search, mode: "insensitive" as const },
+            },
+          },
+        ],
+      }
+    : {};
+
+  // Perf audit: `tab=kanban` trae todas las activas + solo los N ganados
+  // más recientes, en vez de los ~430 históricos. Dos queries en paralelo.
+  if (tab === "kanban" && !statusParam) {
+    const [actives, recentWon] = await Promise.all([
+      prisma.lead.findMany({
+        where: { status: { in: ACTIVE_STATUSES }, ...searchWhere },
+        include: LEAD_INCLUDE,
+        orderBy: { updatedAt: "desc" },
+      }),
+      prisma.lead.findMany({
+        where: { status: "ganado", ...searchWhere },
+        include: LEAD_INCLUDE,
+        orderBy: { updatedAt: "desc" },
+        take: RECENT_WON_LIMIT,
+      }),
+    ]);
+    return NextResponse.json({
+      leads: [...actives, ...recentWon],
+      wonTruncatedAt: RECENT_WON_LIMIT,
+    });
+  }
 
   const statusFilter: LeadStatus[] =
     statusParam && ALL_STATUSES.includes(statusParam)
@@ -32,55 +131,12 @@ export async function GET(request: Request) {
           : ALL_STATUSES;
 
   const leads = await prisma.lead.findMany({
-    where: {
-      status: { in: statusFilter },
-      ...(search && {
-        OR: [
-          { customer: { name: { contains: search, mode: "insensitive" } } },
-          { customer: { email: { contains: search, mode: "insensitive" } } },
-          { vehicle: { domain: { contains: search, mode: "insensitive" } } },
-          { vehicle: { brand: { contains: search, mode: "insensitive" } } },
-          { vehicle: { model: { contains: search, mode: "insensitive" } } },
-        ],
-      }),
-    },
-    include: {
-      customer: { select: { id: true, name: true, email: true, phone: true } },
-      vehicle: {
-        select: {
-          id: true,
-          brand: true,
-          model: true,
-          year: true,
-          domain: true,
-        },
-      },
-      inspector: { select: { id: true, name: true, email: true, image: true } },
-      insuranceAgent: {
-        select: { id: true, name: true, email: true, image: true },
-      },
-      budgets: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: {
-          id: true,
-          number: true,
-          status: true,
-          grandTotal: true,
-          updatedAt: true,
-        },
-      },
-      repairs: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: {
-          id: true,
-          status: true,
-          updatedAt: true,
-        },
-      },
-    },
+    where: { status: { in: statusFilter }, ...searchWhere },
+    include: LEAD_INCLUDE,
     orderBy: { updatedAt: "desc" },
+    // Tope de seguridad para el caso sin tab (ALL_STATUSES): hoy son ~530
+    // leads y crece. Sin esto, una vista vieja puede traer todo el historial.
+    take: 500,
   });
 
   return NextResponse.json({ leads });

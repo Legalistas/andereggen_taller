@@ -231,6 +231,11 @@ export async function GET(request: Request) {
     ingresosBy: Record<string, NumberSeries>;
   } | null = null;
 
+  // Perf audit: `egresos` sube al scope superior para poder reutilizarlo en
+  // el bloque de Compras (antes se hacía la misma query dos veces).
+  type EgresoRow = { paidAt: Date; amount: unknown; concept: string };
+  let egresosCache: EgresoRow[] | null = null;
+
   if (canSeeRestricted) {
     const [invoices, payments, egresos, allInvoices] = await Promise.all([
       // Facturación = RepairInvoice.amount emitidas en el mes
@@ -279,9 +284,14 @@ export async function GET(request: Request) {
       // de cada mes. Simplificación: usamos snapshot ACTUAL (no historial
       // real) — más práctico para el uso diario. Si hace falta el snapshot
       // exacto de cierre, se re-calcula por período.
+      // Perf audit: antes traía TODAS las facturas históricas. Ahora sólo
+      // las emitidas dentro del año seleccionado — suficiente para calcular
+      // "saldo al fin de cada mes" en el rango pedido.
       prisma.repairInvoice.findMany({
+        where: { issuedAt: { lt: startOfNextYear } },
         select: {
           amount: true,
+          issuedAt: true,
           payments: { select: { amount: true, paidAt: true } },
         },
       }),
@@ -318,6 +328,7 @@ export async function GET(request: Request) {
       ingresosBy[bucket][m] += amt;
     }
 
+    egresosCache = egresos;
     const egresosSeries: NumberSeries = zeros12();
     for (const e of egresos) {
       egresosSeries[monthIndexOf(e.paidAt)] += Number(e.amount);
@@ -359,13 +370,18 @@ export async function GET(request: Request) {
   // Compras de repuestos = egresos con concepto "Repuestos"
   // Compras de insumos = egresos con concepto "Insumos" (a agregar al
   // catálogo si aún no existe — por ahora matchea concepto exacto).
-  const comprasEgresos = await prisma.cashMovement.findMany({
-    where: {
-      type: "EGRESO",
-      paidAt: { gte: startOfYear, lt: startOfNextYear },
-    },
-    select: { paidAt: true, amount: true, concept: true },
-  });
+  //
+  // Perf audit: reutilizamos `egresosCache` si canSeeRestricted ya lo trajo
+  // arriba; si no, hacemos la query. Antes se hacía siempre 2 veces.
+  const comprasEgresos =
+    egresosCache ??
+    (await prisma.cashMovement.findMany({
+      where: {
+        type: "EGRESO",
+        paidAt: { gte: startOfYear, lt: startOfNextYear },
+      },
+      select: { paidAt: true, amount: true, concept: true },
+    }));
   const comprasRepuestos: NumberSeries = zeros12();
   const comprasInsumos: NumberSeries = zeros12();
   for (const e of comprasEgresos) {

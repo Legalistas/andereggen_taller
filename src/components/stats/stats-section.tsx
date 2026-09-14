@@ -150,14 +150,27 @@ const REPAIR_DOT: Record<string, string> = {
 
 const INT = new Intl.NumberFormat("es-AR");
 
-export default function StatsSection() {
-  const [data, setData] = useState<StatsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function StatsSection({
+  initialData,
+}: {
+  // Perf audit: la RSC page precarga el mes actual. Al cambiar de mes en el
+  // selector se refetchea normalmente (interactivo).
+  initialData?: StatsResponse;
+} = {}) {
+  const [data, setData] = useState<StatsResponse | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   // Mes seleccionado para el bloque "Por compañía". El default es el mes
   // actual; el resto del payload (cotizaciones / producción) usa el mismo
   // mes para que los counters mensuales coincidan con la vista.
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  // Mes con el que vino `initialData` (server-rendered). Mientras el
+  // usuario no cambie de mes, no hace falta refetchear.
+  const [preloadedMonth] = useState<string | null>(() => {
+    if (!initialData) return null;
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
@@ -195,8 +208,10 @@ export default function StatsSection() {
   }, [selectedMonth]);
 
   useEffect(() => {
+    // Datos del mes precargado ya vinieron del server → sin fetch.
+    if (preloadedMonth !== null && selectedMonth === preloadedMonth) return;
     fetchStats();
-  }, [fetchStats]);
+  }, [fetchStats, preloadedMonth, selectedMonth]);
 
   return (
     <div className="space-y-6">

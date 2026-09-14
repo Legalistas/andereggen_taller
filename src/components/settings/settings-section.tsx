@@ -13,20 +13,46 @@ import {
   Tag,
   Truck,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import AppearanceTab from "./tabs/appearance-tab";
-import BudgetTab from "./tabs/budget-tab";
 import CompanyTab from "./tabs/company-tab";
-import InsurancesTab from "./tabs/insurances-tab";
-import IntegrationsTab from "./tabs/integrations-tab";
-import NotificationsTab from "./tabs/notifications-tab";
-import SourcesTab from "./tabs/sources-tab";
-import SuppliersTab from "./tabs/suppliers-tab";
-import VehiclesTab from "./tabs/vehicles-tab";
+
+// Perf audit: Configuración tiene 9 tabs pesados (suppliers-tab 526 lns,
+// vehicles-tab 776 lns, insurances-tab 438 lns, etc.). Solo se muestra 1
+// a la vez — el resto va lazy. CompanyTab queda eager porque es el default.
+const tabFallback = (
+  <div className="p-8 flex items-center justify-center text-slate-400">
+    <Loader2 className="h-5 w-5 animate-spin" />
+  </div>
+);
+const AppearanceTab = dynamic(() => import("./tabs/appearance-tab"), {
+  loading: () => tabFallback,
+});
+const BudgetTab = dynamic(() => import("./tabs/budget-tab"), {
+  loading: () => tabFallback,
+});
+const InsurancesTab = dynamic(() => import("./tabs/insurances-tab"), {
+  loading: () => tabFallback,
+});
+const IntegrationsTab = dynamic(() => import("./tabs/integrations-tab"), {
+  loading: () => tabFallback,
+});
+const NotificationsTab = dynamic(() => import("./tabs/notifications-tab"), {
+  loading: () => tabFallback,
+});
+const SourcesTab = dynamic(() => import("./tabs/sources-tab"), {
+  loading: () => tabFallback,
+});
+const SuppliersTab = dynamic(() => import("./tabs/suppliers-tab"), {
+  loading: () => tabFallback,
+});
+const VehiclesTab = dynamic(() => import("./tabs/vehicles-tab"), {
+  loading: () => tabFallback,
+});
 
 export type AppSettings = {
   id: string;

@@ -74,15 +74,6 @@ export async function GET(request: Request) {
       serviceRating: {
         select: { stars: true, respondedAt: true, token: true },
       },
-      // Necesario para calcular `pendingAmount` en la card del kanban
-      // (Pendientes de Cobro). Solo traemos los `amount` — la card no
-      // muestra el detalle de cada factura/pago.
-      invoices: {
-        select: {
-          amount: true,
-          payments: { select: { amount: true } },
-        },
-      },
     },
     // El Kanban agrupa por status según el array COLUMNS de production-kanban.tsx,
     // así que el orden visual no depende del enum. Solo ordenamos por updatedAt
@@ -90,18 +81,41 @@ export async function GET(request: Request) {
     orderBy: { updatedAt: "desc" },
   });
 
-  // Pre-computamos:
-  //  - `pendingAmount = sum(invoice.amount) - sum(payment.amount)` (cobranzas).
-  //  - `approvedTotal = approvedInsurance + approvedFranchise + approvedCustomer`,
-  //    null si todavía no se cargó ninguno (la card cae al grandTotal del ppto).
-  //    Cuando el auto está en taller, este es el importe "real" que vamos a
-  //    cobrar — el seguro suele aprobar menos (o más) que lo presupuestado.
-  const repairsWithPending = repairs.map(({ invoices, ...rest }) => {
-    const billed = invoices.reduce((a, i) => a + Number(i.amount), 0);
-    const paid = invoices.reduce(
-      (a, i) => a + i.payments.reduce((b, p) => b + Number(p.amount), 0),
-      0,
-    );
+  // Perf audit: `pendingAmount` solo se muestra en las cards con status
+  // "pendientes_cobro". Antes traíamos invoices+payments para TODOS los
+  // repairs (Nº invoices × Nº pagos por card). Ahora: 2 aggregate queries
+  // solo sobre los pendientes_cobro visibles.
+  const pendingIds = repairs
+    .filter((r) => r.status === "pendientes_cobro")
+    .map((r) => r.id);
+
+  const pendingByRepair = new Map<string, number>();
+  if (pendingIds.length > 0) {
+    const [billed, paid] = await Promise.all([
+      prisma.repairInvoice.groupBy({
+        by: ["repairId"],
+        where: { repairId: { in: pendingIds } },
+        _sum: { amount: true },
+      }),
+      prisma.$queryRaw<Array<{ repairId: string; total: number }>>`
+        SELECT i."repairId", COALESCE(SUM(p.amount), 0)::float AS total
+        FROM "RepairInvoice" i
+        JOIN "RepairInvoicePayment" p ON p."invoiceId" = i.id
+        WHERE i."repairId" = ANY(${pendingIds})
+        GROUP BY i."repairId"
+      `,
+    ]);
+    const paidByRepair = new Map(paid.map((p) => [p.repairId, p.total]));
+    for (const b of billed) {
+      const amt = Number(b._sum.amount ?? 0);
+      pendingByRepair.set(
+        b.repairId,
+        amt - (paidByRepair.get(b.repairId) ?? 0),
+      );
+    }
+  }
+
+  const repairsWithPending = repairs.map((rest) => {
     const hasApproval =
       rest.approvedInsurance !== null ||
       rest.approvedFranchise !== null ||
@@ -113,7 +127,7 @@ export async function GET(request: Request) {
       : null;
     return {
       ...rest,
-      pendingAmount: invoices.length > 0 ? billed - paid : null,
+      pendingAmount: pendingByRepair.get(rest.id) ?? null,
       approvedTotal,
     };
   });

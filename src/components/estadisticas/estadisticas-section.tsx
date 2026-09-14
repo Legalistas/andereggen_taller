@@ -8,13 +8,34 @@
  *   2. Ingresos       — reporte complementario existente
  *   3. Servicios      — reporte complementario existente
  *   4. Clientes       — reporte complementario existente
+ *
+ * Perf audit: los 3 tabs no-default (Ingresos, Servicios, Clientes)
+ * cargan recharts. Con `dynamic()` cada uno queda en su propio chunk y
+ * solo se baja cuando el usuario clickea la tab.
  */
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2 } from "lucide-react";
+import dynamic from "next/dynamic";
 import KpiTab from "@/components/kpis/kpi-tab";
-import CustomersReportSection from "@/components/reports/customers-report-section";
-import IncomeSection from "@/components/reports/income-section";
-import ServicesSection from "@/components/reports/services-section";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+const tabFallback = (
+  <div className="p-8 flex items-center justify-center text-slate-400">
+    <Loader2 className="h-5 w-5 animate-spin" />
+  </div>
+);
+const IncomeSection = dynamic(
+  () => import("@/components/reports/income-section"),
+  { loading: () => tabFallback },
+);
+const ServicesSection = dynamic(
+  () => import("@/components/reports/services-section"),
+  { loading: () => tabFallback },
+);
+const CustomersReportSection = dynamic(
+  () => import("@/components/reports/customers-report-section"),
+  { loading: () => tabFallback },
+);
 
 export default function EstadisticasSection() {
   return (

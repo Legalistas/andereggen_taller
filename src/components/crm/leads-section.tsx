@@ -12,7 +12,14 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,11 +42,17 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import BudgetModal from "./budget-modal";
 import CustomerSelector, { type Customer } from "./customer-selector";
-import { LeadCanvas } from "./lead-canvas";
 import { type KanbanLead, LeadsKanban } from "./leads-kanban";
 import VehicleForm from "./vehicle-form";
+
+// Perf audit: los 3 modales pesados (~7000 lns totales) NO se bajan hasta
+// que el usuario los abre. Dashboard de leads carga sin ellos.
+const BudgetModal = dynamic(() => import("./budget-modal"), { ssr: false });
+const LeadCanvas = dynamic(
+  () => import("./lead-canvas").then((m) => m.LeadCanvas),
+  { ssr: false },
+);
 
 type LeadStatus =
   | "solicitud"
@@ -198,17 +211,16 @@ export default function LeadsSection() {
       setLoadError(null);
       try {
         // spec 1.4 v2 · Por defecto sólo activas — las ganadas pasan a
-        // Producción. Con el switch "Mostrar ganadas" traemos todo y
-        // filtramos client-side para excluir Perdidos (nunca se ven acá).
-        const url = showGanado ? "/api/crm/leads" : "/api/crm/leads?tab=activas";
+        // Producción. Con el switch "Mostrar ganadas" usamos `tab=kanban`,
+        // que trae activas + los 50 ganados más recientes (perf audit: antes
+        // traía los ~430 ganados históricos y filtraba perdidos en el cliente).
+        const url = showGanado
+          ? "/api/crm/leads?tab=kanban"
+          : "/api/crm/leads?tab=activas";
         const res = await fetch(url, { signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as { leads: Lead[] };
-        setLeads(
-          showGanado
-            ? data.leads.filter((l) => l.status !== "perdido")
-            : data.leads,
-        );
+        setLeads(data.leads);
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
           setLoadError(
@@ -228,8 +240,13 @@ export default function LeadsSection() {
     return () => ac.abort();
   }, [fetchLeads]);
 
+  // Perf audit: el input usa `searchTerm` (inmediato) y el filtrado usa el
+  // valor diferido — React re-renderiza el kanban en baja prioridad y lo
+  // interrumpe si el usuario sigue tipeando.
+  const deferredSearch = useDeferredValue(searchTerm);
+
   const filteredLeads = useMemo(() => {
-    const t = searchTerm.toLowerCase();
+    const t = deferredSearch.toLowerCase();
     const now = Date.now();
     const periodMs: Record<PeriodFilter, number> = {
       all: Number.POSITIVE_INFINITY,
@@ -276,7 +293,7 @@ export default function LeadsSection() {
       }
     });
     return sorted;
-  }, [leads, searchTerm, sourceFilter, periodFilter, sortBy]);
+  }, [leads, deferredSearch, sourceFilter, periodFilter, sortBy]);
 
   const activeFiltersCount =
     (sourceFilter !== "all" ? 1 : 0) +

@@ -9,16 +9,8 @@ import {
   Loader2,
   Wallet,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -30,6 +22,20 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CollectionsTable from "./collections-table";
 import GeneralPanel from "./general-panel";
+
+// Perf audit: recharts lazy — no baja al cliente hasta que el usuario abre
+// la tab que lo muestra.
+const CajaIngresosChart = dynamic(
+  () => import("./_charts").then((m) => m.CajaIngresosChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center text-slate-400">
+        <Loader2 className="h-4 w-4 animate-spin" />
+      </div>
+    ),
+  },
+);
 
 /**
  * spec sección 4 v2 · Módulo Caja.
@@ -262,54 +268,7 @@ export default function CajaSection() {
         </CardHeader>
         <CardContent>
           <div className="h-60 min-h-60 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data?.revenueSeries ?? []}>
-                <defs>
-                  <linearGradient
-                    id="colorCajaIngresos"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop offset="5%" stopColor="#003b73" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#003b73" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="hsl(var(--border))"
-                />
-                <XAxis
-                  dataKey="month"
-                  stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
-                />
-                <YAxis
-                  stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
-                  tickFormatter={(v: number) =>
-                    v >= 1000 ? `$${Math.round(v / 1000)}k` : `$${v}`
-                  }
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "6px",
-                  }}
-                  labelStyle={{ color: "hsl(var(--foreground))" }}
-                  formatter={(v) => ARS.format(Number(v ?? 0))}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="ingresos"
-                  stroke="#003b73"
-                  fill="url(#colorCajaIngresos)"
-                  strokeWidth={2}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <CajaIngresosChart data={data?.revenueSeries ?? []} />
           </div>
         </CardContent>
       </Card>

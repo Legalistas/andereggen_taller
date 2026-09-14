@@ -132,7 +132,7 @@ export async function GET(request: Request) {
     ...(status && PURCHASE_STATUS_KEYS.has(status) && { status }),
   };
 
-  const [total, purchases, countsRaw, summaryRaw] = await Promise.all([
+  const [total, purchases, byStatus, byItem] = await Promise.all([
     prisma.purchase.count({ where }),
     prisma.purchase.findMany({
       where,
@@ -141,48 +141,43 @@ export async function GET(request: Request) {
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
-    // Contadores por status con los MISMOS filtros base (search, budgetId,
-    // repairId) pero SIN filtro de status — así los badges reflejan cuánto
-    // hay en cada tab sin depender del tab activo.
+    // Contadores + sumas por status con los MISMOS filtros base (search,
+    // budgetId, repairId) pero SIN filtro de status — así los badges y el
+    // summary no dependen del tab activo.
+    // Perf audit: antes el summary hacía un findMany de TODAS las compras y
+    // sumaba en memoria. Ahora sale de este mismo groupBy.
     prisma.purchase.groupBy({
       by: ["status"],
       where: baseWhere,
       _count: { _all: true },
+      _sum: { amount: true, freightAmount: true },
     }),
-    // Métricas globales para el summary del cliente. Traigo solo lo mínimo
-    // para no llenar memoria: itemId + status + amount + freightAmount.
-    // (Sobre baseWhere, sin filtro de status, sin paginar.)
-    prisma.purchase.findMany({
+    // Ítems distintos: una fila por itemId (el grupo null agrupa todas las
+    // compras directas, que cuentan como un ítem cada una).
+    prisma.purchase.groupBy({
+      by: ["itemId"],
       where: baseWhere,
-      select: {
-        id: true,
-        itemId: true,
-        status: true,
-        amount: true,
-        freightAmount: true,
-      },
+      _count: { _all: true },
     }),
   ]);
 
   const countsByStatus: Record<string, number> = {};
-  for (const c of countsRaw) {
-    countsByStatus[c.status] = c._count._all;
-  }
-
-  const items = new Set<string>();
   let totalPurchased = 0;
   let estimatedPending = 0;
-  for (const p of summaryRaw) {
-    // v3: itemId ahora es nullable (compras directas). Contamos por
-    // itemId cuando existe; las directas cuentan como ítem propio (id de
-    // la purchase — no colisiona porque uuid).
-    items.add(p.itemId ?? p.id);
-    const amt = Number(p.amount) + Number(p.freightAmount);
-    if (p.status !== "COTIZAR" && p.status !== "DECIDIR") {
-      totalPurchased += amt;
-    } else if (amt > 0) {
+  for (const s of byStatus) {
+    countsByStatus[s.status] = s._count._all;
+    const amt =
+      Number(s._sum.amount ?? 0) + Number(s._sum.freightAmount ?? 0);
+    if (s.status === "COTIZAR" || s.status === "DECIDIR") {
       estimatedPending += amt;
+    } else {
+      totalPurchased += amt;
     }
+  }
+
+  let itemsRegistered = 0;
+  for (const g of byItem) {
+    itemsRegistered += g.itemId === null ? g._count._all : 1;
   }
 
   return NextResponse.json({
@@ -195,7 +190,7 @@ export async function GET(request: Request) {
     },
     countsByStatus,
     summary: {
-      itemsRegistered: items.size,
+      itemsRegistered,
       totalPurchased,
       estimatedPending,
     },

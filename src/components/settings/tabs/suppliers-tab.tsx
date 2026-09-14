@@ -50,6 +50,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { invalidateCache, SUPPLIERS_KEY } from "@/lib/client-cache";
 import { TabHeader } from "../settings-section";
 
 type Supplier = {
@@ -177,6 +178,9 @@ export default function SuppliersTab() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
       setFormOpen(false);
+      // Perf audit: invalidar el cache module-level que usan Compras y la
+      // ficha administrativa, si no siguen viendo la lista vieja.
+      invalidateCache(SUPPLIERS_KEY);
       await fetchSuppliers();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
@@ -198,6 +202,7 @@ export default function SuppliersTab() {
         return;
       }
       setDeleteTarget(null);
+      invalidateCache(SUPPLIERS_KEY);
       await fetchSuppliers();
     } finally {
       setDeleteBusy(false);

@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { invalidateCache, SUPPLIERS_KEY } from "@/lib/client-cache";
 import {
   PURCHASE_STATUS_META,
   PURCHASE_STATUSES_IN_ORDER,
@@ -874,6 +875,9 @@ function SupplierPicker({
       const d = (await res.json()) as {
         supplier: { id: string; name: string; isActive: boolean };
       };
+      // Perf audit: el cache module-level quedó viejo — que el próximo
+      // consumidor traiga el proveedor nuevo.
+      invalidateCache(SUPPLIERS_KEY);
       onCreated({
         id: d.supplier.id,
         name: d.supplier.name,

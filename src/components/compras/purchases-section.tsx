@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { loadCashBoxes, loadSuppliers } from "@/lib/client-cache";
 import {
   PURCHASE_STATUS_META,
   PURCHASE_STATUSES_IN_ORDER,
@@ -108,30 +109,20 @@ export default function PurchasesSection() {
     }
   }, [search, tab, page, pageSize]);
 
-  // Sidecars (una sola vez). Suppliers piden pageSize=0 → sin paginar.
+  // Perf audit: sidecars por cache module-level — compartidos con la ficha
+  // administrativa y el canvas del repair. Si ya se pidieron, no hay fetch.
   useEffect(() => {
-    (async () => {
-      try {
-        const [supRes, boxRes] = await Promise.all([
-          fetch("/api/suppliers?pageSize=0&active=1"),
-          fetch("/api/caja/boxes"),
-        ]);
-        if (supRes.ok) {
-          const raw = await supRes.text();
-          const d = raw ? JSON.parse(raw) : {};
-          setSuppliers(
-            ((d.suppliers ?? []) as SupplierLite[]).filter((s) => s.isActive),
-          );
-        }
-        if (boxRes.ok) {
-          const raw = await boxRes.text();
-          const d = raw ? JSON.parse(raw) : {};
-          setCashBoxes((d.boxes ?? []) as CashBoxLite[]);
-        }
-      } catch (e) {
-        console.error("Error cargando sidecars", e);
-      }
-    })();
+    let cancelled = false;
+    Promise.all([loadSuppliers(), loadCashBoxes()])
+      .then(([sup, boxes]) => {
+        if (cancelled) return;
+        setSuppliers(sup.filter((s) => s.isActive) as SupplierLite[]);
+        setCashBoxes(boxes as CashBoxLite[]);
+      })
+      .catch((e) => console.error("Error cargando sidecars", e));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Fetch (debounced por búsqueda).

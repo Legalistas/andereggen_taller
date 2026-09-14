@@ -102,31 +102,42 @@ export async function POST(request: Request, ctx: RouteContext) {
         include: { part: true },
       });
 
-      for (const bp of linkedParts) {
-        if (!bp.part) continue;
+      // Perf audit: antes era 2 queries seriales por parte (N+1 dentro de tx).
+      // Ahora: 1 createMany + updates en paralelo. Con 20 partes: 40 queries → 21.
+      const consumed = linkedParts.flatMap((bp) => {
+        const part = bp.part;
+        if (!part) return [];
         const qty = Number(bp.quantity);
-        const newStock = Number(bp.part.stockQty) - qty;
+        return [{ part, qty, newStock: Number(part.stockQty) - qty }];
+      });
 
-        await tx.partMovement.create({
-          data: {
-            partId: bp.part.id,
-            type: "OUT",
-            qty,
+      if (consumed.length > 0) {
+        await tx.partMovement.createMany({
+          data: consumed.map((c) => ({
+            partId: c.part.id,
+            type: "OUT" as const,
+            qty: c.qty,
             reason: `Consumido en presupuesto #${updated.number}`,
             budgetId: updated.id,
             createdById: session?.user?.id ?? null,
-          },
+          })),
         });
-        await tx.part.update({
-          where: { id: bp.part.id },
-          data: { stockQty: newStock },
-        });
-        if (newStock < 0) {
-          stockWarnings.push(
-            `${bp.part.name}: stock quedó en ${newStock} (faltaban ${Math.abs(newStock)})`,
-          );
-        } else if (newStock <= Number(bp.part.stockMin)) {
-          stockWarnings.push(`${bp.part.name}: stock bajo (${newStock})`);
+        await Promise.all(
+          consumed.map((c) =>
+            tx.part.update({
+              where: { id: c.part.id },
+              data: { stockQty: c.newStock },
+            }),
+          ),
+        );
+        for (const c of consumed) {
+          if (c.newStock < 0) {
+            stockWarnings.push(
+              `${c.part.name}: stock quedó en ${c.newStock} (faltaban ${Math.abs(c.newStock)})`,
+            );
+          } else if (c.newStock <= Number(c.part.stockMin)) {
+            stockWarnings.push(`${c.part.name}: stock bajo (${c.newStock})`);
+          }
         }
       }
 
@@ -203,6 +214,11 @@ export async function POST(request: Request, ctx: RouteContext) {
     }
 
     return updated;
+  }, {
+    // Perf audit: aceptar un budget con muchas parts + auto-crear Repair.
+    // 20s cubre holgado; default 5s se pasaba con budgets grandes.
+    timeout: 20_000,
+    maxWait: 10_000,
   });
 
   return NextResponse.json({ budget, stockWarnings });

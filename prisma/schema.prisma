@@ -478,6 +478,8 @@ model Budget {
   @@index([createdById])
   @@index([parentBudgetId])
   @@index([number])
+  // Perf audit: /api/budgets ordena por createdAt desc.
+  @@index([createdAt])
 }
 
 /**
@@ -730,6 +732,8 @@ model Purchase {
   @@index([supplierId])
   @@index([freightSupplierId])
   @@index([purchasedAt])
+  // Perf audit: /api/purchases ordena por updatedAt desc para la paginación.
+  @@index([updatedAt])
 }
 
 // spec v3 · Pagos parciales de una compra. Cada uno genera un CashMovement
@@ -1266,6 +1270,9 @@ model Repair {
   @@index([assignedMechanicId])
   @@index([archivedAt])
   @@index([customerId])
+  // Perf audit: KPIs matrix + charts filtran/agrupan por estas fechas.
+  @@index([enteredAt])
+  @@index([deliveredAt])
 }
 
 /**
@@ -1495,6 +1502,8 @@ model CashMovement {
   @@index([cashBoxId])
   @@index([paidAt])
   @@index([transferGroupId])
+  // Perf audit: caja/boxes + kpis matrix filtran por type + paidAt juntos.
+  @@index([type, paidAt])
 }
 
 // spec v2 · Pagos preparados / para realizar.

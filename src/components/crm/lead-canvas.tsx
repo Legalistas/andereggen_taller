@@ -57,6 +57,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  INSURANCE_COMPANIES_KEY,
+  invalidateCache,
+  loadInsuranceCompanies,
+} from "@/lib/client-cache";
 import { parseWebLeadNotes } from "@/lib/parse-web-lead-notes";
 import { BudgetAdminDialog } from "./budget-admin-dialog";
 import { BudgetHistoryButton } from "./budget-history-button";
@@ -1149,9 +1154,10 @@ function InsuranceCompanyRow({
 
   const fetchCompanies = useCallback(() => {
     setCompanies(null);
-    fetch("/api/insurance-companies?active=1")
-      .then((r) => r.json())
-      .then((b) => setCompanies((b.companies ?? []) as InsuranceCompanyLite[]))
+    // Perf audit: cache module-level — varios componentes piden esta misma
+    // lista (lead-canvas, repair-canvas, vehicle-form).
+    loadInsuranceCompanies()
+      .then((list) => setCompanies(list as InsuranceCompanyLite[]))
       .catch(() => setCompanies([]));
   }, []);
 
@@ -1194,6 +1200,9 @@ function InsuranceCompanyRow({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
       const created = body.company as InsuranceCompanyLite;
+      // Perf audit: la lista cacheada quedó vieja — invalidamos para que el
+      // próximo consumidor traiga la nueva aseguradora.
+      invalidateCache(INSURANCE_COMPANIES_KEY);
       onPick(created.id);
       setOpen(false);
     } catch (e) {
@@ -2329,9 +2338,8 @@ function InsuranceField({
 
   useEffect(() => {
     if (!open || options !== null) return;
-    fetch("/api/insurance-companies?active=1")
-      .then((r) => r.json())
-      .then((b) => setOptions((b.companies ?? []) as Insurance[]))
+    loadInsuranceCompanies()
+      .then((list) => setOptions(list as Insurance[]))
       .catch(() => setOptions([]));
   }, [open, options]);
 

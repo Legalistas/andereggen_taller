@@ -19,8 +19,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { KPI_GROUPS, type KpiGroupKey } from "@/lib/kpis/catalog";
-import { exportKpiMatrixExcel, exportKpiMatrixPdf } from "./export";
 import KpiMatrix from "./kpi-matrix";
+
+// Perf audit: `./export` importa @react-pdf/renderer + xlsx (~500 KB gz).
+// Cargamos on-demand solo cuando el usuario clickea Excel/PDF.
+const loadExport = () => import("./export");
 
 type MatrixPayload = {
   year: number;
@@ -112,7 +115,9 @@ export default function KpiTab() {
     if (!data) return;
     setExporting(kind);
     try {
-      const fn = kind === "excel" ? exportKpiMatrixExcel : exportKpiMatrixPdf;
+      const mod = await loadExport();
+      const fn =
+        kind === "excel" ? mod.exportKpiMatrixExcel : mod.exportKpiMatrixPdf;
       await fn({
         year,
         groups: visibleGroups,

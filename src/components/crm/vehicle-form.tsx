@@ -18,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { loadInsuranceCompanies } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
 import { BrandField, ModelField, YearField } from "./vehicle-fields";
 
@@ -134,23 +135,20 @@ function InsuranceCombobox({
   const [options, setOptions] = useState<InsuranceOption[]>([]);
   const [query, setQuery] = useState("");
 
+  // Perf audit: cache module-level compartido con lead-canvas/repair-canvas.
   useEffect(() => {
     if (!open) return;
-    const ac = new AbortController();
-    fetch("/api/insurance-companies?active=1", { signal: ac.signal })
-      .then((r) => r.json())
-      .then((body) => {
-        if (Array.isArray(body?.companies)) {
-          setOptions(
-            body.companies.map((c: { id: string; name: string }) => ({
-              id: c.id,
-              name: c.name,
-            })),
-          );
+    let cancelled = false;
+    loadInsuranceCompanies()
+      .then((list) => {
+        if (!cancelled) {
+          setOptions(list.map((c) => ({ id: c.id, name: c.name })));
         }
       })
       .catch(() => {});
-    return () => ac.abort();
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   const filtered = query

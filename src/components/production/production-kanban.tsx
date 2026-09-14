@@ -15,7 +15,7 @@ import {
   Star,
   Wrench,
 } from "lucide-react";
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -194,16 +194,45 @@ export function ProductionKanban({
   );
   const [movingRepair, setMovingRepair] = useState<string | null>(null);
 
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
-    setDraggingId(id);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", id);
-  };
+  // Perf audit: pre-agrupamos + calculamos totales una sola vez, no por
+  // columna en cada render. El total usa el mismo criterio que la card
+  // (pendingAmount, approvedTotal o grandTotal según status).
+  const groupsByStatus = useMemo(() => {
+    const map = new Map<
+      RepairStatus,
+      { items: KanbanRepair[]; total: number }
+    >();
+    for (const col of COLUMNS) {
+      map.set(col.id, { items: [], total: 0 });
+    }
+    for (const r of repairs) {
+      const bucket = map.get(r.status);
+      if (!bucket) continue;
+      bucket.items.push(r);
+      if (r.status === "pendientes_cobro" && r.pendingAmount !== null) {
+        bucket.total += r.pendingAmount;
+      } else if (r.approvedTotal !== null) {
+        bucket.total += r.approvedTotal;
+      } else {
+        bucket.total += Number(r.budget?.grandTotal ?? 0);
+      }
+    }
+    return map;
+  }, [repairs]);
 
-  const handleDragEnd = () => {
+  const handleDragStart = useCallback(
+    (e: React.DragEvent<HTMLDivElement>, id: string) => {
+      setDraggingId(id);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", id);
+    },
+    [],
+  );
+
+  const handleDragEnd = useCallback(() => {
     setDraggingId(null);
     setDragOverColumn(null);
-  };
+  }, []);
 
   const handleDragOver = (
     e: React.DragEvent<HTMLDivElement>,
@@ -248,18 +277,9 @@ export function ProductionKanban({
   return (
     <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4">
       {COLUMNS.map((col) => {
-        const items = repairs.filter((r) => r.status === col.id);
-        // La suma del header refleja el mismo criterio que cada card:
-        //  - Pendientes de Cobro → pendingAmount (saldo por cobrar)
-        //  - Resto con aprobación → approvedTotal (lo que vamos a cobrar)
-        //  - Resto → grandTotal del ppto
-        const totalAmount = items.reduce((a, r) => {
-          if (col.id === "pendientes_cobro" && r.pendingAmount !== null) {
-            return a + r.pendingAmount;
-          }
-          if (r.approvedTotal !== null) return a + r.approvedTotal;
-          return a + Number(r.budget?.grandTotal ?? 0);
-        }, 0);
+        const bucket = groupsByStatus.get(col.id);
+        const items = bucket?.items ?? [];
+        const totalAmount = bucket?.total ?? 0;
         const Icon = col.icon;
         const isDropTarget = dragOverColumn === col.id;
 
@@ -326,7 +346,9 @@ export function ProductionKanban({
   );
 }
 
-function RepairCard({
+// Perf audit: memoizado — evita re-render de todas las cards del kanban
+// cuando cambia `draggingId`/`dragOverColumn` durante el drag.
+const RepairCard = memo(function RepairCard({
   repair,
   dragging,
   moving,
@@ -610,7 +632,7 @@ function RepairCard({
       )}
     </div>
   );
-}
+});
 
 /**
  * Indicador de "fecha de entrega" para la card del Kanban.

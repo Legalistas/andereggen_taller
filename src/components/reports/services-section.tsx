@@ -16,23 +16,28 @@ import {
   TrendingUp,
   Wrench,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
+
+// Perf audit: recharts lazy — solo carga cuando aparecen los gráficos.
+const chartFallback = (
+  <div className="h-full flex items-center justify-center text-slate-400">
+    <Loader2 className="h-4 w-4 animate-spin" />
+  </div>
+);
+const TopCategoriesChart = dynamic(
+  () => import("./_services-charts").then((m) => m.TopCategoriesChart),
+  { ssr: false, loading: () => chartFallback },
+);
+const LaborVsPartsPie = dynamic(
+  () => import("./_services-charts").then((m) => m.LaborVsPartsPie),
+  { ssr: false, loading: () => chartFallback },
+);
+const MonthlyByTypeChart = dynamic(
+  () => import("./_services-charts").then((m) => m.MonthlyByTypeChart),
+  { ssr: false, loading: () => chartFallback },
+);
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -347,45 +352,7 @@ export default function ServicesSection() {
                 <EmptyMini text="Sin conceptos que facturan (DESCRIPTIVO no suma)" />
               ) : (
                 <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={topCategoriesChart}
-                      layout="vertical"
-                      margin={{ left: 8 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        className="opacity-30"
-                        horizontal={false}
-                      />
-                      <XAxis
-                        type="number"
-                        tick={{ fontSize: 11 }}
-                        tickFormatter={(v) =>
-                          v >= 1_000_000
-                            ? `${(v / 1_000_000).toFixed(1)}M`
-                            : v >= 1_000
-                              ? `${(v / 1_000).toFixed(0)}k`
-                              : String(v)
-                        }
-                      />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tick={{ fontSize: 11 }}
-                        width={150}
-                      />
-                      <Tooltip
-                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                        formatter={(v) => ARS.format(Number(v))}
-                      />
-                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                        {topCategoriesChart.map((e) => (
-                          <Cell key={e.name} fill={e.color} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <TopCategoriesChart data={topCategoriesChart} />
                 </div>
               )}
             </Card>
@@ -401,26 +368,7 @@ export default function ServicesSection() {
               ) : (
                 <div className="space-y-3">
                   <div className="h-44">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={laborVsPartsChart}
-                          dataKey="value"
-                          nameKey="name"
-                          innerRadius={40}
-                          outerRadius={75}
-                          paddingAngle={2}
-                        >
-                          {laborVsPartsChart.map((e) => (
-                            <Cell key={e.name} fill={e.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                          formatter={(v) => ARS.format(Number(v))}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    <LaborVsPartsPie data={laborVsPartsChart} />
                   </div>
                   <div className="space-y-1.5 text-sm">
                     {laborVsPartsChart.map((d) => (
@@ -496,54 +444,10 @@ export default function ServicesSection() {
                 icon={TrendingUp}
               />
               <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.monthlyByType}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      className="opacity-30"
-                    />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) =>
-                        v >= 1_000_000
-                          ? `${(v / 1_000_000).toFixed(1)}M`
-                          : v >= 1_000
-                            ? `${(v / 1_000).toFixed(0)}k`
-                            : String(v)
-                      }
-                    />
-                    <Tooltip
-                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                      formatter={(v) => ARS.format(Number(v))}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Line
-                      type="monotone"
-                      dataKey="UNIDADES"
-                      name="MO Unidades"
-                      stroke={TYPE_COLOR.UNIDADES}
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="FIJO"
-                      name="MO Fija"
-                      stroke={TYPE_COLOR.FIJO}
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="partsAmount"
-                      name="Repuestos"
-                      stroke="#f97316"
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <MonthlyByTypeChart
+                  data={data.monthlyByType}
+                  typeColor={TYPE_COLOR}
+                />
               </div>
             </Card>
           </div>

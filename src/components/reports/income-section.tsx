@@ -16,21 +16,25 @@ import {
   Trophy,
   Wallet,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
+
+// Perf audit: recharts lazy — ~95 KB gz solo se bajan cuando el usuario
+// llega al reporte de ingresos.
+const chartFallback = (
+  <div className="h-full flex items-center justify-center text-slate-400">
+    <Loader2 className="h-4 w-4 animate-spin" />
+  </div>
+);
+const IncomeMonthlyBars = dynamic(
+  () => import("./_income-charts").then((m) => m.IncomeMonthlyBars),
+  { ssr: false, loading: () => chartFallback },
+);
+const IncomeByMethodPie = dynamic(
+  () => import("./_income-charts").then((m) => m.IncomeByMethodPie),
+  { ssr: false, loading: () => chartFallback },
+);
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -451,42 +455,7 @@ export default function IncomeSection() {
                 icon={TrendingUp}
               />
               <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.monthlySeries}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      className="opacity-30"
-                    />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) =>
-                        v >= 1_000_000
-                          ? `${(v / 1_000_000).toFixed(1)}M`
-                          : v >= 1_000
-                            ? `${(v / 1_000).toFixed(0)}k`
-                            : String(v)
-                      }
-                    />
-                    <Tooltip
-                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                      formatter={(v) => ARS.format(Number(v))}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar
-                      dataKey="billed"
-                      name="Facturado"
-                      fill="#3b82f6"
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Bar
-                      dataKey="collected"
-                      name="Cobrado"
-                      fill="#22c55e"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
+                <IncomeMonthlyBars data={data.monthlySeries} />
               </div>
             </Card>
 
@@ -506,26 +475,7 @@ export default function IncomeSection() {
               ) : (
                 <div className="space-y-3">
                   <div className="h-40">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={byMethodChart}
-                          dataKey="value"
-                          nameKey="name"
-                          innerRadius={30}
-                          outerRadius={65}
-                          paddingAngle={2}
-                        >
-                          {byMethodChart.map((e) => (
-                            <Cell key={e.name} fill={e.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                          formatter={(v) => ARS.format(Number(v))}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    <IncomeByMethodPie data={byMethodChart} />
                   </div>
                   <div className="space-y-1 text-xs">
                     {byMethodChart.map((m) => (

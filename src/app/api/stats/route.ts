@@ -93,12 +93,16 @@ function bucketByCompanyName(name: string | null): InsuranceBucket {
 export async function GET(request: Request) {
   const authError = await verifyAuth(request);
   if (authError) return authError;
-
   const url = new URL(request.url);
-  // Mes de referencia para los counters mensuales. Formato YYYY-MM. Si no
-  // viene, usa el mes actual. Permite que el frontend cambie entre meses
-  // sin perder el resto del payload.
-  const monthParam = url.searchParams.get("month");
+  return NextResponse.json(await computeStats(url.searchParams.get("month")));
+}
+
+/**
+ * Perf audit · Cuerpo del endpoint extraído a función exportada para que
+ * la RSC page del dashboard pueda precargar el mes actual sin round-trip.
+ * `monthParam`: "YYYY-MM" o null (= mes actual).
+ */
+export async function computeStats(monthParam: string | null) {
   const now = new Date();
   let monthRef: Date;
   if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
@@ -324,7 +328,7 @@ export async function GET(request: Request) {
   const monthTotal = byInsurance.reduce((a, b) => a + b.total, 0);
   const monthAccepted = byInsurance.reduce((a, b) => a + b.accepted, 0);
 
-  return NextResponse.json({
+  return {
     cotizaciones: {
       totalYear: leadsYear,
       totalMonth: leadsMonth,
@@ -362,13 +366,19 @@ export async function GET(request: Request) {
         // Cascada de fecha de egreso: deliveredAt > archivedAt > updatedAt.
         // Marcamos con `dateSource` de dónde viene por si el frontend quiere
         // aclararlo (ej: "aprox." para los que caen a updatedAt).
-        deliveredAt: r.deliveredAt ?? r.archivedAt ?? r.updatedAt,
-        dateSource: r.deliveredAt
+        // Perf audit: serializamos a ISO acá (antes lo hacía JSON.stringify
+        // del route) para que el shape sea idéntico vía API y vía RSC.
+        deliveredAt: (
+          r.deliveredAt ??
+          r.archivedAt ??
+          r.updatedAt
+        ).toISOString(),
+        dateSource: (r.deliveredAt
           ? "delivered"
           : r.archivedAt
             ? "archived"
-            : "updated",
-        status: r.status,
+            : "updated") as "delivered" | "archived" | "updated",
+        status: r.status as string,
       })),
     },
     ingresos: {
@@ -383,8 +393,9 @@ export async function GET(request: Request) {
         vehicle: `${r.vehicleBrand} ${r.vehicleModel}`.trim(),
         domain: r.vehicleDomain,
         insurance: r.insuranceCompany,
-        enteredAt: r.enteredAt,
+        // El `where` de arriba filtra por enteredAt en rango → nunca es null.
+        enteredAt: (r.enteredAt as Date).toISOString(),
       })),
     },
-  });
+  };
 }

@@ -32,11 +32,18 @@ const currency = new Intl.NumberFormat("es-AR", {
   maximumFractionDigits: 0,
 });
 
-export default function DashboardKpis() {
-  const [stats, setStats] = useState<Stats | null>(null);
+export default function DashboardKpis({
+  initialData,
+}: {
+  // Perf audit: la RSC page pre-fetchea y pasa `initialData` → 0 round-trips
+  // post-hidratación. Sin prop, cae al fetch original (uso desde otro caller).
+  initialData?: Stats;
+} = {}) {
+  const [stats, setStats] = useState<Stats | null>(initialData ?? null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialData) return;
     const ac = new AbortController();
     fetch("/api/dashboard/stats", { signal: ac.signal })
       .then(async (r) => {
@@ -50,7 +57,7 @@ export default function DashboardKpis() {
         }
       });
     return () => ac.abort();
-  }, []);
+  }, [initialData]);
 
   if (error) {
     return (

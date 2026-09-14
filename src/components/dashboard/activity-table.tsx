@@ -56,11 +56,16 @@ const STATUS_STYLES: Record<
   },
 };
 
-export default function ActivityTable() {
-  const [items, setItems] = useState<Activity[] | null>(null);
+export default function ActivityTable({
+  initialData,
+}: {
+  initialData?: Activity[];
+} = {}) {
+  const [items, setItems] = useState<Activity[] | null>(initialData ?? null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialData) return;
     const ac = new AbortController();
     fetch("/api/dashboard/activity", { signal: ac.signal })
       .then(async (r) => {
@@ -74,7 +79,7 @@ export default function ActivityTable() {
         }
       });
     return () => ac.abort();
-  }, []);
+  }, [initialData]);
 
   return (
     <Card className="py-0">

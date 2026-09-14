@@ -16,18 +16,25 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
+
+// Perf audit: recharts lazy.
+const chartFallback = (
+  <div className="h-full flex items-center justify-center text-slate-400">
+    <Loader2 className="h-4 w-4 animate-spin" />
+  </div>
+);
+const TopCustomersChart = dynamic(
+  () => import("./_customers-charts").then((m) => m.TopCustomersChart),
+  { ssr: false, loading: () => chartFallback },
+);
+const NewCustomersByMonthChart = dynamic(
+  () =>
+    import("./_customers-charts").then((m) => m.NewCustomersByMonthChart),
+  { ssr: false, loading: () => chartFallback },
+);
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -371,45 +378,7 @@ export default function CustomersReportSection() {
                 <EmptyMini text="Sin clientes con facturación" />
               ) : (
                 <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={topChart}
-                      layout="vertical"
-                      margin={{ left: 8 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        className="opacity-30"
-                        horizontal={false}
-                      />
-                      <XAxis
-                        type="number"
-                        tick={{ fontSize: 11 }}
-                        tickFormatter={(v) =>
-                          v >= 1_000_000
-                            ? `${(v / 1_000_000).toFixed(1)}M`
-                            : v >= 1_000
-                              ? `${(v / 1_000).toFixed(0)}k`
-                              : String(v)
-                        }
-                      />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tick={{ fontSize: 11 }}
-                        width={160}
-                      />
-                      <Tooltip
-                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                        formatter={(v) => ARS.format(Number(v))}
-                      />
-                      <Bar dataKey="value" fill="#003b73" radius={[0, 4, 4, 0]}>
-                        {topChart.map((_, i) => (
-                          <Cell key={i} fill="#003b73" />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <TopCustomersChart data={topChart} />
                 </div>
               )}
             </Card>
@@ -424,32 +393,7 @@ export default function CustomersReportSection() {
                 <EmptyMini text="Sin clientes nuevos en el período" />
               ) : (
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data.newByMonth}>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        className="opacity-30"
-                      />
-                      <XAxis
-                        dataKey="label"
-                        tick={{ fontSize: 10 }}
-                        interval={0}
-                        angle={-20}
-                        textAnchor="end"
-                        height={50}
-                      />
-                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                      <Tooltip
-                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                      />
-                      <Bar
-                        dataKey="newCount"
-                        fill="#22c55e"
-                        radius={[4, 4, 0, 0]}
-                        name="Nuevos"
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <NewCustomersByMonthChart data={data.newByMonth} />
                 </div>
               )}
             </Card>

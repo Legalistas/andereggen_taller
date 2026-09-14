@@ -48,6 +48,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { loadCashBoxes, loadInsuranceCompanies } from "@/lib/client-cache";
 import { BudgetAdminDialog } from "../crm/budget-admin-dialog";
 import BudgetModal from "../crm/budget-modal";
 import { FichasDialog } from "../crm/fichas-dialog";
@@ -1338,28 +1339,25 @@ function InvoicesSection({
     Array<{ id: string; name: string }>
   >([]);
 
+  // Perf audit: ambos lookups van por el cache module-level — si la ficha
+  // del lead o el módulo Compras ya los pidieron, no hay fetch acá.
   useEffect(() => {
-    const ac = new AbortController();
-    fetch("/api/caja/boxes", { signal: ac.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.boxes) setCashBoxes(d.boxes as CashBoxOption[]);
+    let cancelled = false;
+    loadCashBoxes()
+      .then((boxes) => {
+        if (!cancelled) setCashBoxes(boxes as CashBoxOption[]);
       })
       .catch(() => {});
-    fetch("/api/insurance-companies?active=1", { signal: ac.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.companies) {
-          setInsuranceCompanies(
-            (d.companies as Array<{ id: string; name: string }>).map((c) => ({
-              id: c.id,
-              name: c.name,
-            })),
-          );
+    loadInsuranceCompanies()
+      .then((list) => {
+        if (!cancelled) {
+          setInsuranceCompanies(list.map((c) => ({ id: c.id, name: c.name })));
         }
       })
       .catch(() => {});
-    return () => ac.abort();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const refresh = async () => {

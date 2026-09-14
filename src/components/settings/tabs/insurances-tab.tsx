@@ -34,6 +34,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  INSURANCE_COMPANIES_KEY,
+  invalidateCache,
+} from "@/lib/client-cache";
 import { TabHeader } from "../settings-section";
 
 type Company = {
@@ -136,6 +140,8 @@ export default function InsurancesTab() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
       setFormOpen(false);
+      // Perf audit: invalidar el cache module-level que usan los canvas.
+      invalidateCache(INSURANCE_COMPANIES_KEY);
       await fetchCompanies();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
@@ -152,6 +158,7 @@ export default function InsurancesTab() {
         method: "DELETE",
       });
       setDeleteTarget(null);
+      invalidateCache(INSURANCE_COMPANIES_KEY);
       await fetchCompanies();
     } finally {
       setDeleteBusy(false);

@@ -12,7 +12,7 @@ import {
   Trophy,
   Wrench,
 } from "lucide-react";
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -212,16 +212,35 @@ export function LeadsKanban({
   const [movingLead, setMovingLead] = useState<string | null>(null);
   const COLUMNS = showGanado ? [...BASE_COLUMNS, GANADO_COLUMN] : BASE_COLUMNS;
 
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
-    setDraggingId(id);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", id);
-  };
+  // Perf audit: pre-agrupamos por status una sola vez en vez de hacer
+  // `leads.filter(...)` + `.reduce(...)` por cada columna en cada render.
+  const groupsByStatus = useMemo(() => {
+    const map = new Map<LeadStatus, { items: KanbanLead[]; total: number }>();
+    for (const col of COLUMNS) {
+      map.set(col.id, { items: [], total: 0 });
+    }
+    for (const l of leads) {
+      const bucket = map.get(l.status);
+      if (!bucket) continue;
+      bucket.items.push(l);
+      bucket.total += Number(l.budgets[0]?.grandTotal ?? 0);
+    }
+    return map;
+  }, [leads, COLUMNS]);
 
-  const handleDragEnd = () => {
+  const handleDragStart = useCallback(
+    (e: React.DragEvent<HTMLDivElement>, id: string) => {
+      setDraggingId(id);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", id);
+    },
+    [],
+  );
+
+  const handleDragEnd = useCallback(() => {
     setDraggingId(null);
     setDragOverColumn(null);
-  };
+  }, []);
 
   const handleDragOver = (
     e: React.DragEvent<HTMLDivElement>,
@@ -266,11 +285,9 @@ export function LeadsKanban({
   return (
     <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4">
       {COLUMNS.map((col) => {
-        const items = leads.filter((l) => l.status === col.id);
-        const totalAmount = items.reduce(
-          (a, l) => a + Number(l.budgets[0]?.grandTotal ?? 0),
-          0,
-        );
+        const bucket = groupsByStatus.get(col.id);
+        const items = bucket?.items ?? [];
+        const totalAmount = bucket?.total ?? 0;
         const Icon = col.icon;
         const isDropTarget = dragOverColumn === col.id;
 
@@ -341,7 +358,10 @@ export function LeadsKanban({
   );
 }
 
-function LeadCard({
+// Perf audit: memoizado — evita re-render de las ~40 cards cuando cambia
+// `draggingId`/`dragOverColumn` del padre. Los props ya son estables
+// (handlers wrappeados en useCallback en el padre).
+const LeadCard = memo(function LeadCard({
   lead,
   dragging,
   moving,
@@ -534,4 +554,4 @@ function LeadCard({
       )}
     </div>
   );
-}
+});

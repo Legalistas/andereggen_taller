@@ -1,18 +1,8 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import {
   Card,
   CardContent,
@@ -21,16 +11,36 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+// Perf audit: recharts lazy — no baja al cliente hasta que hay data.
+const chartFallback = (
+  <div className="h-full flex items-center justify-center text-slate-400">
+    <Loader2 className="h-4 w-4 animate-spin" />
+  </div>
+);
+const ServicesChart = dynamic(
+  () => import("./_charts").then((m) => m.ServicesChart),
+  { ssr: false, loading: () => chartFallback },
+);
+const VehiclesFlowChart = dynamic(
+  () => import("./_charts").then((m) => m.VehiclesFlowChart),
+  { ssr: false, loading: () => chartFallback },
+);
+
 type ChartsData = {
   services: Array<{ servicio: string; cantidad: number }>;
   vehicles: Array<{ mes: string; vehiculos: number }>;
 };
 
-export default function ChartsSection() {
-  const [data, setData] = useState<ChartsData | null>(null);
+export default function ChartsSection({
+  initialData,
+}: {
+  initialData?: ChartsData;
+} = {}) {
+  const [data, setData] = useState<ChartsData | null>(initialData ?? null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialData) return;
     const ac = new AbortController();
     fetch("/api/dashboard/charts", { signal: ac.signal })
       .then(async (r) => {
@@ -44,7 +54,7 @@ export default function ChartsSection() {
         }
       });
     return () => ac.abort();
-  }, []);
+  }, [initialData]);
 
   if (error) {
     return (
@@ -85,28 +95,7 @@ export default function ChartsSection() {
                 Aún no hay conceptos cargados
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.services} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                  <YAxis
-                    dataKey="servicio"
-                    type="category"
-                    stroke="hsl(var(--muted-foreground))"
-                    width={140}
-                    fontSize={11}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "6px",
-                    }}
-                    labelStyle={{ color: "hsl(var(--foreground))" }}
-                  />
-                  <Bar dataKey="cantidad" fill="#003b73" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <ServicesChart data={data.services} />
             )}
           </div>
         </CardContent>
@@ -115,32 +104,13 @@ export default function ChartsSection() {
       <Card className="lg:col-span-7 hover:shadow-md transition-shadow">
         <CardHeader>
           <CardTitle>Flujo de Vehículos</CardTitle>
-          <CardDescription>Vehículos ingresados por mes (últimos 6 meses)</CardDescription>
+          <CardDescription>
+            Vehículos ingresados por mes (últimos 6 meses)
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-50 min-h-50 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.vehicles}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="mes" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "6px",
-                  }}
-                  labelStyle={{ color: "hsl(var(--foreground))" }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="vehiculos"
-                  stroke="#003b73"
-                  strokeWidth={3}
-                  dot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <VehiclesFlowChart data={data.vehicles} />
           </div>
         </CardContent>
       </Card>

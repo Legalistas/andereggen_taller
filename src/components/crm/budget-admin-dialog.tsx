@@ -32,6 +32,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import PurchaseDetailDialog from "@/components/compras/purchase-detail-dialog";
+import {
+  invalidateCache,
+  loadCashBoxes,
+  loadSuppliers,
+  SUPPLIERS_KEY,
+} from "@/lib/client-cache";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -1246,35 +1252,32 @@ function ComprasTab({
 
   // Refetch de suppliers — expuesto como callback para que el detalle de
   // compra pueda regenerar la lista después de crear un proveedor inline.
+  // Invalida el cache module-level para que el resto de la app también vea
+  // el proveedor nuevo.
   const refreshSuppliers = useCallback(async () => {
+    invalidateCache(SUPPLIERS_KEY);
     try {
-      const res = await fetch("/api/suppliers?pageSize=0");
-      if (!res.ok) return;
-      const d = (await res.json()) as {
-        suppliers: Array<{ id: string; name: string; isActive: boolean }>;
-      };
-      setSuppliers(d.suppliers.filter((s) => s.isActive));
+      const list = await loadSuppliers();
+      setSuppliers(list.filter((s) => s.isActive));
     } catch (e) {
       console.error("Error recargando suppliers", e);
     }
   }, []);
 
+  // Perf audit: mount usa el cache (no invalida). Ambos en paralelo.
   useEffect(() => {
-    (async () => {
-      await refreshSuppliers();
-      try {
-        const boxRes = await fetch("/api/caja/boxes");
-        if (boxRes.ok) {
-          const d = (await boxRes.json()) as {
-            boxes: Array<{ id: string; name: string; key: string }>;
-          };
-          setCashBoxes(d.boxes);
-        }
-      } catch (e) {
-        console.error("Error cargando cajas", e);
-      }
-    })();
-  }, [refreshSuppliers]);
+    let cancelled = false;
+    Promise.all([loadSuppliers(), loadCashBoxes()])
+      .then(([sup, boxes]) => {
+        if (cancelled) return;
+        setSuppliers(sup.filter((s) => s.isActive));
+        setCashBoxes(boxes);
+      })
+      .catch((e) => console.error("Error cargando sidecars", e));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (items.length === 0) {
     return (
