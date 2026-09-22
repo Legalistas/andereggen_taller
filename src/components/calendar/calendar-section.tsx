@@ -11,6 +11,8 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  Package,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -48,6 +50,14 @@ type CalendarEvent = {
   vehicleDomain: string;
   date: string;
   needsTransport: boolean;
+  /**
+   * El cliente necesita el auto para una fecha concreta. Se pinta el evento
+   * en amarillo flúo. Es INTERNO: no se le notifica nada al cliente.
+   */
+  isUrgent: boolean;
+  urgencyNote: string | null;
+  /** "TALLER" | "SEGURO" — quién provee los repuestos. Solo informativo. */
+  partsPurchaser: string | null;
   status: string;
   notes: string | null;
 };
@@ -351,21 +361,28 @@ export default function CalendarSection() {
     setMonth0(now.getMonth());
   };
 
-  const toggleTransport = async (repairId: string, next: boolean) => {
+  /**
+   * Guarda un flag del evento (traslado o urgencia) sin recargar el mes:
+   * actualiza local para no perder el scroll ni hacer parpadear la grilla.
+   */
+  const toggleFlag = async (
+    repairId: string,
+    field: "needsTransport" | "isUrgent",
+    next: boolean,
+  ) => {
     setSavingId(repairId);
     try {
       const res = await fetch(`/api/repairs/${repairId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ needsTransport: next }),
+        body: JSON.stringify({ [field]: next }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // Actualizamos localmente sin refetch para no perder scroll ni parpadear.
       setData((prev) => {
         if (!prev) return prev;
         const patch = (arr: CalendarEvent[]) =>
           arr.map((e) =>
-            e.repairId === repairId ? { ...e, needsTransport: next } : e,
+            e.repairId === repairId ? { ...e, [field]: next } : e,
           );
         return {
           ...prev,
@@ -377,12 +394,17 @@ export default function CalendarSection() {
       alert(
         e instanceof Error
           ? `No se pudo guardar: ${e.message}`
-          : "No se pudo guardar el traslado",
+          : "No se pudo guardar el cambio",
       );
     } finally {
       setSavingId(null);
     }
   };
+
+  const toggleTransport = (repairId: string, next: boolean) =>
+    toggleFlag(repairId, "needsTransport", next);
+  const toggleUrgent = (repairId: string, next: boolean) =>
+    toggleFlag(repairId, "isUrgent", next);
 
   return (
     <div className="space-y-4">
@@ -553,6 +575,7 @@ export default function CalendarSection() {
                       onToggleTransport={(next) =>
                         toggleTransport(ev.repairId, next)
                       }
+                      onToggleUrgent={(next) => toggleUrgent(ev.repairId, next)}
                       onOpen={setOpenEvent}
                     />
                   ))}
@@ -562,6 +585,7 @@ export default function CalendarSection() {
                       events={events}
                       savingId={savingId}
                       onToggleTransport={toggleTransport}
+                      onToggleUrgent={toggleUrgent}
                       onOpen={setOpenEvent}
                     />
                   )}
@@ -617,19 +641,32 @@ export default function CalendarSection() {
   );
 }
 
+/**
+ * Colores del calendario (spec Calendario v2, definido con el taller):
+ *  - Amarillo flúo = urgencia del cliente. Es el que más salta a la vista
+ *    porque es lo que obliga a reordenar la semana.
+ *  - Naranja = traslado (antes era amarillo; se movió para dejarle el
+ *    amarillo flúo a la urgencia).
+ *  - Azul / verde = ingreso / entrega, cuando no hay nada marcado.
+ */
+const URGENT_CHIP = "bg-[#fbff2b] border-yellow-500 text-yellow-950";
+
 function EventChip({
   event,
   saving,
   onToggleTransport,
+  onToggleUrgent,
   onOpen,
 }: {
   event: DayEvent;
   saving: boolean;
   onToggleTransport: (next: boolean) => void;
+  onToggleUrgent: (next: boolean) => void;
   onOpen: (event: DayEvent) => void;
 }) {
-  const bg =
-    event.kind === "ingreso"
+  const bg = event.isUrgent
+    ? URGENT_CHIP
+    : event.kind === "ingreso"
       ? "bg-blue-50 border-blue-200 text-blue-900"
       : "bg-emerald-50 border-emerald-200 text-emerald-900";
   const Icon = event.kind === "ingreso" ? LogIn : LogOut;
@@ -649,25 +686,74 @@ function EventChip({
         >
           {event.customerName}
         </button>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => onToggleTransport(!event.needsTransport)}
-          title={
-            event.needsTransport
-              ? "Traslado solicitado — click para desmarcar"
-              : "Marcar traslado del cliente"
-          }
-          className={`ml-auto inline-flex items-center shrink-0 rounded p-0.5 disabled:opacity-50 ${
-            event.needsTransport
-              ? "bg-amber-100 text-amber-700"
-              : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-          }`}
-        >
-          <ArrowRightLeft className="h-3 w-3" />
-        </button>
+        <div className="ml-auto flex items-center gap-0.5 shrink-0">
+          <PartsBadge purchaser={event.partsPurchaser} />
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => onToggleUrgent(!event.isUrgent)}
+            title={
+              event.isUrgent
+                ? `Urgente${event.urgencyNote ? `: ${event.urgencyNote}` : ""} — click para desmarcar`
+                : "Marcar urgencia del cliente (interno)"
+            }
+            className={`inline-flex items-center rounded p-0.5 disabled:opacity-50 ${
+              event.isUrgent
+                ? // El chip ya es amarillo flúo: el botón necesita un tono más
+                  // oscuro para no desaparecer sobre el fondo.
+                  "bg-yellow-500 text-yellow-950 ring-1 ring-yellow-700/40"
+                : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            }`}
+          >
+            <Zap className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => onToggleTransport(!event.needsTransport)}
+            title={
+              event.needsTransport
+                ? "Traslado solicitado — click para desmarcar"
+                : "Marcar traslado del cliente"
+            }
+            className={`inline-flex items-center rounded p-0.5 disabled:opacity-50 ${
+              event.needsTransport
+                ? "bg-orange-200 text-orange-800"
+                : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            }`}
+          >
+            <ArrowRightLeft className="h-3 w-3" />
+          </button>
+        </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Quién provee los repuestos. Solo informativo: el taller quiere saber de un
+ * vistazo si tiene que salir a comprarlos o los manda la compañía. Se define
+ * al ganar la oportunidad, no se edita desde el calendario.
+ */
+function PartsBadge({ purchaser }: { purchaser: string | null }) {
+  if (!purchaser) return null;
+  const isTaller = purchaser === "TALLER";
+  return (
+    <span
+      title={
+        isTaller
+          ? "Repuestos: los provee el taller"
+          : "Repuestos: los provee el seguro"
+      }
+      className={`inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-bold uppercase leading-none ${
+        isTaller
+          ? "bg-slate-200 text-slate-700"
+          : "bg-sky-100 text-sky-800 border border-sky-200"
+      }`}
+    >
+      <Package className="h-2.5 w-2.5" />
+      {isTaller ? "T" : "S"}
+    </span>
   );
 }
 
@@ -681,12 +767,14 @@ function DayOverflow({
   events,
   savingId,
   onToggleTransport,
+  onToggleUrgent,
   onOpen,
 }: {
   dateLabel: string;
   events: DayEvent[];
   savingId: string | null;
   onToggleTransport: (repairId: string, next: boolean) => void;
+  onToggleUrgent: (repairId: string, next: boolean) => void;
   onOpen: (event: DayEvent) => void;
 }) {
   const hidden = events.length - MAX_VISIBLE_EVENTS;
@@ -711,6 +799,7 @@ function DayOverflow({
               event={ev}
               saving={savingId === ev.repairId}
               onToggleTransport={(next) => onToggleTransport(ev.repairId, next)}
+              onToggleUrgent={(next) => onToggleUrgent(ev.repairId, next)}
               onOpen={onOpen}
             />
           ))}
@@ -776,15 +865,43 @@ function UpcomingList({ data }: { data: CalendarPayload | null }) {
             <span className="text-slate-500 truncate">
               {ev.vehicleSummary} · {ev.vehicleDomain}
             </span>
-            {ev.needsTransport && (
-              <span
-                className="ml-auto inline-flex items-center gap-1 text-[11px] text-amber-700 font-medium"
-                title="Traslado solicitado"
-              >
-                <ArrowRightLeft className="h-3 w-3" />
-                Traslado
-              </span>
-            )}
+            <span className="ml-auto flex items-center gap-2 shrink-0">
+              {ev.isUrgent && (
+                <span
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold bg-[#fbff2b] text-yellow-950 border border-yellow-500"
+                  title={
+                    ev.urgencyNote
+                      ? `Urgente: ${ev.urgencyNote}`
+                      : "Urgente (interno)"
+                  }
+                >
+                  <Zap className="h-3 w-3" />
+                  Urgente
+                </span>
+              )}
+              {ev.partsPurchaser && (
+                <span
+                  className={`inline-flex items-center gap-1 text-[11px] font-medium ${
+                    ev.partsPurchaser === "TALLER"
+                      ? "text-slate-600"
+                      : "text-sky-700"
+                  }`}
+                  title="Quién provee los repuestos"
+                >
+                  <Package className="h-3 w-3" />
+                  {ev.partsPurchaser === "TALLER" ? "Rep. taller" : "Rep. seguro"}
+                </span>
+              )}
+              {ev.needsTransport && (
+                <span
+                  className="inline-flex items-center gap-1 text-[11px] text-orange-700 font-medium"
+                  title="Traslado solicitado"
+                >
+                  <ArrowRightLeft className="h-3 w-3" />
+                  Traslado
+                </span>
+              )}
+            </span>
           </li>
         ))}
       </ul>

@@ -7,6 +7,8 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  Package,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -41,6 +43,9 @@ export type EventDialogInput = {
   vehicleDomain: string;
   date: string;
   needsTransport: boolean;
+  isUrgent: boolean;
+  urgencyNote: string | null;
+  partsPurchaser: string | null;
   status: string;
   notes: string | null;
 };
@@ -106,6 +111,8 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
     isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date),
   );
   const [needsTransport, setNeedsTransport] = useState(event.needsTransport);
+  const [isUrgent, setIsUrgent] = useState(event.isUrgent);
+  const [urgencyNote, setUrgencyNote] = useState(event.urgencyNote ?? "");
   const [notes, setNotes] = useState(event.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +123,8 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
       isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date),
     );
     setNeedsTransport(event.needsTransport);
+    setIsUrgent(event.isUrgent);
+    setUrgencyNote(event.urgencyNote ?? "");
     setNotes(event.notes ?? "");
     setError(null);
   }, [event, isTurno]);
@@ -125,6 +134,8 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
     dateValue !==
       (isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date)) ||
     needsTransport !== event.needsTransport ||
+    isUrgent !== event.isUrgent ||
+    urgencyNote !== (event.urgencyNote ?? "") ||
     notes !== originalNotes;
 
   const handleSave = async () => {
@@ -133,6 +144,8 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
     try {
       const body: Record<string, unknown> = {
         needsTransport,
+        isUrgent,
+        urgencyNote: urgencyNote.trim() || null,
         notes: notes.trim() || null,
       };
       if (isTurno) {
@@ -197,6 +210,39 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
             />
           </div>
 
+          {/* Urgencia — uso interno. El evento se pinta en amarillo flúo en
+              la grilla; al cliente no se le avisa nada. */}
+          <div className="rounded-md border border-yellow-300 bg-yellow-50/60 p-3 grid gap-2">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isUrgent}
+                onChange={(e) => setIsUrgent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-yellow-600 focus:ring-yellow-500"
+              />
+              <div className="grid gap-0.5">
+                <span className="text-sm font-medium text-slate-800 inline-flex items-center gap-1">
+                  <Zap className="h-3 w-3 text-yellow-600" />
+                  El cliente tiene urgencia con la fecha
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Se marca en amarillo flúo en el calendario. Es interno: no se
+                  le notifica nada al cliente.
+                </span>
+              </div>
+            </label>
+            {isUrgent && (
+              <div className="grid gap-1 pl-6">
+                <Label className="text-xs">¿Por qué / para cuándo?</Label>
+                <Input
+                  value={urgencyNote}
+                  onChange={(e) => setUrgencyNote(e.target.value)}
+                  placeholder="Ej: lo necesita el viernes, se va de viaje"
+                />
+              </div>
+            )}
+          </div>
+
           <label className="flex items-start gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -206,14 +252,29 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
             />
             <div className="grid gap-0.5">
               <span className="text-sm font-medium text-slate-800 inline-flex items-center gap-1">
-                <ArrowRightLeft className="h-3 w-3 text-amber-600" />
+                <ArrowRightLeft className="h-3 w-3 text-orange-600" />
                 El cliente pide traslado al dejar el vehículo
               </span>
               <span className="text-[11px] text-slate-500">
-                Marcar si hay que llevarlo a su domicilio o trabajo.
+                Marcar si hay que llevarlo a su domicilio o trabajo. Se ve en
+                naranja en el calendario.
               </span>
             </div>
           </label>
+
+          {/* Quién provee los repuestos: informativo, se define al ganar la
+              oportunidad y no se edita desde el calendario. */}
+          {event.partsPurchaser && (
+            <div className="flex items-center gap-2 text-sm text-slate-700">
+              <Package className="h-4 w-4 text-slate-400" />
+              Repuestos:{" "}
+              <span className="font-medium">
+                {event.partsPurchaser === "TALLER"
+                  ? "los provee el taller"
+                  : "los provee el seguro"}
+              </span>
+            </div>
+          )}
 
           <div className="grid gap-1">
             <Label className="text-xs">Detalles del turno</Label>

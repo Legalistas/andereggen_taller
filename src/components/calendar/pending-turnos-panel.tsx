@@ -5,7 +5,9 @@ import {
   Calendar as CalendarIcon,
   Clock,
   Loader2,
+  Package,
   Phone,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -39,6 +41,11 @@ type PendingRow = {
   insuranceCompany: string | null;
   estimatedDeliveryAt: string | null;
   needsTransport: boolean;
+  /** Urgencia del cliente — interno, amarillo flúo. */
+  isUrgent: boolean;
+  urgencyNote: string | null;
+  /** "TALLER" | "SEGURO" — quién provee los repuestos. Informativo. */
+  partsPurchaser: string | null;
   waitingSince: string;
 };
 
@@ -166,13 +173,39 @@ export default function PendingTurnosPanel({
                   <span className="text-sm font-medium text-slate-900 truncate">
                     {r.customerName}
                   </span>
+                  {r.isUrgent && (
+                    <span
+                      className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-yellow-950 bg-[#fbff2b] border border-yellow-500 rounded px-1 py-0.5"
+                      title={
+                        r.urgencyNote
+                          ? `Urgente: ${r.urgencyNote}`
+                          : "Urgente (interno)"
+                      }
+                    >
+                      <Zap className="h-2.5 w-2.5" />
+                      Urgente
+                    </span>
+                  )}
                   {r.needsTransport && (
                     <span
-                      className="inline-flex items-center gap-0.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5"
+                      className="inline-flex items-center gap-0.5 text-[10px] text-orange-700 bg-orange-50 border border-orange-200 rounded px-1 py-0.5"
                       title="Traslado solicitado"
                     >
                       <ArrowRightLeft className="h-2.5 w-2.5" />
                       Traslado
+                    </span>
+                  )}
+                  {r.partsPurchaser && (
+                    <span
+                      className={`inline-flex items-center gap-0.5 text-[10px] rounded px-1 py-0.5 border ${
+                        r.partsPurchaser === "TALLER"
+                          ? "text-slate-600 bg-slate-50 border-slate-200"
+                          : "text-sky-700 bg-sky-50 border-sky-200"
+                      }`}
+                      title="Quién provee los repuestos"
+                    >
+                      <Package className="h-2.5 w-2.5" />
+                      {r.partsPurchaser === "TALLER" ? "Rep. taller" : "Rep. seguro"}
                     </span>
                   )}
                 </div>
@@ -234,6 +267,8 @@ function AssignTurnoDialog({
 }) {
   const [scheduledAt, setScheduledAt] = useState(defaultDate ?? nowLocalDateTime());
   const [needsTransport, setNeedsTransport] = useState(row.needsTransport);
+  const [isUrgent, setIsUrgent] = useState(row.isUrgent);
+  const [urgencyNote, setUrgencyNote] = useState(row.urgencyNote ?? "");
   const [estimatedDelivery, setEstimatedDelivery] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -245,6 +280,8 @@ function AssignTurnoDialog({
       const body: Record<string, unknown> = {
         scheduledAt: parseLocalDateTime(scheduledAt),
         needsTransport,
+        isUrgent,
+        urgencyNote: urgencyNote.trim() || null,
       };
       if (estimatedDelivery) {
         // input type="date" — parseamos como mediodía local para no perder
@@ -308,6 +345,39 @@ function AssignTurnoDialog({
             />
           </div>
 
+          {/* Urgencia: interno. No se menciona en el mail de confirmación
+              que sale al asignar el turno. */}
+          <div className="rounded-md border border-yellow-300 bg-yellow-50/60 p-3 grid gap-2">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isUrgent}
+                onChange={(e) => setIsUrgent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-yellow-600 focus:ring-yellow-500"
+              />
+              <div className="grid gap-0.5">
+                <span className="text-sm font-medium text-slate-800 inline-flex items-center gap-1">
+                  <Zap className="h-3 w-3 text-yellow-600" />
+                  El cliente tiene urgencia con la fecha
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Se marca en amarillo flúo en el calendario. Interno: al
+                  cliente no se le avisa nada.
+                </span>
+              </div>
+            </label>
+            {isUrgent && (
+              <div className="grid gap-1 pl-6">
+                <Label className="text-xs">¿Por qué / para cuándo?</Label>
+                <Input
+                  value={urgencyNote}
+                  onChange={(e) => setUrgencyNote(e.target.value)}
+                  placeholder="Ej: lo necesita el viernes, se va de viaje"
+                />
+              </div>
+            )}
+          </div>
+
           <label className="flex items-start gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -320,7 +390,7 @@ function AssignTurnoDialog({
                 El cliente pide traslado al dejar el vehículo
               </span>
               <span className="text-[11px] text-slate-500">
-                Aparece en el calendario del día del turno.
+                Aparece en naranja en el calendario del día del turno.
               </span>
             </div>
           </label>

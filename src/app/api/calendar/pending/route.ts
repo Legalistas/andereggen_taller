@@ -32,6 +32,9 @@ export async function GET(request: Request) {
       insuranceCompany: true,
       estimatedDeliveryAt: true,
       needsTransport: true,
+      isUrgent: true,
+      urgencyNote: true,
+      partsPurchaser: true,
       createdAt: true,
       lead: {
         select: { customer: { select: { city: true } } },
@@ -54,6 +57,9 @@ export async function GET(request: Request) {
       insuranceCompany: r.insuranceCompany,
       estimatedDeliveryAt: r.estimatedDeliveryAt?.toISOString() ?? null,
       needsTransport: r.needsTransport,
+      isUrgent: r.isUrgent,
+      urgencyNote: r.urgencyNote,
+      partsPurchaser: r.partsPurchaser,
       waitingSince: r.createdAt.toISOString(),
     })),
   });

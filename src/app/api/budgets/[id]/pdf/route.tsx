@@ -1,6 +1,11 @@
 /**
- * GET /api/budgets/[id]/pdf
- * Devuelve el PDF del presupuesto como descarga (Content-Disposition: attachment).
+ * GET /api/budgets/[id]/pdf[?download=1]
+ *
+ * Devuelve el PDF del presupuesto. Por defecto va inline: desde Producción se
+ * abre en una pestaña del navegador para mirarlo al toque, sin llenar la
+ * carpeta de descargas. Con ?download=1 se fuerza la descarga (es lo que usa
+ * el botón "Descargar PDF" del CRM).
+ *
  * Usa el mismo BudgetPdf que el endpoint de envío por email.
  */
 
@@ -134,12 +139,15 @@ export async function GET(request: Request, ctx: RouteContext) {
       ? `${budget.number}-A${budget.extensionSuffix}`
       : `${budget.number}`;
   const filename = `Presupuesto-${numberPart}-${safeName}.pdf`;
+  const disposition = new URL(request.url).searchParams.get("download")
+    ? "attachment"
+    : "inline";
 
   return new Response(new Uint8Array(pdfBuffer), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": `${disposition}; filename="${filename}"`,
       "Content-Length": String(pdfBuffer.length),
       "Cache-Control": "private, no-cache",
     },

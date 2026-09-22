@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
+import { syncApprovedInsurance } from "@/lib/repair-claims";
 import type {
   BudgetStatus,
   LeadLostReason,
@@ -157,6 +158,11 @@ export async function POST(request: Request, ctx: RouteContext) {
             // "turno_a_asignar" hasta que el equipo cargue scheduledAt.
             status: "turno_a_asignar",
             budgetId: updated.id,
+            // spec Producción v4 · La tarjeta nace con su "Siniestro 1"
+            // vinculado al presupuesto. Si el auto vuelve por un segundo
+            // siniestro se le agrega otro acá mismo en vez de abrir una
+            // tarjeta nueva.
+            claims: { create: { order: 1, budgetId: updated.id } },
             leadId: updated.leadId,
             directCreation: false,
             customerId: leadForRepair.customerId,
@@ -190,26 +196,81 @@ export async function POST(request: Request, ctx: RouteContext) {
     // al bucket de "Importes Aprobados" del Repair padre, según extensionPayer.
     // Así el taller no tiene que sumar a mano cuando el seguro aprueba un extra.
     if (status === "accepted" && isExtension && updated.parentBudgetId) {
-      const parentRepair = await tx.repair.findUnique({
+      // spec Producción v4 · El presupuesto padre puede estar colgado de la
+      // tarjeta por el 1-1 viejo (Repair.budgetId) o por el siniestro que lo
+      // vincula. Buscamos por los dos caminos.
+      const parentClaim = await tx.repairClaim.findUnique({
         where: { budgetId: updated.parentBudgetId },
+        select: { id: true, repairId: true, approvedLabor: true, approvedParts: true },
       });
+      const parentRepair = parentClaim
+        ? await tx.repair.findUnique({ where: { id: parentClaim.repairId } })
+        : await tx.repair.findUnique({
+            where: { budgetId: updated.parentBudgetId },
+          });
+
       if (parentRepair) {
-        const inc = Number(updated.grandTotal);
-        const bucket =
-          updated.extensionPayer === "SEGURO"
-            ? "approvedInsurance"
-            : updated.extensionPayer === "FRANQUICIA"
+        if (updated.extensionPayer === "SEGURO") {
+          // La ampliación la paga el seguro: suma al siniestro del
+          // presupuesto padre, repartida igual que viene en la ampliación
+          // (mano de obra vs repuestos), que es justo el desglose que el
+          // taller necesita ver por siniestro.
+          const claim =
+            parentClaim ??
+            (await tx.repairClaim.findFirst({
+              where: { repairId: parentRepair.id },
+              orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+              select: {
+                id: true,
+                repairId: true,
+                approvedLabor: true,
+                approvedParts: true,
+              },
+            })) ??
+            (await tx.repairClaim.create({
+              data: { repairId: parentRepair.id, order: 1, budgetId: updated.parentBudgetId },
+              select: {
+                id: true,
+                repairId: true,
+                approvedLabor: true,
+                approvedParts: true,
+              },
+            }));
+
+          await tx.repairClaim.update({
+            where: { id: claim.id },
+            data: {
+              approvedLabor:
+                Number(claim.approvedLabor ?? 0) + Number(updated.laborTotal),
+              approvedParts:
+                Number(claim.approvedParts ?? 0) +
+                Number(updated.partsSubtotal),
+            },
+          });
+
+          await syncApprovedInsurance(tx, parentRepair.id);
+          if (parentRepair.approvedAt === null) {
+            await tx.repair.update({
+              where: { id: parentRepair.id },
+              data: { approvedAt: now },
+            });
+          }
+        } else {
+          const inc = Number(updated.grandTotal);
+          const bucket =
+            updated.extensionPayer === "FRANQUICIA"
               ? "approvedFranchise"
               : "approvedCustomer";
-        const prev = Number(parentRepair[bucket] ?? 0);
-        await tx.repair.update({
-          where: { id: parentRepair.id },
-          data: {
-            [bucket]: prev + inc,
-            // Si no había fecha de aprobación previa, dejamos la de hoy.
-            ...(parentRepair.approvedAt === null && { approvedAt: now }),
-          },
-        });
+          const prev = Number(parentRepair[bucket] ?? 0);
+          await tx.repair.update({
+            where: { id: parentRepair.id },
+            data: {
+              [bucket]: prev + inc,
+              // Si no había fecha de aprobación previa, dejamos la de hoy.
+              ...(parentRepair.approvedAt === null && { approvedAt: now }),
+            },
+          });
+        }
       }
     }
 

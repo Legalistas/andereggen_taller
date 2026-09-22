@@ -8,6 +8,11 @@
  *       El circuito es el mismo que para compras del circuito lead.
  *   (B) No elige presupuesto → compra suelta (insumos, herramientas). El
  *       campo Producto es obligatorio en ambos modos.
+ *
+ * spec Compras v4 · Con `fixedBudgetId` (lo usa la administrativa del
+ * vehículo) el presupuesto viene dado: se esconde el buscador y queda un
+ * único campo para completar. Es el mismo formulario, para no tener dos
+ * altas distintas que después se desincronizan.
  */
 
 import { Loader2, Search } from "lucide-react";
@@ -34,9 +39,12 @@ type BudgetOption = {
 };
 
 export default function NewDirectPurchaseDialog({
+  fixedBudgetId,
   onClose,
   onCreated,
 }: {
+  /** Presupuesto ya definido por el contexto (administrativa del vehículo). */
+  fixedBudgetId?: string;
   onClose: () => void;
   onCreated: (purchaseId: string) => void;
 }) {
@@ -87,7 +95,9 @@ export default function NewDirectPurchaseDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productDescription: product.trim(),
-          ...(selectedBudget && { budgetId: selectedBudget.id }),
+          ...(fixedBudgetId
+            ? { budgetId: fixedBudgetId }
+            : selectedBudget && { budgetId: selectedBudget.id }),
           status: "COTIZAR",
         }),
       });
@@ -108,9 +118,9 @@ export default function NewDirectPurchaseDialog({
         <DialogHeader>
           <DialogTitle>Nueva compra</DialogTitle>
           <DialogDescription>
-            Cargá una compra directa. Si es para un vehículo del taller,
-            asocialá al presupuesto correspondiente. Si es un insumo o
-            herramienta, dejá el presupuesto vacío.
+            {fixedBudgetId
+              ? "Compra de este vehículo que no sale de un repuesto de la lista: un insumo, un flete aparte, un gasto suelto."
+              : "Cargá una compra directa. Si es para un vehículo del taller, asocialá al presupuesto correspondiente. Si es un insumo o herramienta, dejá el presupuesto vacío."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -124,7 +134,7 @@ export default function NewDirectPurchaseDialog({
             />
           </div>
 
-          <div className="grid gap-1">
+          <div className={fixedBudgetId ? "hidden" : "grid gap-1"}>
             <Label className="text-xs">
               N° de presupuesto{" "}
               <span className="text-slate-400">(opcional)</span>

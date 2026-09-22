@@ -10,8 +10,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  PackageCheck,
   Plus,
   Search,
+  ShoppingCart,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -46,6 +48,23 @@ const ARS = new Intl.NumberFormat("es-AR", {
   maximumFractionDigits: 0,
 });
 
+/** Hoy en formato `YYYY-MM-DD` para el input date. */
+function todayInput(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/**
+ * `YYYY-MM-DD` → ISO al mediodía LOCAL. Al mediodía evita que el server (UTC)
+ * interprete la fecha como el día anterior.
+ */
+function localNoonISO(v: string): string {
+  const [y, m, d] = v.split("-").map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+}
+
 type Summary = {
   itemsRegistered: number;
   totalPurchased: number;
@@ -74,6 +93,14 @@ export default function PurchasesSection() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  /**
+   * spec Compras v4 · Selección múltiple para marcar varias compras como
+   * recibidas de una sola vez. Se limpia al cambiar de página, tab o
+   * búsqueda: lo seleccionado tiene que ser lo que se está viendo.
+   */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDate, setBulkDate] = useState(todayInput);
+  const [bulkBusy, setBulkBusy] = useState<null | "purchase" | "receive">(null);
 
   const fetchPurchases = useCallback(async () => {
     setLoading(true);
@@ -108,6 +135,64 @@ export default function PurchasesSection() {
       setLoading(false);
     }
   }, [search, tab, page, pageSize]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: limpiar selección al cambiar el listado
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [search, tab, page, pageSize]);
+
+  const toggleSelect = useCallback((id: string, next: boolean) => {
+    setSelectedIds((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(id);
+      else s.delete(id);
+      return s;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(
+    (next: boolean) => {
+      setSelectedIds(next ? new Set(purchases.map((p) => p.id)) : new Set());
+    },
+    [purchases],
+  );
+
+  /**
+   * Acciones en lote sobre lo seleccionado, con una sola fecha para todas:
+   * "purchase" = se hizo el pedido al proveedor, "receive" = llegaron.
+   */
+  const runBulk = async (action: "purchase" | "receive") => {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(action);
+    try {
+      const res = await fetch("/api/purchases/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [...selectedIds],
+          action,
+          date: localNoonISO(bulkDate),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      // Las que todavía no se compraron no se marcan: avisamos para que no
+      // parezca que el botón las ignoró en silencio.
+      if (body?.skipped > 0) {
+        alert(
+          `${body.skipped} compra(s) quedaron sin marcar porque todavía están en Cotizar${
+            action === "receive" ? " o Definir" : ""
+          }.`,
+        );
+      }
+      setSelectedIds(new Set());
+      await fetchPurchases();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo aplicar la acción");
+    } finally {
+      setBulkBusy(null);
+    }
+  };
 
   // Perf audit: sidecars por cache module-level — compartidos con la ficha
   // administrativa y el canvas del repair. Si ya se pidieron, no hay fetch.
@@ -232,10 +317,70 @@ export default function PurchasesSection() {
             {PURCHASE_STATUS_META[tab].description}
           </div>
         )}
+        {/* Barra de acciones en lote — aparece solo con algo seleccionado. */}
+        {selectedIds.size > 0 && (
+          <div className="px-4 py-2 border-b bg-[#003b73]/5 flex flex-wrap items-center gap-3">
+            <span className="text-xs font-medium text-slate-700">
+              {selectedIds.size}{" "}
+              {selectedIds.size === 1
+                ? "compra seleccionada"
+                : "compras seleccionadas"}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-600">Fecha</span>
+              <Input
+                type="date"
+                value={bulkDate}
+                onChange={(e) => setBulkDate(e.target.value)}
+                className="h-8 w-40 bg-white"
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => runBulk("purchase")}
+              disabled={bulkBusy !== null}
+              className="gap-1.5 h-8 bg-white"
+              title="Se hizo el pedido al proveedor: pasan a En camino con esta fecha"
+            >
+              {bulkBusy === "purchase" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ShoppingCart className="h-3.5 w-3.5" />
+              )}
+              Marcar como compradas
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => runBulk("receive")}
+              disabled={bulkBusy !== null}
+              className="gap-1.5 h-8"
+              title="Llegaron al taller: quedan recibidas con esta fecha"
+            >
+              {bulkBusy === "receive" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <PackageCheck className="h-3.5 w-3.5" />
+              )}
+              Marcar como llegados
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedIds(new Set())}
+              className="h-8 text-slate-600"
+            >
+              Limpiar
+            </Button>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <PurchasesTable
             rows={purchases}
             onOpenDetail={(row) => setOpenId(row.id)}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onToggleSelectAll={toggleSelectAll}
           />
         </div>
       </Card>

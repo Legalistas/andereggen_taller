@@ -18,6 +18,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { loadInsuranceCompanies } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
 import { BrandField, ModelField, YearField } from "./vehicle-fields";
@@ -37,6 +44,16 @@ interface VehicleFormProps {
   onPlateChange: (value: string) => void;
   onInsuranceChange: (value: string) => void;
   onThirdPartyInsuranceChange: (value: string) => void;
+  /**
+   * Cobertura del seguro propio: "" | "todo_riesgo" | "terceros".
+   * Opcional: solo el alta de solicitud la pide, porque es el momento en que
+   * se toma el presupuesto y hace falta saber si hay franquicia.
+   */
+  coverageType?: string;
+  /** Importe de franquicia. Solo aplica con cobertura "todo_riesgo". */
+  franchise?: string;
+  onCoverageTypeChange?: (value: string) => void;
+  onFranchiseChange?: (value: string) => void;
 }
 
 export default function VehicleForm({
@@ -52,6 +69,10 @@ export default function VehicleForm({
   onPlateChange,
   onInsuranceChange,
   onThirdPartyInsuranceChange,
+  coverageType = "",
+  franchise = "",
+  onCoverageTypeChange,
+  onFranchiseChange,
 }: VehicleFormProps) {
   return (
     <div className="space-y-4">
@@ -118,6 +139,52 @@ export default function VehicleForm({
           onChange={onThirdPartyInsuranceChange}
         />
       </div>
+
+      {/* Qué cobertura tiene: define si el cliente pone franquicia, dato que
+          el taller necesita desde que toma el presupuesto. */}
+      {onCoverageTypeChange && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-2">
+            <Label>¿Qué seguro tiene?</Label>
+            <Select
+              value={coverageType || "none"}
+              onValueChange={(v) => {
+                const next = v === "none" ? "" : v;
+                onCoverageTypeChange(next);
+                // Contra terceros no lleva franquicia: la limpiamos para no
+                // arrastrar un importe que no corresponde.
+                if (next !== "todo_riesgo") onFranchiseChange?.("");
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Sin definir" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin definir</SelectItem>
+                <SelectItem value="todo_riesgo">
+                  Contra todo riesgo (franquicia)
+                </SelectItem>
+                <SelectItem value="terceros">Contra terceros</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {coverageType === "todo_riesgo" && (
+            <div className="grid gap-2">
+              <Label htmlFor="franchise">Importe de franquicia</Label>
+              <Input
+                id="franchise"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0"
+                value={franchise}
+                onChange={(e) => onFranchiseChange?.(e.target.value)}
+                className="tabular-nums"
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

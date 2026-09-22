@@ -84,6 +84,19 @@ export default function ProductionSection() {
   // Canvas lateral: repairId abierto (null = cerrado)
   const [canvasRepairId, setCanvasRepairId] = useState<string | null>(null);
 
+  /**
+   * Deep-link `/produccion?repairId=...` — lo usan Caja, Calendario y Compras
+   * para saltar a la ficha del vehículo. Hasta ahora el link navegaba pero la
+   * ficha no se abría. Mismo criterio que en CRM: se lee en el mount y se
+   * limpia el parámetro.
+   */
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("repairId");
+    if (!id) return;
+    setCanvasRepairId(id);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
   // Dialog Nueva Reparación
   const [showNewDialog, setShowNewDialog] = useState(false);
   // Modo del selector de cliente: existente (busca) o nuevo (form inline)
@@ -107,6 +120,11 @@ export default function ProductionSection() {
   const [vehicleModel, setVehicleModel] = useState("");
   const [vehicleYear, setVehicleYear] = useState("");
   const [vehiclePlate, setVehiclePlate] = useState("");
+  // Color y chasis: opcionales, pero se cargan acá porque es el momento en
+  // que el auto está en el taller. El color sale en la Ficha Técnica y el
+  // chasis lo pide el seguro, así que cuanto antes estén, mejor.
+  const [vehicleColor, setVehicleColor] = useState("");
+  const [vehicleChassis, setVehicleChassis] = useState("");
   const [vehicleInsurance, setVehicleInsurance] = useState("");
   const [vehicleThirdPartyInsurance, setVehicleThirdPartyInsurance] =
     useState("");
@@ -218,6 +236,8 @@ export default function ProductionSection() {
     setVehicleModel("");
     setVehicleYear("");
     setVehiclePlate("");
+    setVehicleColor("");
+    setVehicleChassis("");
     setVehicleInsurance("");
     setVehicleThirdPartyInsurance("");
     setReason("");
@@ -302,6 +322,8 @@ export default function ProductionSection() {
           model: vehicleModel,
           year: vehicleYear,
           domain: vehiclePlate,
+          color: vehicleColor.trim() || undefined,
+          chassis: vehicleChassis.trim() || undefined,
           secure: vehicleInsurance,
           thirdPartySecure: vehicleThirdPartyInsurance,
         };
@@ -342,6 +364,8 @@ export default function ProductionSection() {
         model: vehicleModel,
         year: vehicleYear,
         domain: vehiclePlate,
+        color: vehicleColor.trim() || undefined,
+        chassis: vehicleChassis.trim() || undefined,
         secure: vehicleInsurance,
         thirdPartySecure: vehicleThirdPartyInsurance,
       };
@@ -588,6 +612,29 @@ export default function ProductionSection() {
                         value={vehiclePlate}
                         onChange={(e) =>
                           setVehiclePlate(e.target.value.toUpperCase())
+                        }
+                        className="font-mono uppercase"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-2">
+                      <Label htmlFor="vcolor">Color</Label>
+                      <Input
+                        id="vcolor"
+                        placeholder="Blanco"
+                        value={vehicleColor}
+                        onChange={(e) => setVehicleColor(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="vchassis">Nº de chasis</Label>
+                      <Input
+                        id="vchassis"
+                        placeholder="8AP..."
+                        value={vehicleChassis}
+                        onChange={(e) =>
+                          setVehicleChassis(e.target.value.toUpperCase())
                         }
                         className="font-mono uppercase"
                       />

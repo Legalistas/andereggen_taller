@@ -471,6 +471,11 @@ model Budget {
   // (insumos/herramientas cargados desde el módulo Compras).
   directPurchases Purchase[]        @relation("BudgetDirectPurchases")
   repair          Repair?           @relation("BudgetRepair")
+  /**
+   * Siniestro que vincula este presupuesto a una tarjeta de Producción.
+   * Es la vía por la que una misma tarjeta junta varios presupuestos.
+   */
+  claim           RepairClaim?      @relation("ClaimBudget")
   createdById     String?
   createdBy       User?             @relation("BudgetCreatedBy", fields: [createdById], references: [id])
 
@@ -1189,7 +1194,7 @@ model Repair {
    * identificar la reparación visualmente. Nullable para repairs
    * importados antes de que existiera este campo.
    */
-  internalNumber Int?         @unique
+  internalNumber Int?
 
   // Origen (opcional — null si fue Nueva Reparación directa)
   leadId   String?
@@ -1232,6 +1237,16 @@ model Repair {
   // ficha del repair. Es sobre la persona, no el vehículo.
   needsTransport      Boolean   @default(false)
 
+  /**
+   * spec Calendario v2 · El cliente necesita el auto para una fecha concreta
+   * (viaje, VTV, trabajo). Es un dato INTERNO del taller: se ve en amarillo
+   * flúo en el calendario para priorizar el turno, y no se menciona en
+   * ningún mail ni notificación al cliente.
+   */
+  isUrgent    Boolean @default(false)
+  /** Por qué / para cuándo la urgencia. Interno, igual que el flag. */
+  urgencyNote String? @db.Text
+
   // Compañía de seguro que paga — snapshot al crear el repair. Visible en
   // la card del kanban mientras el auto está en taller. Texto libre porque
   // en directCreation puede no haber FK a InsuranceCompany.
@@ -1269,14 +1284,72 @@ model Repair {
   // Encuesta de satisfacción (spec 6 "Solicitud de experiencia del cliente" + E2.B)
   serviceRating ServiceRating?
 
+  /**
+   * Siniestros de la tarjeta. Cada uno con su presupuesto y su desglose de
+   * importes aprobados por el seguro (mano de obra / repuestos). Un auto que
+   * entra por dos siniestros distintos va en UNA sola tarjeta con dos claims,
+   * no en dos tarjetas.
+   */
+  claims RepairClaim[]
+
   @@index([status])
   @@index([leadId])
   @@index([assignedMechanicId])
   @@index([archivedAt])
   @@index([customerId])
+  // Ya no es único: se busca por N° interno y puede repetirse entre tarjetas.
+  @@index([internalNumber])
   // Perf audit: KPIs matrix + charts filtran/agrupan por estas fechas.
   @@index([enteredAt])
   @@index([deliveredAt])
+}
+
+/**
+ * Siniestro dentro de una reparación (spec Producción v4).
+ *
+ * El taller puede tener el mismo vehículo en el taller por dos siniestros a la
+ * vez: mismo auto, mismo cliente, dos presupuestos y dos aprobaciones del
+ * seguro. Antes eso obligaba a abrir dos tarjetas (y a repetir el N° interno);
+ * ahora cada siniestro es una fila de esta tabla colgando de la misma tarjeta.
+ *
+ * Los importes son los APROBADOS por la compañía, no los presupuestados:
+ * el seguro casi siempre recorta, y aprueba mano de obra y repuestos por
+ * separado. `Repair.approvedInsurance` se mantiene materializado como la suma
+ * de (approvedLabor + approvedParts) de todos los claims.
+ */
+model RepairClaim {
+  id       String @id @default(uuid())
+  repairId String
+  repair   Repair @relation(fields: [repairId], references: [id], onDelete: Cascade)
+
+  /** Orden de visualización dentro de la tarjeta (1, 2, 3…). */
+  order Int @default(1)
+
+  /**
+   * N° de siniestro de la compañía. Texto libre: cada aseguradora tiene su
+   * formato y a veces todavía no lo informaron cuando entra el auto.
+   */
+  claimNumber String?
+
+  /**
+   * Presupuesto de este siniestro. Único: un presupuesto pertenece a un solo
+   * siniestro. onDelete SetNull para no perder el siniestro (ni sus importes
+   * aprobados) si se borra el presupuesto.
+   */
+  budgetId String? @unique
+  budget   Budget? @relation("ClaimBudget", fields: [budgetId], references: [id], onDelete: SetNull)
+
+  /** Mano de obra aprobada por el seguro para este siniestro. */
+  approvedLabor Decimal? @db.Decimal(14, 2)
+  /** Repuestos aprobados por el seguro para este siniestro. */
+  approvedParts Decimal? @db.Decimal(14, 2)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([repairId])
 }
 
 /**

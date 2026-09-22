@@ -217,6 +217,9 @@ export default function QuotesSection() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  /** "Actualizar datos": recopia cliente y vehículo al snapshot. */
+  const [refreshingSnapshot, setRefreshingSnapshot] = useState(false);
+  const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null);
 
   // ── Fetch ────────────────────────────────────────────────────
   const fetchQuotes = useCallback(
@@ -273,6 +276,7 @@ export default function QuotesSection() {
     if (!detailId) {
       setDetail(null);
       setStatusError(null);
+      setSnapshotMsg(null);
       return;
     }
     let cancelled = false;
@@ -289,6 +293,34 @@ export default function QuotesSection() {
       cancelled = true;
     };
   }, [detailId]);
+
+  /**
+   * Vuelve a copiar los datos actuales del cliente y del vehículo al
+   * presupuesto. Los borradores y enviados ya se refrescan solos al editar
+   * la ficha; esto es para los aceptados, que quedan congelados.
+   */
+  const refreshSnapshot = useCallback(async (id: string) => {
+    setRefreshingSnapshot(true);
+    setSnapshotMsg(null);
+    setStatusError(null);
+    try {
+      const res = await fetch(`/api/budgets/${id}/refresh-snapshot`, {
+        method: "POST",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      const detailRes = await fetch(`/api/budgets/${id}`);
+      const detailBody = await detailRes.json().catch(() => ({}));
+      if (detailBody?.budget) setDetail(detailBody.budget as BudgetDetail);
+      setSnapshotMsg("Datos del cliente y del vehículo actualizados.");
+    } catch (e) {
+      setStatusError(
+        e instanceof Error ? e.message : "Error al actualizar los datos",
+      );
+    } finally {
+      setRefreshingSnapshot(false);
+    }
+  }, []);
 
   // ── Stats ────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -717,7 +749,7 @@ export default function QuotesSection() {
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
                             <Link
-                              href="/crm/leads"
+                              href={`/crm/leads?leadId=${q.leadId}`}
                               className="gap-2 flex items-center w-full"
                             >
                               <Eye className="h-4 w-4" /> Ir al lead
@@ -1149,6 +1181,12 @@ export default function QuotesSection() {
                     <span>{statusError}</span>
                   </div>
                 )}
+
+                {snapshotMsg && (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    {snapshotMsg}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1165,12 +1203,29 @@ export default function QuotesSection() {
                 title="Descargar PDF del presupuesto"
               >
                 <a
-                  href={`/api/budgets/${detail.id}/pdf`}
+                  href={`/api/budgets/${detail.id}/pdf?download=1`}
                   target="_blank"
                   rel="noopener"
                 >
                   <Download className="h-4 w-4" /> Descargar PDF
                 </a>
+              </Button>
+            )}
+            {/* Los presupuestos abiertos toman los cambios del cliente y del
+                vehículo solos; los aceptados quedan congelados con lo que
+                firmó el cliente y se actualizan solo desde acá. */}
+            {detail && (
+              <Button
+                variant="outline"
+                onClick={() => refreshSnapshot(detail.id)}
+                disabled={refreshingSnapshot}
+                className="gap-2"
+                title="Recopia nombre, DNI, dirección, patente, chasis, seguro, cobertura y franquicia desde la ficha actual del cliente y del vehículo. No toca importes."
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${refreshingSnapshot ? "animate-spin" : ""}`}
+                />
+                Actualizar datos
               </Button>
             )}
             {detail && ALLOWED_TRANSITIONS[detail.status].length > 0 && (

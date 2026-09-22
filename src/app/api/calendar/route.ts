@@ -23,6 +23,14 @@ type CalendarEvent = {
   vehicleDomain: string;
   date: string;
   needsTransport: boolean;
+  /** Urgencia del cliente — interno, se pinta en amarillo flúo. */
+  isUrgent: boolean;
+  urgencyNote: string | null;
+  /**
+   * Quién provee los repuestos: "TALLER" | "SEGURO". Solo informativo en el
+   * calendario — el taller quiere ver de un vistazo si tiene que comprarlos.
+   */
+  partsPurchaser: string | null;
   status: string;
   notes: string | null;
 };
@@ -37,6 +45,9 @@ const REPAIR_SELECT = {
   scheduledAt: true,
   estimatedDeliveryAt: true,
   needsTransport: true,
+  isUrgent: true,
+  urgencyNote: true,
+  partsPurchaser: true,
   status: true,
   notes: true,
 } as const;
@@ -106,6 +117,9 @@ export async function GET(request: Request) {
       vehicleDomain: r.vehicleDomain,
       date: r.scheduledAt!.toISOString(),
       needsTransport: r.needsTransport,
+      isUrgent: r.isUrgent,
+      urgencyNote: r.urgencyNote,
+      partsPurchaser: r.partsPurchaser,
       status: r.status,
       notes: r.notes,
     }));
@@ -120,6 +134,9 @@ export async function GET(request: Request) {
       vehicleDomain: r.vehicleDomain,
       date: r.estimatedDeliveryAt!.toISOString(),
       needsTransport: r.needsTransport,
+      isUrgent: r.isUrgent,
+      urgencyNote: r.urgencyNote,
+      partsPurchaser: r.partsPurchaser,
       status: r.status,
       notes: r.notes,
     }));

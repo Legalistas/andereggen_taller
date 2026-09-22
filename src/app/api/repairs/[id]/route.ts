@@ -5,6 +5,10 @@ import {
   sendRepairEventNotification,
 } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import {
+  CLAIM_INCLUDE,
+  CLAIM_ORDER_BY,
+} from "@/lib/repair-claims";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -51,6 +55,9 @@ export async function GET(request: Request, ctx: RouteContext) {
         },
       },
       lead: { select: { id: true, status: true } },
+      // Siniestros de la tarjeta: cada uno con su presupuesto y su desglose
+      // de mano de obra / repuestos aprobados por el seguro.
+      claims: { include: CLAIM_INCLUDE, orderBy: CLAIM_ORDER_BY },
       customer: { select: { id: true, name: true, email: true } },
       vehicle: {
         select: {
@@ -59,6 +66,12 @@ export async function GET(request: Request, ctx: RouteContext) {
           model: true,
           year: true,
           domain: true,
+          // Chasis y color no viven en el snapshot del repair: se leen (y se
+          // editan) en vivo desde la ficha del vehículo. El color se carga
+          // normalmente recién cuando el auto entra al taller, así que tiene
+          // que poder completarse desde Producción.
+          chassis: true,
+          color: true,
         },
       },
       serviceRating: {
@@ -117,12 +130,13 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     reason,
     internalNumber,
     insuranceCompany,
-    approvedInsurance,
     approvedFranchise,
     approvedCustomer,
     approvedAt,
     approvedNotes,
     needsTransport,
+    isUrgent,
+    urgencyNote,
   } = body as Record<string, unknown>;
 
   // Helper: parsea un importe que puede venir como number, string numérico,
@@ -137,11 +151,13 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     return n;
   };
 
-  let parsedApprovedInsurance: number | null | undefined;
+  // spec Producción v4 · `approvedInsurance` ya no se escribe por acá: es la
+  // suma de los siniestros (mano de obra + repuestos de cada uno) y la
+  // mantiene `syncApprovedInsurance` desde los endpoints de siniestros. Si
+  // se aceptara también acá, los dos valores se irían separando.
   let parsedApprovedFranchise: number | null | undefined;
   let parsedApprovedCustomer: number | null | undefined;
   try {
-    parsedApprovedInsurance = parseAmount(approvedInsurance);
     parsedApprovedFranchise = parseAmount(approvedFranchise);
     parsedApprovedCustomer = parseAmount(approvedCustomer);
   } catch (e) {
@@ -155,6 +171,15 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   // positivo y que no choque con otra Repair (uniqueness manual antes del
   // update para devolver mejor error que el constraint de Postgres).
   let parsedInternalNumber: number | null | undefined;
+  /** Otras tarjetas que ya usan el N° interno que se está guardando. */
+  let internalNumberDuplicates: Array<{
+    id: string;
+    customerName: string;
+    vehicleBrand: string;
+    vehicleModel: string;
+    vehicleDomain: string;
+    status: string;
+  }> = [];
   if (internalNumber !== undefined) {
     if (internalNumber === null || internalNumber === "") {
       parsedInternalNumber = null;
@@ -166,17 +191,24 @@ export async function PATCH(request: Request, ctx: RouteContext) {
           { status: 400 },
         );
       }
+      // spec Producción v4 · Repetir el N° interno es válido: el cliente que
+      // trae el mismo auto por dos siniestros usa el mismo número en las dos
+      // tarjetas. Ya no rechazamos el update; devolvemos las otras tarjetas
+      // que lo usan para que la ficha avise y el operador confirme que no es
+      // un error de tipeo.
       if (n !== existing.internalNumber) {
-        const dupe = await prisma.repair.findUnique({
-          where: { internalNumber: n },
-          select: { id: true },
+        internalNumberDuplicates = await prisma.repair.findMany({
+          where: { internalNumber: n, id: { not: id } },
+          select: {
+            id: true,
+            customerName: true,
+            vehicleBrand: true,
+            vehicleModel: true,
+            vehicleDomain: true,
+            status: true,
+          },
+          take: 5,
         });
-        if (dupe && dupe.id !== id) {
-          return NextResponse.json(
-            { error: `Ya existe una reparación con el Nº interno ${n}.` },
-            { status: 409 },
-          );
-        }
       }
       parsedInternalNumber = n;
     }
@@ -242,10 +274,10 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     !existing.deliveredAt &&
     PRE_DELIVERY_STATUSES.has(existing.status);
 
-  // Si el usuario seteó approvedInsurance/Franchise/Customer y no mandó
-  // approvedAt explícito, lo dejamos en "hoy" para registrar el momento.
+  // Si el usuario seteó franquicia/particular y no mandó approvedAt
+  // explícito, lo dejamos en "hoy" para registrar el momento. (Lo aprobado
+  // por el seguro hace lo mismo desde los endpoints de siniestros.)
   const someApprovalProvided =
-    parsedApprovedInsurance !== undefined ||
     parsedApprovedFranchise !== undefined ||
     parsedApprovedCustomer !== undefined;
   const parsedApprovedAt: Date | null | undefined =
@@ -292,9 +324,6 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       ...(insuranceCompany !== undefined && {
         insuranceCompany: (insuranceCompany as string | null) || null,
       }),
-      ...(parsedApprovedInsurance !== undefined && {
-        approvedInsurance: parsedApprovedInsurance,
-      }),
       ...(parsedApprovedFranchise !== undefined && {
         approvedFranchise: parsedApprovedFranchise,
       }),
@@ -307,6 +336,12 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       }),
       ...(needsTransport !== undefined && {
         needsTransport: Boolean(needsTransport),
+      }),
+      // Urgencia del cliente: dato interno del taller. Nunca se incluye en
+      // los mails ni en el contexto de notificaciones.
+      ...(isUrgent !== undefined && { isUrgent: Boolean(isUrgent) }),
+      ...(urgencyNote !== undefined && {
+        urgencyNote: ((urgencyNote as string | null) ?? "").trim() || null,
       }),
       ...(willTriggerTurnAssigned && { status: "turno_asignado" as const }),
       ...(willTriggerEntry && { status: "chapa" as const }),
@@ -384,7 +419,11 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       );
   }
 
-  return NextResponse.json({ repair: updated });
+  return NextResponse.json({
+    repair: updated,
+    // Vacío salvo que el N° interno guardado ya lo use otra tarjeta.
+    internalNumberDuplicates,
+  });
 }
 
 function generateRatingToken(): string {

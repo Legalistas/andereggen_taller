@@ -10,9 +10,11 @@ import {
   CircleDollarSign,
   ClipboardList,
   FileText,
+  Fingerprint,
   Hash,
   Loader2,
   Mail,
+  Palette,
   Phone,
   Plus,
   Printer,
@@ -26,6 +28,13 @@ import {
   X as XIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -92,6 +101,36 @@ type RepairInvoice = {
   payments: RepairInvoicePayment[];
 };
 
+/** Presupuesto tal como se muestra colgado de un siniestro. */
+type ClaimBudget = {
+  id: string;
+  number: number;
+  extensionSuffix: number;
+  status: string;
+  grandTotal: string | number;
+  /** Mano de obra presupuestada (con IVA) — default al copiar importes. */
+  laborTotal: string | number;
+  /** Repuestos presupuestados — default al copiar importes. */
+  partsSubtotal: string | number;
+};
+
+/**
+ * Siniestro de la tarjeta. Un auto puede estar en el taller por dos
+ * siniestros a la vez: cada uno con su presupuesto y su desglose de lo que
+ * aprobó el seguro (mano de obra y repuestos van siempre separados porque la
+ * compañía los aprueba por separado).
+ */
+type RepairClaim = {
+  id: string;
+  order: number;
+  claimNumber: string | null;
+  budgetId: string | null;
+  approvedLabor: string | number | null;
+  approvedParts: string | number | null;
+  notes: string | null;
+  budget: ClaimBudget | null;
+};
+
 type RepairDetail = {
   id: string;
   status: RepairStatus;
@@ -133,6 +172,22 @@ type RepairDetail = {
     grandTotal: string | number;
   } | null;
   lead: { id: string; status: string } | null;
+  /** Siniestros de la tarjeta, ordenados (Siniestro 1, 2, 3…). */
+  claims: RepairClaim[];
+  /**
+   * Ficha viva del vehículo (no el snapshot). Chasis y color se muestran y
+   * editan desde acá porque son datos que el taller completa cuando el auto
+   * ingresa. null si la reparación quedó sin vehículo vinculado.
+   */
+  vehicle: {
+    id: string;
+    brand: string;
+    model: string;
+    year: string;
+    domain: string;
+    chassis: string | null;
+    color: string | null;
+  } | null;
   serviceRating?: {
     stars: number | null;
     respondedAt: string | null;
@@ -222,6 +277,14 @@ export function RepairCanvas({
   const [savingIndicator, setSavingIndicator] = useState<
     "idle" | "saving" | "saved"
   >("idle");
+  /**
+   * Aviso (no error) cuando el N° interno guardado ya lo usa otra tarjeta.
+   * Repetirlo es válido —el mismo cliente con dos siniestros usa el mismo
+   * número— pero conviene que se vea, por si fue un error de tipeo.
+   */
+  const [internalNumberWarning, setInternalNumberWarning] = useState<
+    string | null
+  >(null);
 
   const markSaving = useCallback(() => setSavingIndicator("saving"), []);
   const markSaved = useCallback(() => {
@@ -276,6 +339,19 @@ export function RepairCanvas({
         setRepair((prev) =>
           prev ? { ...prev, ...(body.repair as Partial<RepairDetail>) } : prev,
         );
+        if ("internalNumber" in patch) {
+          const dupes = (body.internalNumberDuplicates ?? []) as Array<{
+            customerName: string;
+            vehicleDomain: string;
+          }>;
+          setInternalNumberWarning(
+            dupes.length > 0
+              ? `Ese N° también lo usa ${dupes
+                  .map((d) => `${d.customerName} (${d.vehicleDomain})`)
+                  .join(", ")}.`
+              : null,
+          );
+        }
         markSaved();
         onChanged?.();
       } catch (e) {
@@ -284,6 +360,171 @@ export function RepairCanvas({
       }
     },
     [repairId, markSaving, markSaved, onChanged],
+  );
+
+  /**
+   * Guarda chasis/color en la ficha del vehículo (CustomerVehicle), no en el
+   * snapshot del repair: son datos del auto, así que quedan disponibles para
+   * la Ficha Técnica y para la próxima reparación del mismo vehículo.
+   */
+  const patchVehicle = useCallback(
+    async (patch: Record<string, unknown>) => {
+      const vehicleId = repair?.vehicle?.id;
+      if (!vehicleId) return;
+      markSaving();
+      try {
+        const res = await fetch(`/api/customer-vehicles/${vehicleId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error ?? `HTTP ${res.status}`);
+        }
+        const body = await res.json();
+        setRepair((prev) =>
+          prev?.vehicle
+            ? {
+                ...prev,
+                vehicle: {
+                  ...prev.vehicle,
+                  chassis: body.vehicle.chassis ?? null,
+                  color: body.vehicle.color ?? null,
+                },
+              }
+            : prev,
+        );
+        markSaved();
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "Error al guardar");
+        setSavingIndicator("idle");
+      }
+    },
+    [repair?.vehicle?.id, markSaving, markSaved],
+  );
+
+  /**
+   * Aplica la respuesta de los endpoints de siniestros: devuelven la lista
+   * completa ya reordenada y los totales de la tarjeta recalculados
+   * (approvedInsurance es la suma de los siniestros).
+   */
+  const applyClaimsResponse = useCallback((body: unknown) => {
+    const data = body as {
+      claims?: RepairClaim[];
+      repair?: Partial<RepairDetail> | null;
+    };
+    setRepair((prev) =>
+      prev
+        ? {
+            ...prev,
+            ...(data.repair ?? {}),
+            ...(data.claims ? { claims: data.claims } : {}),
+          }
+        : prev,
+    );
+  }, []);
+
+  /** POST/PATCH/DELETE contra los endpoints de siniestros. */
+  const claimRequest = useCallback(
+    async (
+      url: string,
+      method: "POST" | "PATCH" | "DELETE",
+      payload?: Record<string, unknown>,
+    ): Promise<{ ok: true } | { ok: false; status: number; body: Record<string, unknown> }> => {
+      markSaving();
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          ...(payload ? { body: JSON.stringify(payload) } : {}),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setSavingIndicator("idle");
+          return { ok: false, status: res.status, body };
+        }
+        applyClaimsResponse(body);
+        markSaved();
+        onChanged?.();
+        return { ok: true };
+      } catch (e) {
+        setSavingIndicator("idle");
+        return {
+          ok: false,
+          status: 0,
+          body: { error: e instanceof Error ? e.message : "Error de red" },
+        };
+      }
+    },
+    [markSaving, markSaved, applyClaimsResponse, onChanged],
+  );
+
+  const patchClaim = useCallback(
+    async (claimId: string, patch: Record<string, unknown>) => {
+      const r = await claimRequest(`/api/repair-claims/${claimId}`, "PATCH", patch);
+      if (!r.ok) alert((r.body.error as string) ?? "Error al guardar el siniestro");
+    },
+    [claimRequest],
+  );
+
+  const deleteClaim = useCallback(
+    async (claimId: string) => {
+      const r = await claimRequest(`/api/repair-claims/${claimId}`, "DELETE");
+      if (!r.ok) alert((r.body.error as string) ?? "Error al borrar el siniestro");
+    },
+    [claimRequest],
+  );
+
+  const addClaim = useCallback(
+    async (payload: Record<string, unknown> = {}) => {
+      if (!repairId) return;
+      const r = await claimRequest(
+        `/api/repairs/${repairId}/claims`,
+        "POST",
+        payload,
+      );
+      if (r.ok) return;
+
+      // El presupuesto ya tenía su propia tarjeta: se puede absorber (mueve
+      // siniestros, facturas y cobros acá y borra la otra). Se pregunta
+      // siempre, porque borrar una tarjeta no tiene vuelta atrás.
+      if (r.status === 409 && r.body.needsAbsorb) {
+        const other = r.body.otherRepair as {
+          internalNumber: number | null;
+          customerName: string;
+          vehicleDomain: string;
+          invoiceCount: number;
+        };
+        const label = other.internalNumber
+          ? `INT #${other.internalNumber}`
+          : other.vehicleDomain;
+        const invoices =
+          other.invoiceCount > 0
+            ? `
+
+Se mueven también ${other.invoiceCount} factura(s) con sus cobros.`
+            : "";
+        const ok = confirm(
+          `Ese presupuesto ya tiene su propia tarjeta (${label} · ${other.customerName}).
+
+¿Absorberla en esta tarjeta? La otra se elimina y sus importes pasan acá.${invoices}`,
+        );
+        if (!ok) return;
+        const merged = await claimRequest(
+          `/api/repairs/${repairId}/claims`,
+          "POST",
+          { ...payload, absorb: true },
+        );
+        if (!merged.ok) {
+          alert((merged.body.error as string) ?? "Error al vincular el presupuesto");
+        }
+        return;
+      }
+
+      alert((r.body.error as string) ?? "Error al agregar el siniestro");
+    },
+    [repairId, claimRequest],
   );
 
   const changeStatus = useCallback(
@@ -408,6 +649,7 @@ export function RepairCanvas({
                     Último. Notas internas */}
               <InternalNumberSection
                 value={repair.internalNumber}
+                warning={internalNumberWarning}
                 onSave={(n) => patchRepair({ internalNumber: n })}
               />
 
@@ -418,14 +660,18 @@ export function RepairCanvas({
                 onSave={(v) => patchRepair({ insuranceCompany: v })}
               />
 
-              {repair.budget && (
-                <BudgetSection
-                  budget={repair.budget}
-                  leadId={repair.lead?.id}
-                />
-              )}
+              <BudgetsSection
+                repair={repair}
+                onLinkBudget={(budgetId) => addClaim({ budgetId })}
+              />
 
-              <ApprovalSection repair={repair} onPatch={patchRepair} />
+              <ApprovalSection
+                repair={repair}
+                onPatch={patchRepair}
+                onPatchClaim={patchClaim}
+                onDeleteClaim={deleteClaim}
+                onAddClaim={addClaim}
+              />
 
               <InvoicesSection
                 repairId={repair.id}
@@ -440,7 +686,10 @@ export function RepairCanvas({
                 }
               />
 
-              <CustomerVehicleSection repair={repair} />
+              <CustomerVehicleSection
+                repair={repair}
+                onPatchVehicle={patchVehicle}
+              />
 
               {repair.serviceRating && (
                 <RatingSection rating={repair.serviceRating} />
@@ -552,9 +801,12 @@ function StatusPicker({
 
 function InternalNumberSection({
   value,
+  warning,
   onSave,
 }: {
   value: number | null;
+  /** Otra tarjeta usa el mismo N°: se avisa, no se bloquea. */
+  warning: string | null;
   onSave: (n: number | null) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(value === null ? "" : String(value));
@@ -616,10 +868,17 @@ function InternalNumberSection({
           className="font-mono text-base font-semibold"
         />
         <p className="text-[10px] text-muted-foreground">
-          Correlativo del taller. Aparece en la Ficha Técnica.
+          Correlativo del taller. Aparece en la Ficha Técnica. Se puede repetir
+          entre tarjetas del mismo cliente (dos siniestros).
           {error && (
             <span className="block text-destructive font-medium mt-0.5">
               {error}
+            </span>
+          )}
+          {!error && warning && (
+            <span className="mt-1 flex items-start gap-1 rounded bg-amber-50 border border-amber-200 text-amber-800 px-1.5 py-1 font-medium">
+              <AlertCircle className="h-3 w-3 mt-px shrink-0" />
+              {warning}
             </span>
           )}
         </p>
@@ -794,7 +1053,14 @@ function DateField({
   );
 }
 
-function CustomerVehicleSection({ repair }: { repair: RepairDetail }) {
+function CustomerVehicleSection({
+  repair,
+  onPatchVehicle,
+}: {
+  repair: RepairDetail;
+  onPatchVehicle: (patch: Record<string, unknown>) => Promise<void>;
+}) {
+  const vehicle = repair.vehicle;
   return (
     <SectionCard
       icon={UserIcon}
@@ -837,6 +1103,35 @@ function CustomerVehicleSection({ repair }: { repair: RepairDetail }) {
             <Hash className="h-3 w-3" />
             <span className="font-mono uppercase">{repair.vehicleDomain}</span>
           </div>
+
+          {/* Color y chasis salen de la ficha del vehículo (no del snapshot):
+              el taller los completa cuando el auto ingresa y tienen que poder
+              cargarse sin salir de Producción. */}
+          {vehicle ? (
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              <VehicleField
+                label="Color"
+                icon={Palette}
+                value={vehicle.color ?? ""}
+                placeholder="Sin cargar"
+                onSave={(v) => onPatchVehicle({ color: v || null })}
+              />
+              <VehicleField
+                label="Nº de chasis"
+                icon={Fingerprint}
+                value={vehicle.chassis ?? ""}
+                placeholder="Sin cargar"
+                mono
+                onSave={(v) =>
+                  onPatchVehicle({ chassis: v.toUpperCase() || null })
+                }
+              />
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              Color y chasis: sin vehículo vinculado.
+            </p>
+          )}
         </div>
 
         {repair.reason && (
@@ -851,20 +1146,186 @@ function CustomerVehicleSection({ repair }: { repair: RepairDetail }) {
           </>
         )}
 
+        {/* spec Producción v4 · El snapshot dejó de ser inmutable mientras el
+            auto está en el taller: si se corrige un dato del cliente o del
+            vehículo, la tarjeta lo toma. Al entregar queda congelado como
+            registro del trabajo. */}
         <p className="text-[10px] text-muted-foreground italic">
-          Datos copiados al crear la reparación. No se modifican aunque se edite
-          el cliente o vehículo después.
+          Mientras el vehículo está en el taller, estos datos se actualizan
+          solos si se corrige la ficha del cliente o del vehículo. Al entregar
+          la reparación quedan congelados. Color y chasis salen siempre de la
+          ficha del vehículo.
         </p>
       </div>
     </SectionCard>
   );
 }
 
-function BudgetSection({
+/**
+ * Campo de texto que guarda al salir del input (o con Enter). Se usa para los
+ * datos del vehículo que el taller completa durante la reparación.
+ */
+function VehicleField({
+  label,
+  value,
+  icon: Icon,
+  placeholder,
+  mono,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  placeholder?: string;
+  mono?: boolean;
+  onSave: (value: string) => Promise<void> | void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const savedRef = useRef(value);
+
+  useEffect(() => {
+    setDraft(value);
+    savedRef.current = value;
+  }, [value]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed === savedRef.current) return;
+    savedRef.current = trimmed;
+    onSave(trimmed);
+  };
+
+  return (
+    <div className="grid gap-1">
+      <Label className="text-[10px] font-medium uppercase tracking-wider text-slate-500 flex items-center gap-1">
+        {Icon && <Icon className="h-3 w-3" />} {label}
+      </Label>
+      <Input
+        value={draft}
+        placeholder={placeholder}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+        className={mono ? "font-mono uppercase tracking-wider" : ""}
+      />
+    </div>
+  );
+}
+
+/**
+ * Presupuestos vinculados a la tarjeta (spec Producción v4).
+ *
+ * Antes era uno solo: el presupuesto que generó la reparación. Ahora cuelga
+ * uno por siniestro, así el mismo vehículo no genera dos tarjetas, y arriba
+ * se muestra la suma — que es lo que el taller quiere ver de un vistazo.
+ */
+function BudgetsSection({
+  repair,
+  onLinkBudget,
+}: {
+  repair: RepairDetail;
+  onLinkBudget: (budgetId: string) => Promise<void>;
+}) {
+  const [linkOpen, setLinkOpen] = useState(false);
+
+  const linked = (repair.claims ?? [])
+    .map((c) => ({ claim: c, budget: c.budget }))
+    .filter(
+      (x): x is { claim: RepairClaim; budget: ClaimBudget } => x.budget !== null,
+    );
+
+  // Tarjeta vieja sin siniestros cargados: mostramos igual su presupuesto.
+  const fallback =
+    linked.length === 0 && repair.budget
+      ? {
+          id: repair.budget.id,
+          number: repair.budget.number,
+          extensionSuffix: repair.budget.extensionSuffix ?? 0,
+          status: repair.budget.status,
+          grandTotal: repair.budget.grandTotal,
+          laborTotal: 0,
+          partsSubtotal: 0,
+        }
+      : null;
+
+  const budgets: ClaimBudget[] = fallback
+    ? [fallback]
+    : linked.map((x) => x.budget);
+  const total = budgets.reduce((acc, b) => acc + Number(b.grandTotal), 0);
+
+  return (
+    <SectionCard
+      icon={FileText}
+      title={
+        budgets.length > 1 ? "Presupuestos vinculados" : "Presupuesto vinculado"
+      }
+      iconTint="text-emerald-600"
+      iconBg="bg-emerald-50"
+    >
+      {budgets.length > 1 && (
+        <div className="mb-2 flex items-center justify-between rounded-md bg-emerald-50 border border-emerald-200 px-2.5 py-1.5">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-800">
+            Total presupuestado ({budgets.length} siniestros)
+          </span>
+          <span className="text-sm font-bold tabular-nums text-emerald-900">
+            {ARS.format(total)}
+          </span>
+        </div>
+      )}
+
+      <div className="grid gap-2">
+        {budgets.map((budget, i) => (
+          <LinkedBudgetCard
+            key={budget.id}
+            budget={budget}
+            claimIndex={budgets.length > 1 ? i + 1 : null}
+            leadId={repair.lead?.id}
+          />
+        ))}
+      </div>
+
+      {budgets.length === 0 && (
+        <p className="text-[11px] text-muted-foreground italic mb-2">
+          Reparación sin presupuesto (creada directa).
+        </p>
+      )}
+
+      {/* Vincular en vez de abrir otra tarjeta: si ese presupuesto ya generó
+          la suya, la ficha ofrece absorberla y sumar los importes. */}
+      <button
+        type="button"
+        onClick={() => setLinkOpen(true)}
+        className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed border-slate-300 px-2 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+        title="Sumar otro presupuesto del mismo vehículo a esta tarjeta"
+      >
+        <Plus className="h-3 w-3" />
+        Vincular presupuesto
+      </button>
+
+      <LinkBudgetDialog
+        repairId={repair.id}
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+        onPick={async (budgetId) => {
+          await onLinkBudget(budgetId);
+          setLinkOpen(false);
+        }}
+      />
+    </SectionCard>
+  );
+}
+
+/** Un presupuesto de la tarjeta con sus acciones (PDF, fichas, ampliación). */
+function LinkedBudgetCard({
   budget,
+  claimIndex,
   leadId,
 }: {
-  budget: NonNullable<RepairDetail["budget"]>;
+  budget: ClaimBudget;
+  /** Nº de siniestro al que pertenece, si la tarjeta tiene más de uno. */
+  claimIndex: number | null;
   leadId: string | undefined;
 }) {
   // Dialog "Fichas" — Ficha Técnica + Ficha Ingreso/Egreso. Se abre desde acá
@@ -878,87 +1339,85 @@ function BudgetSection({
   // está en producción se abre desde acá para registrar compras rápido.
   const [adminOpen, setAdminOpen] = useState(false);
   const display =
-    (budget.extensionSuffix ?? 0) > 0
+    budget.extensionSuffix > 0
       ? `${budget.number}-A${budget.extensionSuffix}`
       : `${budget.number}`;
-  const isOriginal = (budget.extensionSuffix ?? 0) === 0;
+  const isOriginal = budget.extensionSuffix === 0;
 
   return (
     <>
-      <SectionCard
-        icon={FileText}
-        title="Presupuesto vinculado"
-        iconTint="text-emerald-600"
-        iconBg="bg-emerald-50"
-      >
-        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-mono text-xs font-semibold text-slate-700">
-              #{display}
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider font-medium bg-emerald-100 text-emerald-700">
-              {budget.status}
-            </span>
-          </div>
-          <p className="font-semibold text-base text-slate-900 mt-1 tabular-nums">
-            {ARS.format(Number(budget.grandTotal))}
-          </p>
-          {/* spec v2 (27/7) · Ver presupuesto cerrado abre el PDF que se
-              envió al cliente en una nueva pestaña — NO el modal editable.
-              El PDF es el mismo que ve el cliente en el mail/PDF adjunto. */}
-          <a
-            href={`/api/budgets/${budget.id}/pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
-            title="Abre el PDF del presupuesto enviado al cliente"
-          >
-            <FileText className="h-3 w-3" />
-            Ver presupuesto (PDF)
-          </a>
-          <button
-            type="button"
-            onClick={() => setFichasOpen(true)}
-            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
-            title="Imprimir Ficha Técnica y Ficha de Ingreso/Egreso"
-          >
-            <Printer className="h-3 w-3" />
-            Imprimir fichas
-          </button>
-          {/* Administrativa — cotizaciones internas, compras, fotos. En
-              producción es el flujo diario: cuando entra el auto arrancan
-              a registrar compras. Antes sólo estaba accesible desde CRM. */}
-          <button
-            type="button"
-            onClick={() => setAdminOpen(true)}
-            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 transition-colors"
-            title="Administrativa (interno) — cotizaciones, compras, fotos"
-          >
-            <ClipboardList className="h-3 w-3" />
-            Administrativa
-          </button>
-          {isOriginal && (
-            <button
-              type="button"
-              onClick={() => setExtendOpen(true)}
-              className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
-              title="Crear una ampliación de este presupuesto (trabajo/repuestos extra)"
-            >
-              <Receipt className="h-3 w-3" />
-              Ampliar presupuesto
-            </button>
-          )}
-          {leadId && (
-            <a
-              href={`/crm/leads`}
-              className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
-            >
-              <span>Ver en CRM</span>
-              <ArrowRight className="h-3 w-3" />
-            </a>
-          )}
+      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-mono text-xs font-semibold text-slate-700">
+            {claimIndex !== null && (
+              <span className="mr-1.5 text-[10px] font-sans font-medium uppercase tracking-wider text-slate-400">
+                Stro {claimIndex}
+              </span>
+            )}
+            #{display}
+          </span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full uppercase tracking-wider font-medium bg-emerald-100 text-emerald-700">
+            {budget.status}
+          </span>
         </div>
-      </SectionCard>
+        <p className="font-semibold text-base text-slate-900 mt-1 tabular-nums">
+          {ARS.format(Number(budget.grandTotal))}
+        </p>
+        {/* spec v2 (27/7) · Ver presupuesto cerrado abre el PDF que se
+            envió al cliente en una nueva pestaña — NO el modal editable.
+            Va inline: se mira en el navegador sin descargar nada. */}
+        <a
+          href={`/api/budgets/${budget.id}/pdf`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+          title="Abre el PDF del presupuesto en una pestaña, sin descargarlo"
+        >
+          <FileText className="h-3 w-3" />
+          Ver presupuesto (PDF)
+        </a>
+        <button
+          type="button"
+          onClick={() => setFichasOpen(true)}
+          className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+          title="Imprimir Ficha Técnica y Ficha de Ingreso/Egreso"
+        >
+          <Printer className="h-3 w-3" />
+          Imprimir fichas
+        </button>
+        {/* Administrativa — cotizaciones internas, compras, fotos. En
+            producción es el flujo diario: cuando entra el auto arrancan
+            a registrar compras. Antes sólo estaba accesible desde CRM. */}
+        <button
+          type="button"
+          onClick={() => setAdminOpen(true)}
+          className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 transition-colors"
+          title="Administrativa (interno) — cotizaciones, compras, fotos"
+        >
+          <ClipboardList className="h-3 w-3" />
+          Administrativa
+        </button>
+        {isOriginal && (
+          <button
+            type="button"
+            onClick={() => setExtendOpen(true)}
+            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+            title="Crear una ampliación de este presupuesto (trabajo/repuestos extra)"
+          >
+            <Receipt className="h-3 w-3" />
+            Ampliar presupuesto
+          </button>
+        )}
+        {leadId && (
+          <a
+            href={`/crm/leads`}
+            className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
+          >
+            <span>Ver en CRM</span>
+            <ArrowRight className="h-3 w-3" />
+          </a>
+        )}
+      </div>
       <FichasDialog
         budgetId={fichasOpen ? budget.id : null}
         open={fichasOpen}
@@ -972,8 +1431,6 @@ function BudgetSection({
         onOpenChange={setExtendOpen}
         onSaved={() => setExtendOpen(false)}
       />
-      {/* spec v2 (27/7) · "Ver presupuesto" ahora abre el PDF directo, ya
-          no montamos el BudgetModal en modo edición desde producción. */}
       {/* Administrativa (interno) — accesible desde producción. */}
       <BudgetAdminDialog
         budgetId={adminOpen ? budget.id : null}
@@ -982,6 +1439,127 @@ function BudgetSection({
         onOpenChange={setAdminOpen}
       />
     </>
+  );
+}
+
+/** Presupuesto del mismo cliente/vehículo que se puede sumar a la tarjeta. */
+type LinkableBudget = {
+  id: string;
+  number: number;
+  status: string;
+  grandTotal: string | number;
+  customerName: string;
+  vehicleBrand: string;
+  vehicleModel: string;
+  vehicleDomain: string;
+  createdAt: string;
+  /** Tarjeta propia de ese presupuesto: vincularlo implica absorberla. */
+  repair: { id: string; internalNumber: number | null; status: string } | null;
+};
+
+function LinkBudgetDialog({
+  repairId,
+  open,
+  onOpenChange,
+  onPick,
+}: {
+  repairId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onPick: (budgetId: string) => Promise<void>;
+}) {
+  const [budgets, setBudgets] = useState<LinkableBudget[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/repairs/${repairId}/linkable-budgets`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((body) => {
+        if (!cancelled) setBudgets(body.budgets as LinkableBudget[]);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Error");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, repairId]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Vincular presupuesto</DialogTitle>
+          <DialogDescription>
+            Presupuestos del mismo cliente o vehículo que todavía no están en
+            ninguna tarjeta. Al vincular uno se agrega como siniestro y sus
+            importes se suman a esta tarjeta.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading && (
+          <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin mr-2" /> Buscando…
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && budgets.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted-foreground italic">
+            No hay presupuestos libres para este cliente o vehículo.
+          </p>
+        )}
+
+        <div className="grid gap-2 max-h-80 overflow-y-auto">
+          {budgets.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => onPick(b.id)}
+              className="w-full text-left rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs font-semibold text-slate-700">
+                  #{b.number}
+                </span>
+                <span className="text-sm font-semibold tabular-nums">
+                  {ARS.format(Number(b.grandTotal))}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5 truncate">
+                {b.customerName} · {b.vehicleBrand} {b.vehicleModel}{" "}
+                <span className="font-mono uppercase">{b.vehicleDomain}</span>
+              </p>
+              {b.repair && (
+                <p className="mt-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 inline-block">
+                  Ya tiene tarjeta
+                  {b.repair.internalNumber
+                    ? ` INT #${b.repair.internalNumber}`
+                    : ""}{" "}
+                  · se absorbe en esta
+                </p>
+              )}
+            </button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1167,19 +1745,53 @@ function InsuranceSection({
  * diferir del grandTotal del presupuesto (el seguro recorta o se acuerdan
  * franquicias diferentes). Total = seguro + franquicia + particular.
  */
+/**
+ * Importes aprobados por siniestro (spec Producción v4).
+ *
+ * El seguro aprueba mano de obra y repuestos por separado, y un mismo auto
+ * puede estar en el taller por dos siniestros con dos aprobaciones distintas.
+ * Por eso el bloque se despliega por siniestro: cada uno con su Nº, su
+ * presupuesto y sus dos importes. La franquicia y el particular son de la
+ * tarjeta (los paga el cliente una sola vez), así que van abajo, fuera del
+ * desglose.
+ */
 function ApprovalSection({
   repair,
   onPatch,
+  onPatchClaim,
+  onDeleteClaim,
+  onAddClaim,
 }: {
   repair: RepairDetail;
   onPatch: (patch: Record<string, unknown>) => Promise<void>;
+  onPatchClaim: (claimId: string, patch: Record<string, unknown>) => Promise<void>;
+  onDeleteClaim: (claimId: string) => Promise<void>;
+  onAddClaim: (payload?: Record<string, unknown>) => Promise<void>;
 }) {
+  const claims = repair.claims ?? [];
+  const insuranceTotal = claims.reduce(
+    (acc, c) => acc + Number(c.approvedLabor ?? 0) + Number(c.approvedParts ?? 0),
+    0,
+  );
   const total =
-    Number(repair.approvedInsurance ?? 0) +
+    insuranceTotal +
     Number(repair.approvedFranchise ?? 0) +
     Number(repair.approvedCustomer ?? 0);
-  const budgetGrand = repair.budget ? Number(repair.budget.grandTotal) : null;
+
+  // Comparación contra lo presupuestado: suma de los presupuestos de todos
+  // los siniestros (o el principal, en tarjetas viejas sin siniestros).
+  const claimBudgets = claims
+    .map((c) => c.budget)
+    .filter((b): b is ClaimBudget => b !== null);
+  const budgetGrand =
+    claimBudgets.length > 0
+      ? claimBudgets.reduce((acc, b) => acc + Number(b.grandTotal), 0)
+      : repair.budget
+        ? Number(repair.budget.grandTotal)
+        : null;
   const diff = budgetGrand !== null ? total - budgetGrand : null;
+
+  const multi = claims.length > 1;
 
   return (
     <SectionCard
@@ -1188,12 +1800,46 @@ function ApprovalSection({
       iconTint="text-emerald-700"
       iconBg="bg-emerald-50"
     >
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <AmountField
-          label="Aprueba seguro"
-          value={repair.approvedInsurance}
-          onSave={(v) => onPatch({ approvedInsurance: v })}
-        />
+      {claims.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => onAddClaim()}
+          className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed border-emerald-300 bg-emerald-50/50 px-2 py-3 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Cargar lo que aprueba el seguro
+        </button>
+      ) : (
+        <div className="grid gap-2.5">
+          {claims.map((claim, i) => (
+            <ClaimRow
+              key={claim.id}
+              claim={claim}
+              index={i + 1}
+              showHeader={multi}
+              canDelete={claims.length > 1}
+              onPatch={(patch) => onPatchClaim(claim.id, patch)}
+              onDelete={() => onDeleteClaim(claim.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Un segundo siniestro del mismo auto va acá, no en una tarjeta nueva. */}
+      {claims.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onAddClaim()}
+          className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed border-slate-300 px-2 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          title="El mismo vehículo entró por otro siniestro"
+        >
+          <Plus className="h-3 w-3" />
+          Agregar siniestro
+        </button>
+      )}
+
+      {/* Franquicia y particular: los paga el cliente, no dependen del stro. */}
+      <div className="mt-3 grid grid-cols-2 gap-3">
         <AmountField
           label="Franquicia"
           value={repair.approvedFranchise}
@@ -1250,6 +1896,127 @@ function ApprovalSection({
         />
       </div>
     </SectionCard>
+  );
+}
+
+/**
+ * Un siniestro dentro de la ficha: Nº de siniestro + mano de obra y repuestos
+ * aprobados. Con un solo siniestro se ve como el bloque de siempre (sin
+ * encabezado); recién cuando hay dos o más aparece el rótulo "Siniestro N"
+ * para no agregar ruido al caso normal.
+ */
+function ClaimRow({
+  claim,
+  index,
+  showHeader,
+  canDelete,
+  onPatch,
+  onDelete,
+}: {
+  claim: RepairClaim;
+  index: number;
+  showHeader: boolean;
+  canDelete: boolean;
+  onPatch: (patch: Record<string, unknown>) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const subtotal =
+    Number(claim.approvedLabor ?? 0) + Number(claim.approvedParts ?? 0);
+  const budget = claim.budget;
+  const budgetLabel = budget
+    ? budget.extensionSuffix > 0
+      ? `#${budget.number}-A${budget.extensionSuffix}`
+      : `#${budget.number}`
+    : null;
+  // Con el presupuesto a la vista, copiar su mano de obra y repuestos es el
+  // atajo cuando el seguro aprueba sin recortar nada.
+  const canCopyFromBudget =
+    budget !== null &&
+    claim.approvedLabor === null &&
+    claim.approvedParts === null;
+
+  return (
+    <div
+      className={
+        showHeader
+          ? "rounded-lg border border-slate-200 bg-white p-2.5"
+          : "grid gap-2"
+      }
+    >
+      {showHeader && (
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+            Siniestro {index}
+          </span>
+          <div className="flex items-center gap-1.5">
+            {budgetLabel && (
+              <span className="font-mono text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                Ppto {budgetLabel}
+              </span>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm("¿Quitar este siniestro de la tarjeta?")) {
+                    onDelete();
+                  }
+                }}
+                aria-label="Quitar siniestro"
+                className="h-6 w-6 rounded flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-2">
+        <VehicleField
+          label="Nº de siniestro"
+          value={claim.claimNumber ?? ""}
+          placeholder="El que informa la compañía"
+          mono
+          onSave={(v) => onPatch({ claimNumber: v || null })}
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <AmountField
+            label="Mano de obra"
+            value={claim.approvedLabor}
+            onSave={(v) => onPatch({ approvedLabor: v })}
+          />
+          <AmountField
+            label="Repuestos"
+            value={claim.approvedParts}
+            onSave={(v) => onPatch({ approvedParts: v })}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-2 text-[10px]">
+          <span className="text-muted-foreground">
+            Subtotal seguro:{" "}
+            <span className="font-semibold tabular-nums text-slate-700">
+              {ARS.format(subtotal)}
+            </span>
+          </span>
+          {canCopyFromBudget && budget && (
+            <button
+              type="button"
+              onClick={() =>
+                onPatch({
+                  approvedLabor: Number(budget.laborTotal),
+                  approvedParts: Number(budget.partsSubtotal),
+                })
+              }
+              className="font-medium text-emerald-700 hover:underline"
+              title="Copia mano de obra y repuestos del presupuesto vinculado"
+            >
+              Usar importes del ppto
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

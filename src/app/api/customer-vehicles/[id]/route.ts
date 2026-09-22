@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
+import { syncOpenBudgetSnapshots } from "@/lib/budget-snapshot";
 import { prisma } from "@/lib/prisma";
+import { syncOpenRepairSnapshots } from "@/lib/repair-snapshot";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -123,5 +125,25 @@ export async function PATCH(request: Request, ctx: RouteContext) {
 
   const updated = await prisma.customerVehicle.update({ where: { id }, data });
 
-  return NextResponse.json({ vehicle: updated });
+  // Mismo criterio que en el cliente: los presupuestos todavía abiertos de
+  // este vehículo toman los datos corregidos (chasis, patente, cobertura,
+  // franquicia). Los aceptados quedan congelados hasta que alguien use
+  // "Actualizar datos" en la ficha.
+  let syncedBudgets = 0;
+  try {
+    syncedBudgets = await syncOpenBudgetSnapshots(prisma, { vehicleId: id });
+  } catch (e) {
+    console.error("[budget-snapshot] sync por vehículo falló:", e);
+  }
+
+  // Ídem en Producción: mientras el auto está en el taller, la tarjeta
+  // muestra la patente/marca/modelo corregidos.
+  let syncedRepairs = 0;
+  try {
+    syncedRepairs = await syncOpenRepairSnapshots(prisma, { vehicleId: id });
+  } catch (e) {
+    console.error("[repair-snapshot] sync por vehículo falló:", e);
+  }
+
+  return NextResponse.json({ vehicle: updated, syncedBudgets, syncedRepairs });
 }

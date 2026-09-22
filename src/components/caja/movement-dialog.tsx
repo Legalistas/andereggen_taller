@@ -149,6 +149,14 @@ export default function MovementDialog({
   const [linkingError, setLinkingError] = useState<string | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
   const [lookupBusy, setLookupBusy] = useState(false);
+  /**
+   * Otras tarjetas con el mismo N° interno. Desde que un cliente puede tener
+   * dos siniestros con el mismo número, el lookup puede traer más de una: se
+   * imputa a la más activa, pero el operador tiene que verlo antes de cobrar.
+   */
+  const [duplicates, setDuplicates] = useState<
+    Array<{ id: string; customerName: string; vehicleDomain: string }>
+  >([]);
 
   // Búsqueda debounced del N° interno mientras el usuario tipea.
   useEffect(() => {
@@ -158,6 +166,7 @@ export default function MovementDialog({
       setLinkedRepair(null);
       setLinkingError(null);
       setSelectedInvoiceId("");
+      setDuplicates([]);
       return;
     }
     const ac = new AbortController();
@@ -173,11 +182,20 @@ export default function MovementDialog({
           const b = await res.json().catch(() => ({}));
           setLinkedRepair(null);
           setSelectedInvoiceId("");
+          setDuplicates([]);
           setLinkingError(b?.error ?? `HTTP ${res.status}`);
           return;
         }
-        const d = (await res.json()) as { repair: typeof linkedRepair };
+        const d = (await res.json()) as {
+          repair: typeof linkedRepair;
+          duplicates?: Array<{
+            id: string;
+            customerName: string;
+            vehicleDomain: string;
+          }>;
+        };
         setLinkedRepair(d.repair);
+        setDuplicates(d.duplicates ?? []);
         // Autoselecciona la primera factura con saldo pendiente para
         // ahorrarle el click al operador.
         const firstPending =
@@ -384,6 +402,17 @@ export default function MovementDialog({
                     · {linkedRepair.vehicleSummary} ·{" "}
                     {linkedRepair.vehicleDomain}
                   </p>
+                  {duplicates.length > 0 && (
+                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      Hay {duplicates.length + 1} vehículos con el Nº{" "}
+                      {internalNumber.trim()}. Se está imputando al de arriba;
+                      los otros son{" "}
+                      {duplicates
+                        .map((d) => `${d.customerName} (${d.vehicleDomain})`)
+                        .join(", ")}
+                      .
+                    </p>
+                  )}
                   {linkedRepair.invoices.length === 0 ? (
                     <p className="text-[11px] text-amber-700">
                       Este vehículo todavía no tiene facturas cargadas. El

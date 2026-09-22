@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
+import { syncOpenBudgetSnapshots } from "@/lib/budget-snapshot";
 import { prisma } from "@/lib/prisma";
+import { syncOpenRepairSnapshots } from "@/lib/repair-snapshot";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -124,7 +126,27 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     },
   });
 
-  return NextResponse.json({ customer: updated });
+  // Los presupuestos abiertos de este cliente se quedaban con el dato viejo
+  // (el snapshot se copiaba al crearlos). Se refrescan acá para que el PDF y
+  // la ficha muestren lo que se acaba de corregir.
+  let syncedBudgets = 0;
+  try {
+    syncedBudgets = await syncOpenBudgetSnapshots(prisma, { customerId: id });
+  } catch (e) {
+    // Un fallo acá no puede voltear la edición del cliente.
+    console.error("[budget-snapshot] sync por cliente falló:", e);
+  }
+
+  // Mismo criterio en Producción: las tarjetas que siguen en el taller toman
+  // la corrección; las entregadas quedan como registro histórico.
+  let syncedRepairs = 0;
+  try {
+    syncedRepairs = await syncOpenRepairSnapshots(prisma, { customerId: id });
+  } catch (e) {
+    console.error("[repair-snapshot] sync por cliente falló:", e);
+  }
+
+  return NextResponse.json({ customer: updated, syncedBudgets, syncedRepairs });
 }
 
 /**

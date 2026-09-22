@@ -2,8 +2,13 @@
 
 /**
  * Tabla del módulo Compras — spec Compras v2.
- * Columnas: N° presupuesto (clickeable) · N° compra · Vehículo · Producto ·
- * Categoría/Proveedor · Monto · Proveedor flete · Flete · Estado · Ojo.
+ * Columnas: [check] · N° presupuesto (clickeable) · N° compra · Vehículo ·
+ * Producto · Categoría/Proveedor · Monto · Proveedor flete · Flete · Estado ·
+ * Ojo.
+ *
+ * spec Compras v4 · La columna de checkboxes habilita marcar varias compras
+ * como recibidas de una sola vez (llega el flete con seis repuestos juntos y
+ * antes había que abrirlos uno por uno).
  */
 
 import { Eye } from "lucide-react";
@@ -41,14 +46,38 @@ const CATEGORY_TONE: Record<string, string> = {
 export default function PurchasesTable({
   rows,
   onOpenDetail,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
 }: {
   rows: PurchaseRow[];
   onOpenDetail: (row: PurchaseRow) => void;
+  /** Ids seleccionados para las acciones en lote. */
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string, next: boolean) => void;
+  onToggleSelectAll: (next: boolean) => void;
 }) {
+  // "Seleccionar todo" opera sobre la página visible.
+  const allSelected =
+    rows.length > 0 && rows.every((r) => selectedIds.has(r.id));
+  const someSelected = rows.some((r) => selectedIds.has(r.id));
+
   return (
     <Table>
       <TableHeader>
         <TableRow>
+          <TableHead className="w-10">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = !allSelected && someSelected;
+              }}
+              onChange={(e) => onToggleSelectAll(e.target.checked)}
+              aria-label="Seleccionar todas las compras de la página"
+              className="h-4 w-4 rounded border-slate-300 text-[#003b73] focus:ring-[#003b73]"
+            />
+          </TableHead>
           <TableHead className="w-24">N° Ppto</TableHead>
           <TableHead className="w-24">N° Compra</TableHead>
           <TableHead>Vehículo</TableHead>
@@ -65,7 +94,7 @@ export default function PurchasesTable({
         {rows.length === 0 && (
           <TableRow>
             <TableCell
-              colSpan={10}
+              colSpan={11}
               className="text-center py-10 text-sm text-slate-500"
             >
               Sin compras en este estado.
@@ -88,7 +117,21 @@ export default function PurchasesTable({
               ? `INT-${repair.internalNumber}`
               : "—";
           return (
-            <TableRow key={r.id} className="hover:bg-slate-50">
+            <TableRow
+              key={r.id}
+              className={
+                selectedIds.has(r.id) ? "bg-[#003b73]/5" : "hover:bg-slate-50"
+              }
+            >
+              <TableCell>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(r.id)}
+                  onChange={(e) => onToggleSelect(r.id, e.target.checked)}
+                  aria-label={`Seleccionar compra ${r.number}`}
+                  className="h-4 w-4 rounded border-slate-300 text-[#003b73] focus:ring-[#003b73]"
+                />
+              </TableCell>
               <TableCell>
                 {repair ? (
                   <Link

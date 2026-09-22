@@ -5,6 +5,7 @@ import {
   Calendar,
   Car,
   ClipboardCheck,
+  ClipboardList,
   DollarSign,
   Loader2,
   MoreVertical,
@@ -14,6 +15,7 @@ import {
   Smile,
   Star,
   Wrench,
+  Zap,
 } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +78,30 @@ export type KanbanRepair = {
    *  facturas cargadas. Se muestra en la card cuando el repair está en la
    *  columna "Pendientes de Cobro". */
   pendingAmount: number | null;
+  /** Color del vehículo (ficha viva, no snapshot). Se usa en la Lista. */
+  vehicleColor: string | null;
+  /**
+   * El cliente tiene urgencia con la fecha. Dato INTERNO (nunca sale en
+   * mails): se marca en el calendario en amarillo flúo y se repite acá para
+   * que no haya que abrir el calendario para saber qué hay que priorizar.
+   */
+  isUrgent: boolean;
+  urgencyNote: string | null;
+  /**
+   * Importes aprobados por bucket. La Lista los usa para el filtro
+   * "quién aprueba" (seguro / franquicia / particular).
+   */
+  approvedInsurance: string | number | null;
+  approvedFranchise: string | number | null;
+  approvedCustomer: string | number | null;
+  /**
+   * Suma de los presupuestos de TODOS los siniestros de la tarjeta. Una
+   * tarjeta con dos siniestros tiene dos presupuestos y lo que importa es el
+   * total. null si no hay ninguno (reparación directa).
+   */
+  budgetsTotal: number | null;
+  /** Cuántos siniestros tiene la tarjeta (1 en el caso normal). */
+  claimCount: number;
   /** Suma de los importes aprobados (seguro + franquicia + particular).
    *  null si todavía no se cargó ninguno. Cuando existe, reemplaza al
    *  grandTotal del presupuesto en la card — es el importe que realmente
@@ -464,6 +490,13 @@ const RepairCard = memo(function RepairCard({
           </p>
           <p className="font-mono text-[10px] text-slate-500 uppercase">
             {repair.vehicleDomain}
+            {/* El color va pegado a la patente: en el taller identifican el
+                auto por color antes que por dominio, sobre todo en Pintura. */}
+            {repair.vehicleColor && (
+              <span className="ml-1.5 font-sans normal-case text-slate-600">
+                · {repair.vehicleColor}
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -475,6 +508,32 @@ const RepairCard = memo(function RepairCard({
         <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-sky-50 border border-sky-200 text-sky-800 px-1.5 py-0.5 text-[10px] font-medium max-w-full">
           <Shield className="h-3 w-3 shrink-0" />
           <span className="truncate">{repair.insuranceCompany}</span>
+        </div>
+      )}
+
+      {/* Urgencia del cliente — mismo amarillo flúo que en el calendario. */}
+      {repair.isUrgent && (
+        <div
+          className="mt-2 inline-flex items-center gap-1 rounded-md bg-[#fbff2b] border border-yellow-500 text-yellow-950 px-1.5 py-0.5 text-[10px] font-semibold max-w-full"
+          title={
+            repair.urgencyNote
+              ? `Urgente: ${repair.urgencyNote}`
+              : "El cliente tiene urgencia con la fecha"
+          }
+        >
+          <Zap className="h-3 w-3 shrink-0" />
+          <span className="truncate">
+            {repair.urgencyNote ? `Urgente · ${repair.urgencyNote}` : "Urgente"}
+          </span>
+        </div>
+      )}
+
+      {/* Dos siniestros del mismo auto viven en una sola tarjeta: el badge
+          evita que parezca que falta la otra. */}
+      {repair.claimCount > 1 && (
+        <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-800 px-1.5 py-0.5 text-[10px] font-medium">
+          <ClipboardList className="h-3 w-3 shrink-0" />
+          {repair.claimCount} siniestros
         </div>
       )}
 
@@ -557,8 +616,13 @@ const RepairCard = memo(function RepairCard({
           };
           amount = repair.approvedTotal as number;
         } else {
-          label = `Presup. #${repair.budget.number}`;
-          amount = Number(repair.budget.grandTotal);
+          // Con varios siniestros el número que importa es la suma de sus
+          // presupuestos, no el del principal.
+          label =
+            repair.claimCount > 1
+              ? `Presup. (${repair.claimCount} stros)`
+              : `Presup. #${repair.budget.number}`;
+          amount = repair.budgetsTotal ?? Number(repair.budget.grandTotal);
         }
 
         return (

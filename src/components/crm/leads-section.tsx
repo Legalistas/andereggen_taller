@@ -8,6 +8,7 @@ import {
   MessageCircle,
   Plus,
   Search,
+  ShieldCheck,
   Tag,
   UserPlus,
   X,
@@ -163,6 +164,19 @@ export default function LeadsSection() {
   const [vehicleYear, setVehicleYear] = useState("");
   const [vehiclePlate, setVehiclePlate] = useState("");
   const [vehicleInsurance, setVehicleInsurance] = useState("");
+  // Cobertura del seguro propio y franquicia: se preguntan al tomar el
+  // presupuesto porque definen cuánto pone el cliente de su bolsillo.
+  const [vehicleCoverageType, setVehicleCoverageType] = useState("");
+  const [vehicleFranchise, setVehicleFranchise] = useState("");
+  /**
+   * Cómo tomamos el presupuesto: directo del cliente, por un productor de
+   * seguros o por un perito. Cuando no es directo se elige cuál, de los
+   * usuarios cargados con ese rol, y queda vinculado al lead.
+   */
+  const [takenVia, setTakenVia] = useState<"directo" | "productor" | "perito">(
+    "directo",
+  );
+  const [takenById, setTakenById] = useState("");
   const [vehicleThirdPartyInsurance, setVehicleThirdPartyInsurance] =
     useState("");
   const [leadNotes, setLeadNotes] = useState("");
@@ -197,6 +211,20 @@ export default function LeadsSection() {
   } | null>(null);
   // Canvas lateral: leadId abierto (null = cerrado)
   const [canvasLeadId, setCanvasLeadId] = useState<string | null>(null);
+
+  /**
+   * Deep-link `/crm/leads?leadId=...` — lo usa "Ir al lead" desde la lista de
+   * presupuestos. Leemos la URL en el mount con `window.location` y no con
+   * `useSearchParams` para no tener que envolver la página en un Suspense
+   * solo por esto. Después limpiamos el parámetro: si el usuario cierra el
+   * canvas y refresca, no queremos que se vuelva a abrir solo.
+   */
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("leadId");
+    if (!id) return;
+    setCanvasLeadId(id);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   // Contador para forzar refetch del canvas sin cerrarlo (ej: después de guardar presupuesto)
   const [canvasReloadNonce, setCanvasReloadNonce] = useState(0);
   // Si el BudgetModal está minimizado, no debemos suprimir el canvas
@@ -324,6 +352,10 @@ export default function LeadsSection() {
     setVehiclePlate("");
     setVehicleInsurance("");
     setVehicleThirdPartyInsurance("");
+    setVehicleCoverageType("");
+    setVehicleFranchise("");
+    setTakenVia("directo");
+    setTakenById("");
     setLeadNotes("");
     setLeadSourceKey("manual");
     setCreateError(null);
@@ -465,12 +497,26 @@ export default function LeadsSection() {
         domain: vehiclePlate,
         secure: vehicleInsurance,
         thirdPartySecure: vehicleThirdPartyInsurance,
+        coverageType: vehicleCoverageType || null,
+        franchise:
+          vehicleCoverageType === "todo_riesgo" && vehicleFranchise.trim() !== ""
+            ? Number(vehicleFranchise)
+            : null,
       };
     } else if (useExistingVehicle) {
       payload.vehicleId = useExistingVehicle;
     } else {
       setCreateError("Seleccioná o cargá un vehículo.");
       return;
+    }
+
+    // Productor / perito: quedan vinculados al lead igual que si se hubieran
+    // cargado después en la ficha, así las métricas por productor cuentan
+    // desde el momento en que se tomó el presupuesto.
+    if (takenVia === "productor" && takenById) {
+      payload.insuranceAgentId = takenById;
+    } else if (takenVia === "perito" && takenById) {
+      payload.inspectorId = takenById;
     }
 
     setCreatingLead(true);
@@ -694,8 +740,63 @@ export default function LeadsSection() {
                   onPlateChange={setVehiclePlate}
                   onInsuranceChange={setVehicleInsurance}
                   onThirdPartyInsuranceChange={setVehicleThirdPartyInsurance}
+                  coverageType={vehicleCoverageType}
+                  franchise={vehicleFranchise}
+                  onCoverageTypeChange={setVehicleCoverageType}
+                  onFranchiseChange={setVehicleFranchise}
                 />
               )}
+
+              {/* Cómo tomamos el presupuesto: el trabajo puede llegar directo
+                  del cliente, por un productor de seguros o por un perito.
+                  Queda vinculado al lead desde el arranque. */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b">
+                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                  </div>
+                  <h3 className="font-semibold">
+                    ¿Cómo tomamos el presupuesto?
+                  </h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="takenVia">Lo trajo</Label>
+                    <Select
+                      value={takenVia}
+                      onValueChange={(v) => {
+                        setTakenVia(v as typeof takenVia);
+                        setTakenById("");
+                      }}
+                    >
+                      <SelectTrigger id="takenVia">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="directo">
+                          Directo del cliente
+                        </SelectItem>
+                        <SelectItem value="productor">
+                          Productor de seguros
+                        </SelectItem>
+                        <SelectItem value="perito">Perito</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {takenVia !== "directo" && (
+                    <ActorSelect
+                      label={
+                        takenVia === "productor" ? "¿Qué productor?" : "¿Qué perito?"
+                      }
+                      roleKey={
+                        takenVia === "productor" ? "productor_seguros" : "inspector"
+                      }
+                      value={takenById}
+                      onChange={setTakenById}
+                    />
+                  )}
+                </div>
+              </div>
 
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b">
@@ -1052,5 +1153,70 @@ export function WinLeadDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Selector del productor / perito que trajo el trabajo. Lista los usuarios
+ * con ese rol (los mismos que ofrece la ficha del lead). Si todavía no hay
+ * ninguno cargado, avisa dónde se cargan en vez de mostrar una lista vacía.
+ */
+function ActorSelect({
+  label,
+  roleKey,
+  value,
+  onChange,
+}: {
+  label: string;
+  roleKey: "productor_seguros" | "inspector";
+  value: string;
+  onChange: (userId: string) => void;
+}) {
+  const [users, setUsers] = useState<
+    Array<{ id: string; name: string | null; email: string | null }>
+  >([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/users?role=${roleKey}`)
+      .then((r) => r.json())
+      .then((body) => {
+        if (!cancelled) setUsers(body.users ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setUsers([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roleKey]);
+
+  return (
+    <div className="grid gap-2">
+      <Label>{label}</Label>
+      <Select value={value} onValueChange={onChange} disabled={loading}>
+        <SelectTrigger>
+          <SelectValue placeholder={loading ? "Cargando…" : "Seleccionar…"} />
+        </SelectTrigger>
+        <SelectContent>
+          {users.map((u) => (
+            <SelectItem key={u.id} value={u.id}>
+              {u.name ?? u.email ?? "Sin nombre"}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {!loading && users.length === 0 && (
+        <span className="text-xs text-muted-foreground">
+          No hay ninguno cargado. Se agregan desde Usuarios, o después en la
+          ficha del presupuesto.
+        </span>
+      )}
+    </div>
   );
 }

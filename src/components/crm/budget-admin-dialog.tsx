@@ -24,6 +24,7 @@ import {
   Lock,
   Maximize2,
   Minus,
+  PackageCheck,
   Pencil,
   Plus,
   ShoppingCart,
@@ -31,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import NewDirectPurchaseDialog from "@/components/compras/new-direct-purchase-dialog";
 import PurchaseDetailDialog from "@/components/compras/purchase-detail-dialog";
 import {
   invalidateCache,
@@ -48,6 +50,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+// Catálogo compartido de estados: la administrativa tenía su propia copia y
+// se quedó sin "Seguro", lo que rompía el tab Compras de los vehículos cuyos
+// repuestos manda la aseguradora.
+import { PURCHASE_STATUS_META } from "@/lib/purchases/catalog";
+import type { PurchaseStatus } from "../../../generated/prisma/client";
 
 const ARS = new Intl.NumberFormat("es-AR", {
   style: "currency",
@@ -84,14 +91,7 @@ function netPrice(q: Pick<Quote, "price" | "discount">): number {
 type PurchaseSummary = {
   id: string;
   number: string;
-  status:
-    | "COTIZAR"
-    | "DECIDIR"
-    | "COMPRAR"
-    | "EN_CAMINO"
-    | "EN_TALLER"
-    | "PENDIENTE_PAGO"
-    | "ARCHIVADA";
+  status: PurchaseStatus;
   category: QuoteCategory | null;
   supplierName: string | null;
   amount: string | number;
@@ -101,6 +101,10 @@ type PurchaseSummary = {
   receivedAt: string | null;
   paidPartsAt: string | null;
   paidFreightAt: string | null;
+  /** Descripción propia de las compras sueltas (sin repuesto asociado). */
+  productDescription?: string | null;
+  /** Pagos parciales — se usan para el estado de pago de la fila. */
+  payments?: Array<{ kind: "PARTS" | "FREIGHT"; amount: string | number }>;
   notes: string | null;
 };
 
@@ -160,6 +164,11 @@ export function BudgetAdminDialog({
   onMinimizedChange,
 }: Props) {
   const [items, setItems] = useState<Item[] | null>(null);
+  /**
+   * spec Compras v4 · Compras del vehículo que no cuelgan de ningún repuesto
+   * (insumos, un flete suelto). Antes solo existían en el módulo Compras.
+   */
+  const [directPurchases, setDirectPurchases] = useState<PurchaseSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [newItemDescription, setNewItemDescription] = useState("");
@@ -183,12 +192,17 @@ export function BudgetAdminDialog({
     try {
       const res = await fetch(`/api/budgets/${budgetId}/admin`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { items: Item[] };
+      const data = (await res.json()) as {
+        items: Item[];
+        directPurchases?: PurchaseSummary[];
+      };
       setItems(data.items);
+      setDirectPurchases(data.directPurchases ?? []);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al cargar");
       setItems(null);
+      setDirectPurchases([]);
     } finally {
       setLoading(false);
     }
@@ -201,15 +215,17 @@ export function BudgetAdminDialog({
 
   // spec Compras v2 · "Efectiva" = cualquier compra que dejó COTIZAR/DECIDIR
   // (ya tiene proveedor y monto — está gestionándose). Sumamos repuesto + flete.
-  const totalSpent = (items ?? []).reduce((sum, it) => {
-    return (
-      sum +
-      it.purchases.reduce((s, p) => {
-        if (p.status === "COTIZAR" || p.status === "DECIDIR") return s;
-        return s + Number(p.amount) + Number(p.freightAmount);
-      }, 0)
-    );
-  }, 0);
+  const effectiveTotal = (list: PurchaseSummary[]) =>
+    list.reduce((s, p) => {
+      if (p.status === "COTIZAR" || p.status === "DECIDIR") return s;
+      return s + Number(p.amount) + Number(p.freightAmount);
+    }, 0);
+
+  const totalSpent =
+    (items ?? []).reduce((sum, it) => sum + effectiveTotal(it.purchases), 0) +
+    // Las compras sueltas del vehículo (insumos, fletes aparte) también
+    // salieron de la caja por este auto, así que suman al gastado.
+    effectiveTotal(directPurchases);
 
   // "Estimado pendiente" — items sin compra efectiva todavía: la cotización
   // más baja como aproximación de lo que queda por gastar.
@@ -352,10 +368,11 @@ export function BudgetAdminDialog({
                 >
                   Compras
                   {(() => {
-                    const total = (items ?? []).reduce(
-                      (n, it) => n + it.purchases.length,
-                      0,
-                    );
+                    const total =
+                      (items ?? []).reduce(
+                        (n, it) => n + it.purchases.length,
+                        0,
+                      ) + directPurchases.length;
                     return total > 0 ? (
                       <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">
                         {total}
@@ -388,7 +405,12 @@ export function BudgetAdminDialog({
               )}
 
               {items && tab === "compras" && (
-                <ComprasTab items={items} onChanged={refresh} />
+                <ComprasTab
+                  items={items}
+                  directPurchases={directPurchases}
+                  budgetId={budgetId}
+                  onChanged={refresh}
+                />
               )}
             </div>
           </DialogContent>
@@ -1237,12 +1259,31 @@ function QuoteInlineForm({
 
 function ComprasTab({
   items,
+  directPurchases,
+  budgetId,
   onChanged,
 }: {
   items: Item[];
+  /** Compras del vehículo sin repuesto asociado. */
+  directPurchases: PurchaseSummary[];
+  budgetId: string | null;
   onChanged: () => void;
 }) {
+  const [newDirectOpen, setNewDirectOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  /**
+   * spec Compras v4 · Selección múltiple de compras del vehículo. Cuando
+   * llega el pedido, el taller marca de una todos los repuestos que vinieron
+   * juntos en vez de abrir compra por compra.
+   */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDate, setBulkDate] = useState(() => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${m}-${day}`;
+  });
+  const [bulkBusy, setBulkBusy] = useState<null | "purchase" | "receive">(null);
   const [suppliers, setSuppliers] = useState<
     Array<{ id: string; name: string; isActive: boolean }>
   >([]);
@@ -1279,28 +1320,248 @@ function ComprasTab({
     };
   }, []);
 
-  if (items.length === 0) {
+  if (items.length === 0 && directPurchases.length === 0) {
     return (
       <Card className="p-10 text-center border-dashed">
         <ClipboardList className="h-10 w-10 mx-auto text-muted-foreground/40 mb-2" />
         <p className="text-sm text-muted-foreground">
           Cargá repuestos en la pestaña <strong>Cotizaciones</strong> antes de
-          iniciar compras.
+          iniciar compras, o registrá una compra suelta del vehículo.
         </p>
+        {budgetId && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setNewDirectOpen(true)}
+            className="mt-3 h-7 text-[11px] gap-1"
+          >
+            <Plus className="h-3 w-3" />
+            Compra suelta
+          </Button>
+        )}
+        {newDirectOpen && budgetId && (
+          <NewDirectPurchaseDialog
+            fixedBudgetId={budgetId}
+            onClose={() => setNewDirectOpen(false)}
+            onCreated={(purchaseId) => {
+              setNewDirectOpen(false);
+              onChanged();
+              setOpenId(purchaseId);
+            }}
+          />
+        )}
       </Card>
     );
   }
 
+  const toggleSelect = (id: string, next: boolean) => {
+    setSelectedIds((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(id);
+      else s.delete(id);
+      return s;
+    });
+  };
+
+  /**
+   * Acciones en lote sobre las compras tildadas del vehículo, todas con la
+   * misma fecha: el pedido al proveedor o la llegada al taller.
+   */
+  const runBulk = async (action: "purchase" | "receive") => {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(action);
+    try {
+      const [y, m, d] = bulkDate.split("-").map(Number);
+      const res = await fetch("/api/purchases/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [...selectedIds],
+          action,
+          // Mediodía local: evita que el server (UTC) lo tome como el día
+          // anterior.
+          date: new Date(y, m - 1, d, 12, 0, 0).toISOString(),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      if (body?.skipped > 0) {
+        alert(
+          `${body.skipped} compra(s) quedaron sin marcar porque todavía están en Cotizar${
+            action === "receive" ? " o Definir" : ""
+          }.`,
+        );
+      }
+      setSelectedIds(new Set());
+      onChanged();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo aplicar la acción");
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-10 rounded-md border border-[#003b73]/20 bg-[#003b73]/5 px-3 py-2 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-medium text-slate-700">
+            {selectedIds.size}{" "}
+            {selectedIds.size === 1
+              ? "repuesto seleccionado"
+              : "repuestos seleccionados"}
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-600">Fecha</span>
+            <Input
+              type="date"
+              value={bulkDate}
+              onChange={(e) => setBulkDate(e.target.value)}
+              className="h-8 w-40 bg-white"
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => runBulk("purchase")}
+            disabled={bulkBusy !== null}
+            className="h-8 gap-1.5 bg-white"
+            title="Se hizo el pedido al proveedor: pasan a En camino con esta fecha"
+          >
+            {bulkBusy === "purchase" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ShoppingCart className="h-3.5 w-3.5" />
+            )}
+            Marcar como compradas
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => runBulk("receive")}
+            disabled={bulkBusy !== null}
+            className="h-8 gap-1.5"
+            title="Llegaron al taller: quedan recibidas con esta fecha"
+          >
+            {bulkBusy === "receive" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <PackageCheck className="h-3.5 w-3.5" />
+            )}
+            Marcar como llegados
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelectedIds(new Set())}
+            className="h-8 text-slate-600"
+          >
+            Limpiar
+          </Button>
+        </div>
+      )}
+
       {items.map((item) => (
         <ItemPurchasesBlock
           key={item.id}
           item={item}
           onOpenDetail={setOpenId}
           onChanged={onChanged}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
         />
       ))}
+
+      {/* Compras del vehículo que no salen de un repuesto de la lista:
+          insumos, un sellador, un flete aparte. Se cargan acá para no tener
+          que ir al módulo Compras a buscar el presupuesto. */}
+      <Card className="p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-800">
+              Compras sueltas del vehículo
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              Sin repuesto asociado — insumos, fletes, gastos varios.
+            </p>
+          </div>
+          {budgetId && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setNewDirectOpen(true)}
+              className="h-7 text-[11px] gap-1 shrink-0"
+            >
+              <Plus className="h-3 w-3" />
+              Compra suelta
+            </Button>
+          )}
+        </div>
+
+        {directPurchases.length > 0 ? (
+          <div className="mt-2 rounded-md border overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="border-b border-r border-slate-100 px-1 py-1.5 w-8"></th>
+                  <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                    N° compra
+                  </th>
+                  <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                    Producto
+                  </th>
+                  <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                    Proveedor
+                  </th>
+                  <th className="border-b border-r border-slate-100 px-2 py-1.5 text-right font-semibold text-slate-600">
+                    Monto
+                  </th>
+                  <th className="border-b border-r border-slate-100 px-2 py-1.5 text-right font-semibold text-slate-600">
+                    Flete
+                  </th>
+                  <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                    Pago
+                  </th>
+                  <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                    Recepción
+                  </th>
+                  <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                    Estado
+                  </th>
+                  <th className="border-b border-slate-100 px-1 py-1.5 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {directPurchases.map((p) => (
+                  <PurchaseInlineRow
+                    key={p.id}
+                    purchase={p}
+                    product={p.productDescription}
+                    selected={selectedIds.has(p.id)}
+                    onToggleSelect={(next) => toggleSelect(p.id, next)}
+                    onOpen={() => setOpenId(p.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="mt-2 text-[11px] text-muted-foreground italic">
+            Sin compras sueltas para este vehículo.
+          </p>
+        )}
+      </Card>
+
+      {newDirectOpen && budgetId && (
+        <NewDirectPurchaseDialog
+          fixedBudgetId={budgetId}
+          onClose={() => setNewDirectOpen(false)}
+          onCreated={(purchaseId) => {
+            setNewDirectOpen(false);
+            onChanged();
+            setOpenId(purchaseId);
+          }}
+        />
+      )}
 
       {openId && (
         <PurchaseDetailDialog
@@ -1320,10 +1581,14 @@ function ItemPurchasesBlock({
   item,
   onOpenDetail,
   onChanged,
+  selectedIds,
+  onToggleSelect,
 }: {
   item: Item;
   onOpenDetail: (id: string) => void;
   onChanged: () => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string, next: boolean) => void;
 }) {
   const [starting, setStarting] = useState(false);
   const minNet =
@@ -1416,6 +1681,7 @@ function ItemPurchasesBlock({
           <table className="w-full text-xs border-collapse">
             <thead className="bg-slate-50">
               <tr>
+                <th className="border-b border-r border-slate-100 px-1 py-1.5 w-8"></th>
                 <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
                   N° compra
                 </th>
@@ -1429,6 +1695,12 @@ function ItemPurchasesBlock({
                   Flete
                 </th>
                 <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                  Pago
+                </th>
+                <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                  Recepción
+                </th>
+                <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
                   Estado
                 </th>
                 <th className="border-b border-slate-100 px-1 py-1.5 w-10"></th>
@@ -1439,6 +1711,8 @@ function ItemPurchasesBlock({
                 <PurchaseInlineRow
                   key={p.id}
                   purchase={p}
+                  selected={selectedIds.has(p.id)}
+                  onToggleSelect={(next) => onToggleSelect(p.id, next)}
                   onOpen={() => onOpenDetail(p.id)}
                 />
               ))}
@@ -1450,51 +1724,118 @@ function ItemPurchasesBlock({
   );
 }
 
-const STATUS_TONE: Record<
-  PurchaseSummary["status"],
-  { bg: string; text: string; dot: string; label: string }
-> = {
-  COTIZAR: { bg: "bg-slate-100", text: "text-slate-700", dot: "bg-slate-500", label: "Cotizar" },
-  DECIDIR: { bg: "bg-violet-100", text: "text-violet-700", dot: "bg-violet-500", label: "Decidir" },
-  COMPRAR: { bg: "bg-blue-100", text: "text-blue-700", dot: "bg-blue-500", label: "Comprar" },
-  EN_CAMINO: { bg: "bg-amber-100", text: "text-amber-700", dot: "bg-amber-500", label: "En camino" },
-  EN_TALLER: { bg: "bg-cyan-100", text: "text-cyan-700", dot: "bg-cyan-500", label: "En taller" },
-  PENDIENTE_PAGO: { bg: "bg-orange-100", text: "text-orange-700", dot: "bg-orange-500", label: "Pdte. pago" },
-  ARCHIVADA: { bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500", label: "Archivada" },
-};
-
+/**
+ * Fila de compra dentro de la administrativa del vehículo.
+ *
+ * spec Compras v4 · Muestra pago y fecha de recepción además del estado, y
+ * toda la fila abre el detalle completo: la idea es no tener que ir al módulo
+ * Compras para ver o corregir algo del repuesto.
+ */
 function PurchaseInlineRow({
   purchase,
+  product,
+  selected,
+  onToggleSelect,
   onOpen,
 }: {
   purchase: PurchaseSummary;
+  /**
+   * Solo para compras sueltas: el producto no sale de un repuesto de la
+   * lista, así que se muestra en una columna propia.
+   */
+  product?: string | null;
+  selected: boolean;
+  onToggleSelect: (next: boolean) => void;
   onOpen: () => void;
 }) {
-  const tone = STATUS_TONE[purchase.status];
+  const meta = PURCHASE_STATUS_META[purchase.status];
+  // Mismo cálculo que usa el módulo Compras: suma de pagos parciales contra
+  // repuesto + flete, con el margen de un centavo por redondeos.
+  const total = Number(purchase.amount) + Number(purchase.freightAmount);
+  const paid = (purchase.payments ?? []).reduce(
+    (s, x) => s + Number(x.amount),
+    0,
+  );
+  const payLabel =
+    total === 0
+      ? { text: "—", cls: "text-slate-400" }
+      : paid + 0.01 >= total
+        ? { text: "Pagada", cls: "text-emerald-700 bg-emerald-50" }
+        : paid > 0
+          ? { text: "Parcial", cls: "text-amber-700 bg-amber-50" }
+          : { text: "Sin pagar", cls: "text-slate-600 bg-slate-100" };
+
   return (
-    <tr className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50">
+    <tr
+      className={`border-b border-slate-100 last:border-b-0 ${
+        selected ? "bg-[#003b73]/5" : "hover:bg-slate-50/50"
+      }`}
+    >
+      <td className="border-r border-slate-100 px-1 py-1.5 text-center">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(e) => onToggleSelect(e.target.checked)}
+          aria-label={`Seleccionar compra ${purchase.number}`}
+          className="h-3.5 w-3.5 rounded border-slate-300 text-[#003b73] focus:ring-[#003b73]"
+        />
+      </td>
       <td className="border-r border-slate-100 px-2 py-1.5 font-mono text-[11px]">
-        {purchase.number}
+        <button
+          type="button"
+          onClick={onOpen}
+          className="hover:underline text-[#003b73]"
+          title="Ver y editar el detalle de la compra"
+        >
+          {purchase.number}
+        </button>
       </td>
+      {product !== undefined && (
+        <td className="border-r border-slate-100 px-2 py-1.5 max-w-48">
+          <span className="block truncate" title={product ?? ""}>
+            {product ?? <span className="text-slate-400 italic">—</span>}
+          </span>
+        </td>
+      )}
       <td className="border-r border-slate-100 px-2 py-1.5">
-        {purchase.supplierName ?? <span className="text-slate-400 italic">—</span>}
+        {purchase.supplierName ?? (
+          <span className="text-slate-400 italic">—</span>
+        )}
       </td>
       <td className="border-r border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums">
-        {Number(purchase.amount) > 0
-          ? ARS.format(Number(purchase.amount))
-          : <span className="text-slate-400">—</span>}
+        {Number(purchase.amount) > 0 ? (
+          ARS.format(Number(purchase.amount))
+        ) : (
+          <span className="text-slate-400">—</span>
+        )}
       </td>
       <td className="border-r border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums">
-        {Number(purchase.freightAmount) > 0
-          ? ARS.format(Number(purchase.freightAmount))
-          : <span className="text-slate-400">—</span>}
+        {Number(purchase.freightAmount) > 0 ? (
+          ARS.format(Number(purchase.freightAmount))
+        ) : (
+          <span className="text-slate-400">—</span>
+        )}
       </td>
       <td className="border-r border-slate-100 px-2 py-1.5">
         <span
-          className={`inline-flex items-center gap-1 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold ${tone.bg} ${tone.text}`}
+          className={`inline-block text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold ${payLabel.cls}`}
         >
-          <span className={`h-1 w-1 rounded-full ${tone.dot}`} />
-          {tone.label}
+          {payLabel.text}
+        </span>
+      </td>
+      <td className="border-r border-slate-100 px-2 py-1.5 text-[11px] text-slate-600 tabular-nums">
+        {purchase.receivedAt ? (
+          formatShortDate(purchase.receivedAt)
+        ) : (
+          <span className="text-slate-400 italic">Sin llegar</span>
+        )}
+      </td>
+      <td className="border-r border-slate-100 px-2 py-1.5">
+        <span
+          className={`inline-flex items-center gap-1 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold ${meta.tone.bg} ${meta.tone.text}`}
+        >
+          <span className={`h-1 w-1 rounded-full ${meta.tone.dot}`} />
+          {meta.label}
         </span>
       </td>
       <td className="px-1 py-1.5 text-center">
@@ -1502,7 +1843,7 @@ function PurchaseInlineRow({
           type="button"
           onClick={onOpen}
           className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-slate-100 text-slate-600"
-          title="Ver detalle"
+          title="Ver y editar el detalle"
           aria-label="Ver detalle"
         >
           <Eye className="h-3.5 w-3.5" />
@@ -1510,4 +1851,12 @@ function PurchaseInlineRow({
       </td>
     </tr>
   );
+}
+
+/** Fecha corta local para las columnas de la tabla de compras. */
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+  });
 }

@@ -160,6 +160,8 @@ export async function POST(request: Request) {
     status,
     notes,
     source,
+    inspectorId,
+    insuranceAgentId,
   } = body as {
     customerId?: string;
     newCustomer?: {
@@ -191,6 +193,13 @@ export async function POST(request: Request) {
     status?: LeadStatus;
     notes?: string | null;
     source?: string | null;
+    /**
+     * Quién trajo el trabajo, elegido al tomar el presupuesto. Son los
+     * mismos actores que la ficha del lead deja cargar después: perito
+     * (rol "inspector") y productor de seguros.
+     */
+    inspectorId?: string | null;
+    insuranceAgentId?: string | null;
   };
 
   if (!customerId && !newCustomer) {
@@ -201,6 +210,22 @@ export async function POST(request: Request) {
   }
   if (status && !ALL_STATUSES.includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  }
+
+  // Perito / productor: si vienen, tienen que existir. No validamos el rol
+  // acá — la ficha del lead tampoco lo hace y el selector ya filtra por rol.
+  for (const [field, userId] of [
+    ["inspectorId", inspectorId],
+    ["insuranceAgentId", insuranceAgentId],
+  ] as const) {
+    if (!userId) continue;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return NextResponse.json(
+        { error: `El usuario indicado en ${field} no existe` },
+        { status: 400 },
+      );
+    }
   }
 
   // Validación: si es cliente existente, debe existir
@@ -364,6 +389,8 @@ export async function POST(request: Request) {
         status: status ?? "solicitud",
         notes: notes ?? null,
         source: source ?? null,
+        inspectorId: inspectorId || null,
+        insuranceAgentId: insuranceAgentId || null,
         createdById: session?.user?.id ?? null,
       },
       include: {

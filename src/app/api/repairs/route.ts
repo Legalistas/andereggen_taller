@@ -74,6 +74,22 @@ export async function GET(request: Request) {
       serviceRating: {
         select: { stars: true, respondedAt: true, token: true },
       },
+      // El color sale de la ficha viva del vehículo (no del snapshot): la
+      // Lista completa lo muestra porque en el taller identifican el auto
+      // por color antes que por patente.
+      vehicle: { select: { color: true } },
+      // Siniestros: la lista suma los presupuestos de todos y muestra cuántos
+      // hay, para que una tarjeta con dos siniestros no parezca una sola.
+      claims: {
+        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+        select: {
+          id: true,
+          claimNumber: true,
+          approvedLabor: true,
+          approvedParts: true,
+          budget: { select: { id: true, number: true, grandTotal: true } },
+        },
+      },
     },
     // El Kanban agrupa por status según el array COLUMNS de production-kanban.tsx,
     // así que el orden visual no depende del enum. Solo ordenamos por updatedAt
@@ -125,10 +141,27 @@ export async function GET(request: Request) {
         Number(rest.approvedFranchise ?? 0) +
         Number(rest.approvedCustomer ?? 0)
       : null;
+
+    // Total presupuestado de la tarjeta = suma de los presupuestos de todos
+    // sus siniestros. Fallback al presupuesto principal para tarjetas viejas
+    // que todavía no tienen siniestros cargados.
+    const claimBudgets = rest.claims
+      .map((c) => c.budget)
+      .filter((b): b is NonNullable<typeof b> => b !== null);
+    const budgetsTotal =
+      claimBudgets.length > 0
+        ? claimBudgets.reduce((acc, b) => acc + Number(b.grandTotal), 0)
+        : rest.budget
+          ? Number(rest.budget.grandTotal)
+          : null;
+
     return {
       ...rest,
+      vehicleColor: rest.vehicle?.color ?? null,
       pendingAmount: pendingByRepair.get(rest.id) ?? null,
       approvedTotal,
+      budgetsTotal,
+      claimCount: rest.claims.length,
     };
   });
 
@@ -180,6 +213,8 @@ export async function POST(request: Request) {
       year: string;
       domain: string;
       chassis?: string;
+      /** Color del vehículo — se carga al ingresar y sale en la Ficha Técnica. */
+      color?: string;
       perladoTricapa?: boolean;
       secure?: string;
       thirdPartySecure?: string;
@@ -224,6 +259,11 @@ export async function POST(request: Request) {
     const internalNumber = await nextRepairInternalNumber();
     const repair = await prisma.repair.create({
       data: {
+        // spec Producción v4 · La tarjeta nace con su "Siniestro 1" ya
+        // vinculado al presupuesto. Los importes quedan vacíos porque son los
+        // APROBADOS por el seguro, que casi nunca coinciden con lo
+        // presupuestado; la ficha ofrece copiarlos con un botón.
+        claims: { create: { order: 1, budgetId } },
         // spec 2.1 v2 · Si el caller ya coordinó fecha con el cliente
         // (mandó scheduledAt), arranca directo en "turno_asignado";
         // si no, queda en "turno_a_asignar" hasta que el equipo cargue
@@ -411,7 +451,8 @@ export async function POST(request: Request) {
             model: newVehicle.model.trim(),
             year: newVehicle.year.trim(),
             domain: newVehicle.domain.trim().toUpperCase(),
-            chassis: newVehicle.chassis?.trim() || null,
+            chassis: newVehicle.chassis?.trim().toUpperCase() || null,
+            color: newVehicle.color?.trim() || null,
             perladoTricapa: Boolean(newVehicle.perladoTricapa),
             secure: newVehicle.secure ?? "",
             thirdPartySecure: newVehicle.thirdPartySecure ?? "",
@@ -459,6 +500,10 @@ export async function POST(request: Request) {
       const internalNumber = await nextRepairInternalNumber(tx);
       return tx.repair.create({
         data: {
+          // spec Producción v4 · Siniestro 1 vacío: la reparación directa
+          // todavía no tiene presupuesto, pero el taller carga ahí el Nº de
+          // siniestro y los importes que apruebe el seguro.
+          claims: { create: { order: 1 } },
           // spec 2.1 v2 · Nueva Reparación directa: si el usuario ya
           // asignó turno arranca en "turno_asignado", si no en
           // "turno_a_asignar".
