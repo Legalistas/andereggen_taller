@@ -4,6 +4,8 @@ import {
   ArrowUpDown,
   Calendar,
   Car,
+  Check,
+  ChevronDown,
   ClipboardList,
   Loader2,
   Phone,
@@ -21,6 +23,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -116,7 +123,13 @@ export default function ProductionList() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<RepairStatus | "all">("all");
+  /**
+   * Estados tildados. Vacío = todos (es el default y evita el caso raro de
+   * "ningún estado seleccionado" mostrando una lista vacía sin motivo).
+   */
+  const [statusFilter, setStatusFilter] = useState<Set<RepairStatus>>(
+    new Set(),
+  );
   const [insuranceFilter, setInsuranceFilter] = useState<string>("all");
   const [payerFilter, setPayerFilter] = useState<PayerFilter>("all");
   const [mechanicFilter, setMechanicFilter] = useState<string>("all");
@@ -176,7 +189,7 @@ export default function ProductionList() {
     const to = enteredTo ? new Date(`${enteredTo}T23:59:59`) : null;
 
     const list = repairs.filter((r) => {
-      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (statusFilter.size > 0 && !statusFilter.has(r.status)) return false;
       if (insuranceFilter !== "all" && r.insuranceCompany !== insuranceFilter) {
         return false;
       }
@@ -253,7 +266,7 @@ export default function ProductionList() {
   ]);
 
   const activeFilters =
-    (statusFilter !== "all" ? 1 : 0) +
+    (statusFilter.size > 0 ? 1 : 0) +
     (insuranceFilter !== "all" ? 1 : 0) +
     (payerFilter !== "all" ? 1 : 0) +
     (mechanicFilter !== "all" ? 1 : 0) +
@@ -261,8 +274,17 @@ export default function ProductionList() {
     (enteredTo ? 1 : 0) +
     (searchTerm ? 1 : 0);
 
+  const toggleStatus = (s: RepairStatus) => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+  };
+
   const clearFilters = () => {
-    setStatusFilter("all");
+    setStatusFilter(new Set());
     setInsuranceFilter("all");
     setPayerFilter("all");
     setMechanicFilter("all");
@@ -322,22 +344,65 @@ export default function ProductionList() {
             />
           </div>
 
-          <Select
-            value={statusFilter}
-            onValueChange={(v) => setStatusFilter(v as RepairStatus | "all")}
-          >
-            <SelectTrigger className="w-52 bg-white">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los estados</SelectItem>
-              {ALL_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {STATUS_LABEL[s]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Estados: se pueden tildar varios (ej. Chapa + Pintura para ver
+              todo lo que está en taller). Vacío = todos. */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-52 justify-between bg-white font-normal"
+              >
+                <span className="truncate">
+                  {statusFilter.size === 0
+                    ? "Todos los estados"
+                    : statusFilter.size === 1
+                      ? STATUS_LABEL[[...statusFilter][0]]
+                      : `${statusFilter.size} estados`}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-2">
+              <div className="flex items-center justify-between px-1 pb-2 mb-1 border-b">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Estados
+                </span>
+                {statusFilter.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(new Set())}
+                    className="text-[11px] font-medium text-[#003b73] hover:underline"
+                  >
+                    Todos
+                  </button>
+                )}
+              </div>
+              <div className="grid gap-0.5 max-h-72 overflow-y-auto">
+                {ALL_STATUSES.map((s) => {
+                  const checked = statusFilter.has(s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => toggleStatus(s)}
+                      className="flex items-center gap-2 rounded px-1.5 py-1.5 text-sm text-left hover:bg-slate-50"
+                    >
+                      <span
+                        className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${
+                          checked
+                            ? "bg-[#003b73] border-[#003b73] text-white"
+                            : "border-slate-300 bg-white"
+                        }`}
+                      >
+                        {checked && <Check className="h-3 w-3" />}
+                      </span>
+                      <span className="truncate">{STATUS_LABEL[s]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
 
           <div className="flex items-center gap-2 shrink-0 ml-auto">
             <Select
