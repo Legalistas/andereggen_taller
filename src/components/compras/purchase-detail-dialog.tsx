@@ -688,6 +688,17 @@ function PayDialog({
 
   const [cashBoxId, setCashBoxId] = useState(cashBoxes[0]?.id ?? "");
   const [method, setMethod] = useState("EFECTIVO");
+  /**
+   * Fecha del pago. Antes se guardaba siempre "ahora", así que un pago que se
+   * hizo la semana pasada y se carga hoy quedaba con la fecha equivocada — y
+   * con ella el movimiento de caja.
+   */
+  const [paidAt, setPaidAt] = useState(() => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${m}-${day}`;
+  });
   const [amount, setAmount] = useState<string>(String(remaining));
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -705,6 +716,7 @@ function PayDialog({
           amount: Number(amount),
           cashBoxId,
           method,
+          paidAt: localNoonISO(paidAt),
           notes: notes.trim() || undefined,
         }),
       });
@@ -746,6 +758,17 @@ function PayDialog({
             <p className="text-[10px] text-slate-500">
               Podés registrar un pago parcial (menor al saldo). El resto queda
               en Pendiente de pago hasta cancelarse.
+            </p>
+          </div>
+          <div className="grid gap-1">
+            <Label className="text-xs">Fecha de pago *</Label>
+            <Input
+              type="date"
+              value={paidAt}
+              onChange={(e) => setPaidAt(e.target.value)}
+            />
+            <p className="text-[10px] text-slate-500">
+              Es la fecha con la que se registra el movimiento en la caja.
             </p>
           </div>
           <div className="grid gap-1">

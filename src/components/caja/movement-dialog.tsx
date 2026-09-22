@@ -55,7 +55,9 @@ const EGRESO_CONCEPTS = [
   "Flete",
   "Aportes entidades",
   "Gastos administrativos",
-  "Inversiones construcción",
+  // "Inversiones construcción" se renombró a "Brixar" (está más abajo en la
+  // lista): era el mismo rubro con dos nombres. La migración
+  // 20260922140000_caja_concepto_brixar renombró los movimientos ya cargados.
   "Publicidad",
   "Repuestos",
   "Albañiles",

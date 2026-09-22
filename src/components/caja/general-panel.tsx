@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowRightLeft,
   ArrowUp,
+  Download,
   Loader2,
   Trash2,
   Wallet,
@@ -226,11 +227,19 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
   const typeTotals = useMemo(() => {
     let cobros = 0;
     let ingresos = 0;
+    // Los pases entre cajas no son ingreso ni egreso del taller: entra en una
+    // caja lo que sale de otra. Se cuentan aparte para poder aislarlos.
+    let pases = 0;
+    let pasesCount = 0;
     for (const m of movements) {
       if (m.type === "COBRO") cobros += m.amount;
       if (m.type === "INGRESO") ingresos += m.amount;
+      if (m.type === "PASE_IN" || m.type === "PASE_OUT") {
+        pasesCount += 1;
+        if (m.type === "PASE_OUT") pases += m.amount;
+      }
     }
-    return { cobros, ingresos };
+    return { cobros, ingresos, pases, pasesCount };
   }, [movements]);
 
   const filteredMovements = useMemo(() => {
@@ -245,10 +254,97 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
         (m) => m.type === "INGRESO" || m.type === "COBRO",
       );
     }
+    if (conceptFilter === "__type:PASE") {
+      return movements.filter(
+        (m) => m.type === "PASE_IN" || m.type === "PASE_OUT",
+      );
+    }
     return movements.filter(
       (m) => m.type === "EGRESO" && m.concept === conceptFilter,
     );
   }, [movements, conceptFilter]);
+
+  /**
+   * Descarga el mes en Excel: una hoja con el detalle (lo que está filtrado
+   * en pantalla) y otra con los gastos agrupados por concepto, que es el
+   * resumen que el taller arma a mano todos los meses.
+   *
+   * `xlsx` se importa dinámicamente para no sumar la librería al bundle de
+   * la página: solo se baja cuando alguien aprieta el botón.
+   */
+  const exportExcel = async () => {
+    const XLSX = await import("xlsx");
+    const boxLabel = selectedBoxId
+      ? (boxes.find((b) => b.id === selectedBoxId)?.name ?? "Caja")
+      : "Todas las cajas";
+
+    const detalle = [
+      [
+        "Fecha",
+        "Tipo",
+        "Caja",
+        "Concepto",
+        "Método",
+        "Referencia",
+        "Notas",
+        "Vehículo",
+        "Ingreso",
+        "Egreso",
+        "Cargado por",
+      ],
+      ...filteredMovements.map((m) => {
+        const meta = TYPE_META[m.type];
+        return [
+          new Date(m.paidAt).toLocaleDateString("es-AR"),
+          meta.label,
+          m.cashBox?.name ?? "",
+          m.concept,
+          METHOD_LABEL[m.method] ?? m.method,
+          m.reference ?? "",
+          m.notes ?? "",
+          m.linkedRepair
+            ? `${m.linkedRepair.customerName} · ${m.linkedRepair.vehicleDomain}`
+            : "",
+          meta.sign === 1 ? m.amount : "",
+          meta.sign === -1 ? m.amount : "",
+          m.createdBy ?? "",
+        ];
+      }),
+    ];
+
+    // Resumen de gastos del mes por concepto — siempre sobre TODOS los
+    // egresos del período, sin importar el filtro de pantalla.
+    const gastos = [
+      ["Concepto", "Total", "Movimientos"],
+      ...egresoConcepts.map((c) => [
+        c.concept,
+        c.total,
+        movements.filter((m) => m.type === "EGRESO" && m.concept === c.concept)
+          .length,
+      ]),
+      [
+        "TOTAL",
+        egresoConcepts.reduce((s, c) => s + c.total, 0),
+        movements.filter((m) => m.type === "EGRESO").length,
+      ],
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet(detalle),
+      "Detalle",
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet(gastos),
+      "Gastos por concepto",
+    );
+    XLSX.writeFile(
+      wb,
+      `Caja_${monthParam}_${boxLabel.replace(/[^w]+/g, "-")}.xlsx`,
+    );
+  };
 
   const deleteRow = async (m: MovementRow) => {
     // El id local viene prefijado por el GET (mov-… o pay-…) para distinguir
@@ -537,7 +633,9 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                   ? "Cobros"
                   : conceptFilter === "__type:INGRESO"
                     ? "Ingresos + cobros"
-                    : conceptFilter}
+                    : conceptFilter === "__type:PASE"
+                      ? "Pases entre cajas"
+                      : conceptFilter}
               </span>
             )}
           </div>
@@ -565,6 +663,17 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportExcel}
+              disabled={movements.length === 0}
+              className="h-8 text-xs gap-1.5"
+              title="Descarga el detalle del mes y el resumen de gastos por concepto"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Excel
+            </Button>
             <Select value={conceptFilter} onValueChange={setConceptFilter}>
               <SelectTrigger className="h-8 text-xs w-56">
                 <SelectValue />
@@ -578,6 +687,11 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                   <SelectItem value="__type:INGRESO">
                     Ingresos + cobros ·{" "}
                     {ARS.format(typeTotals.ingresos + typeTotals.cobros)}
+                  </SelectItem>
+                )}
+                {typeTotals.pasesCount > 0 && (
+                  <SelectItem value="__type:PASE">
+                    Pases entre cajas · {ARS.format(typeTotals.pases)}
                   </SelectItem>
                 )}
                 {egresoConcepts.map((c) => (
@@ -602,7 +716,9 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
                 ? "No hay cobros en este período."
                 : conceptFilter === "__type:INGRESO"
                   ? "No hay ingresos ni cobros en este período."
-                  : `No hay egresos en "${conceptFilter}" este mes.`}
+                  : conceptFilter === "__type:PASE"
+                    ? "No hay pases entre cajas en este período."
+                    : `No hay egresos en "${conceptFilter}" este mes.`}
           </div>
         ) : (
           <>
