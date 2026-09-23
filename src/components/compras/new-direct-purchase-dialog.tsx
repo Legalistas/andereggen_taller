@@ -114,7 +114,9 @@ export default function NewDirectPurchaseDialog({
 
   return (
     <Dialog open onOpenChange={(v) => !v && !saving && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      {/* z-70 por el mismo motivo que el detalle: se abre desde la
+          Administrativa, que está en z-60. */}
+      <DialogContent className="sm:max-w-md z-70" overlayClassName="z-70">
         <DialogHeader>
           <DialogTitle>Nueva compra</DialogTitle>
           <DialogDescription>

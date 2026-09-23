@@ -48,15 +48,22 @@ function DialogOverlay({
 
 function DialogContent({
   className,
+  overlayClassName,
   children,
   showCloseButton = true,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
+  /**
+   * Clases para el fondo oscuro. Sirve para subirle el z-index cuando el
+   * diálogo se abre desde otro que ya está por encima del z-50 por defecto
+   * (ej. la Administrativa, que ocupa la pantalla completa en z-60).
+   */
+  overlayClassName?: string;
 }) {
   return (
     <DialogPortal data-slot="dialog-portal">
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(

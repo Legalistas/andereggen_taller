@@ -203,7 +203,13 @@ export default function PurchaseDetailDialog({
   return (
     <>
       <Dialog open onOpenChange={(v) => !v && !saving && onClose()}>
-        <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
+        {/* z-70: este detalle se abre desde la Administrativa, que ocupa la
+            pantalla entera en z-60. Con el z-50 por defecto quedaba detrás y
+            parecía que el botón no hacía nada. */}
+        <DialogContent
+          className="sm:max-w-3xl max-h-[92vh] overflow-y-auto z-70"
+          overlayClassName="z-70"
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               Detalle de la compra
@@ -733,7 +739,8 @@ function PayDialog({
 
   return (
     <Dialog open onOpenChange={(v) => !v && !saving && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      {/* z-80: el alta de pago se abre encima del detalle (z-70). */}
+      <DialogContent className="sm:max-w-md z-80" overlayClassName="z-80">
         <DialogHeader>
           <DialogTitle>
             Registrar pago — {which === "PARTS" ? "Repuesto" : "Flete"}

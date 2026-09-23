@@ -12,7 +12,6 @@ import {
   Search,
   Shield,
   Trash2,
-  User,
   X,
   Zap,
 } from "lucide-react";
@@ -564,9 +563,6 @@ export default function ProductionList() {
                 <TableHead>Estado</TableHead>
                 <TableHead>Seguro</TableHead>
                 <TableHead>Ingreso</TableHead>
-                <TableHead>Turno</TableHead>
-                <TableHead>Entrega est.</TableHead>
-                <TableHead>Mecánico</TableHead>
                 <TableHead>Aprueba</TableHead>
                 <TableHead className="text-right">Importes</TableHead>
                 <TableHead className="w-12 text-right" />
@@ -576,7 +572,7 @@ export default function ProductionList() {
               {loading && repairs.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={12}
+                    colSpan={9}
                     className="text-center py-12 text-sm text-muted-foreground"
                   >
                     <Loader2 className="h-4 w-4 inline animate-spin mr-2" />
@@ -587,7 +583,7 @@ export default function ProductionList() {
               {!loading && filtered.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={12}
+                    colSpan={9}
                     className="text-center py-12 text-sm text-muted-foreground italic"
                   >
                     Sin reparaciones que coincidan con los filtros.
@@ -697,41 +693,6 @@ export default function ProductionList() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {r.scheduledAt ? (
-                        <div className="text-xs text-muted-foreground">
-                          {formatDate(r.scheduledAt)}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {r.estimatedDeliveryAt ? (
-                        <div className="text-xs text-muted-foreground">
-                          {formatDate(r.estimatedDeliveryAt)}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {r.assignedMechanic ? (
-                        <div className="flex items-center gap-1.5">
-                          <div className="h-6 w-6 rounded-full bg-[#003b73] text-white flex items-center justify-center text-[10px] font-semibold">
-                            {initials(r.assignedMechanic.name)}
-                          </div>
-                          <span className="text-sm truncate max-w-[120px]">
-                            {r.assignedMechanic.name ?? "—"}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400 italic flex items-center gap-1">
-                          <User className="h-3 w-3" />
-                          Sin asignar
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
                       {payers.length === 0 ? (
                         <span className="text-xs text-slate-400 italic">
                           Sin cargar
@@ -787,18 +748,6 @@ export default function ProductionList() {
         </div>
       </Card>
     </div>
-  );
-}
-
-function initials(name: string | null | undefined): string {
-  const s = (name ?? "").trim();
-  if (!s) return "?";
-  return (
-    s
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() ?? "")
-      .join("") || "?"
   );
 }
 
