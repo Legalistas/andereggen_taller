@@ -162,6 +162,7 @@ export async function POST(request: Request) {
     source,
     inspectorId,
     insuranceAgentId,
+    insuranceCompanyId,
   } = body as {
     customerId?: string;
     newCustomer?: {
@@ -200,6 +201,8 @@ export async function POST(request: Request) {
      */
     inspectorId?: string | null;
     insuranceAgentId?: string | null;
+    /** Aseguradora que paga — el tercer actor del lead. */
+    insuranceCompanyId?: string | null;
   };
 
   if (!customerId && !newCustomer) {
@@ -223,6 +226,17 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json(
         { error: `El usuario indicado en ${field} no existe` },
+        { status: 400 },
+      );
+    }
+  }
+  if (insuranceCompanyId) {
+    const company = await prisma.insuranceCompany.findUnique({
+      where: { id: insuranceCompanyId },
+    });
+    if (!company) {
+      return NextResponse.json(
+        { error: "La compañía de seguros indicada no existe" },
         { status: 400 },
       );
     }
@@ -391,6 +405,7 @@ export async function POST(request: Request) {
         source: source ?? null,
         inspectorId: inspectorId || null,
         insuranceAgentId: insuranceAgentId || null,
+        insuranceCompanyId: insuranceCompanyId || null,
         createdById: session?.user?.id ?? null,
       },
       include: {

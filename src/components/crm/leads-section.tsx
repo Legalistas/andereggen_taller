@@ -2,15 +2,17 @@
 
 import {
   ArrowUpDown,
+  Briefcase,
   Clock,
   Globe,
   Info,
   MessageCircle,
   Plus,
   Search,
-  ShieldCheck,
+  Shield,
   Tag,
   UserPlus,
+  Users,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -21,6 +23,12 @@ import {
   useMemo,
   useState,
 } from "react";
+import {
+  ActorRow,
+  type InsuranceCompanyLite,
+  InsuranceCompanyRow,
+  type UserLite,
+} from "@/components/crm/actor-pickers";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import {
@@ -169,14 +177,14 @@ export default function LeadsSection() {
   const [vehicleCoverageType, setVehicleCoverageType] = useState("");
   const [vehicleFranchise, setVehicleFranchise] = useState("");
   /**
-   * Cómo tomamos el presupuesto: directo del cliente, por un productor de
-   * seguros o por un perito. Cuando no es directo se elige cuál, de los
-   * usuarios cargados con ese rol, y queda vinculado al lead.
+   * Actores del lead, elegidos al tomar el presupuesto. Son los mismos tres
+   * que después se ven y se cambian en la ficha; cargarlos acá evita tener
+   * que abrir el lead para completarlos.
    */
-  const [takenVia, setTakenVia] = useState<"directo" | "productor" | "perito">(
-    "directo",
-  );
-  const [takenById, setTakenById] = useState("");
+  const [inspector, setInspector] = useState<UserLite | null>(null);
+  const [insuranceAgent, setInsuranceAgent] = useState<UserLite | null>(null);
+  const [insuranceCompany, setInsuranceCompany] =
+    useState<InsuranceCompanyLite | null>(null);
   const [vehicleThirdPartyInsurance, setVehicleThirdPartyInsurance] =
     useState("");
   const [leadNotes, setLeadNotes] = useState("");
@@ -354,8 +362,9 @@ export default function LeadsSection() {
     setVehicleThirdPartyInsurance("");
     setVehicleCoverageType("");
     setVehicleFranchise("");
-    setTakenVia("directo");
-    setTakenById("");
+    setInspector(null);
+    setInsuranceAgent(null);
+    setInsuranceCompany(null);
     setLeadNotes("");
     setLeadSourceKey("manual");
     setCreateError(null);
@@ -510,14 +519,12 @@ export default function LeadsSection() {
       return;
     }
 
-    // Productor / perito: quedan vinculados al lead igual que si se hubieran
-    // cargado después en la ficha, así las métricas por productor cuentan
-    // desde el momento en que se tomó el presupuesto.
-    if (takenVia === "productor" && takenById) {
-      payload.insuranceAgentId = takenById;
-    } else if (takenVia === "perito" && takenById) {
-      payload.inspectorId = takenById;
-    }
+    // Los actores quedan vinculados al lead desde el arranque, igual que si
+    // se hubieran cargado después en la ficha: así las métricas por productor
+    // y por compañía cuentan desde que se tomó el presupuesto.
+    if (inspector) payload.inspectorId = inspector.id;
+    if (insuranceAgent) payload.insuranceAgentId = insuranceAgent.id;
+    if (insuranceCompany) payload.insuranceCompanyId = insuranceCompany.id;
 
     setCreatingLead(true);
     try {
@@ -747,54 +754,43 @@ export default function LeadsSection() {
                 />
               )}
 
-              {/* Cómo tomamos el presupuesto: el trabajo puede llegar directo
-                  del cliente, por un productor de seguros o por un perito.
-                  Queda vinculado al lead desde el arranque. */}
+              {/* Actores del lead — los mismos tres que después se ven y se
+                  cambian en la ficha. Se cargan al tomar el presupuesto, que
+                  es cuando el taller sabe quién trajo el trabajo y qué
+                  compañía paga. Los tres permiten dar de alta el actor sin
+                  salir del formulario. */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b">
                   <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    <Users className="h-4 w-4 text-primary" />
                   </div>
-                  <h3 className="font-semibold">
-                    ¿Cómo tomamos el presupuesto?
-                  </h3>
+                  <h3 className="font-semibold">Actores</h3>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="takenVia">Lo trajo</Label>
-                    <Select
-                      value={takenVia}
-                      onValueChange={(v) => {
-                        setTakenVia(v as typeof takenVia);
-                        setTakenById("");
-                      }}
-                    >
-                      <SelectTrigger id="takenVia">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="directo">
-                          Directo del cliente
-                        </SelectItem>
-                        <SelectItem value="productor">
-                          Productor de seguros
-                        </SelectItem>
-                        <SelectItem value="perito">Perito</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {takenVia !== "directo" && (
-                    <ActorSelect
-                      label={
-                        takenVia === "productor" ? "¿Qué productor?" : "¿Qué perito?"
-                      }
-                      roleKey={
-                        takenVia === "productor" ? "productor_seguros" : "inspector"
-                      }
-                      value={takenById}
-                      onChange={setTakenById}
-                    />
-                  )}
+                <div className="grid gap-2">
+                  <ActorRow
+                    label="Perito / Inspector"
+                    icon={Shield}
+                    accent="text-cyan-700"
+                    accentBg="bg-cyan-50"
+                    avatarBg="bg-cyan-600"
+                    roleKey="inspector"
+                    current={inspector}
+                    onPick={setInspector}
+                  />
+                  <ActorRow
+                    label="Productor de seguros"
+                    icon={Briefcase}
+                    accent="text-emerald-700"
+                    accentBg="bg-emerald-50"
+                    avatarBg="bg-emerald-600"
+                    roleKey="productor_seguros"
+                    current={insuranceAgent}
+                    onPick={setInsuranceAgent}
+                  />
+                  <InsuranceCompanyRow
+                    current={insuranceCompany}
+                    onPick={setInsuranceCompany}
+                  />
                 </div>
               </div>
 
@@ -1156,67 +1152,3 @@ export function WinLeadDialog({
   );
 }
 
-/**
- * Selector del productor / perito que trajo el trabajo. Lista los usuarios
- * con ese rol (los mismos que ofrece la ficha del lead). Si todavía no hay
- * ninguno cargado, avisa dónde se cargan en vez de mostrar una lista vacía.
- */
-function ActorSelect({
-  label,
-  roleKey,
-  value,
-  onChange,
-}: {
-  label: string;
-  roleKey: "productor_seguros" | "inspector";
-  value: string;
-  onChange: (userId: string) => void;
-}) {
-  const [users, setUsers] = useState<
-    Array<{ id: string; name: string | null; email: string | null }>
-  >([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/users?role=${roleKey}`)
-      .then((r) => r.json())
-      .then((body) => {
-        if (!cancelled) setUsers(body.users ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setUsers([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [roleKey]);
-
-  return (
-    <div className="grid gap-2">
-      <Label>{label}</Label>
-      <Select value={value} onValueChange={onChange} disabled={loading}>
-        <SelectTrigger>
-          <SelectValue placeholder={loading ? "Cargando…" : "Seleccionar…"} />
-        </SelectTrigger>
-        <SelectContent>
-          {users.map((u) => (
-            <SelectItem key={u.id} value={u.id}>
-              {u.name ?? u.email ?? "Sin nombre"}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {!loading && users.length === 0 && (
-        <span className="text-xs text-muted-foreground">
-          No hay ninguno cargado. Se agregan desde Usuarios, o después en la
-          ficha del presupuesto.
-        </span>
-      )}
-    </div>
-  );
-}
