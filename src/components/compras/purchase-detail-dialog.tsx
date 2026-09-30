@@ -454,6 +454,27 @@ export default function PurchaseDetailDialog({
                 />
               </div>
 
+              {/* "Ampliar" — se guarda al toque, sin pasar por Guardar: es un
+                  tilde que el taller pone mientras revisa la lista. */}
+              <label className="flex items-start gap-2 cursor-pointer rounded-md border border-yellow-300 bg-yellow-50/60 p-3">
+                <input
+                  type="checkbox"
+                  checked={purchase.needsExtension}
+                  onChange={(e) => patch({ needsExtension: e.target.checked })}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-yellow-600 focus:ring-yellow-500"
+                />
+                <div className="grid gap-0.5">
+                  <span className="text-sm font-medium text-slate-800">
+                    Hay que ampliar por este repuesto
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Salió con el auto ya en el taller: no estaba presupuestado
+                    ni aprobado por el seguro. Se marca en amarillo en las
+                    listas para no perderlo de vista.
+                  </span>
+                </div>
+              </label>
+
               {/* spec v3 · Pagos parciales — total / pagado / saldo por
                   concepto (Repuesto y Flete). Botón "Agregar pago" abre
                   el sub-dialog que crea 1 PurchasePayment + 1 EGRESO. */}

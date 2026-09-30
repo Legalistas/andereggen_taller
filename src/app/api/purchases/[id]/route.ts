@@ -127,6 +127,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     archivedAt,
     receiptUrl,
     notes,
+    needsExtension,
   } = body as Record<string, unknown>;
 
   // Validaciones.
@@ -318,6 +319,10 @@ export async function PATCH(request: Request, ctx: RouteContext) {
         ...(notes !== undefined && {
           notes:
             typeof notes === "string" && notes.trim() ? notes.trim() : null,
+        }),
+        // spec Compras v5 · Repuesto que hay que meter en una ampliación.
+        ...(needsExtension !== undefined && {
+          needsExtension: Boolean(needsExtension),
         }),
       },
       include: PURCHASE_INCLUDE,

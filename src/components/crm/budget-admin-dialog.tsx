@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import NewDirectPurchaseDialog from "@/components/compras/new-direct-purchase-dialog";
+import { ExtensionToggle } from "@/components/compras/purchases-table";
 import PurchaseDetailDialog from "@/components/compras/purchase-detail-dialog";
 import {
   invalidateCache,
@@ -103,6 +104,8 @@ type PurchaseSummary = {
   paidFreightAt: string | null;
   /** Descripción propia de las compras sueltas (sin repuesto asociado). */
   productDescription?: string | null;
+  /** "Ampliar" — repuesto que hay que meter en una ampliación. */
+  needsExtension: boolean;
   /** Pagos parciales — se usan para el estado de pago de la fila. */
   payments?: Array<{ kind: "PARTS" | "FREIGHT"; amount: string | number }>;
   notes: string | null;
@@ -1354,6 +1357,24 @@ function ComprasTab({
     );
   }
 
+  /**
+   * Tilda "Ampliar" en una compra del vehículo. Refresca la administrativa
+   * para que el badge quede igual que en el módulo Compras.
+   */
+  const toggleExtension = async (id: string, next: boolean) => {
+    try {
+      const res = await fetch(`/api/purchases/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ needsExtension: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      onChanged();
+    } catch {
+      alert("No se pudo marcar la compra para ampliar.");
+    }
+  };
+
   const toggleSelect = (id: string, next: boolean) => {
     setSelectedIds((prev) => {
       const s = new Set(prev);
@@ -1468,6 +1489,7 @@ function ComprasTab({
           onChanged={onChanged}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
+          onToggleExtension={toggleExtension}
         />
       ))}
 
@@ -1527,6 +1549,9 @@ function ComprasTab({
                   <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
                     Estado
                   </th>
+                  <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                    Ampliar
+                  </th>
                   <th className="border-b border-slate-100 px-1 py-1.5 w-10"></th>
                 </tr>
               </thead>
@@ -1538,6 +1563,7 @@ function ComprasTab({
                     product={p.productDescription}
                     selected={selectedIds.has(p.id)}
                     onToggleSelect={(next) => toggleSelect(p.id, next)}
+                    onToggleExtension={(next) => toggleExtension(p.id, next)}
                     onOpen={() => setOpenId(p.id)}
                   />
                 ))}
@@ -1583,12 +1609,14 @@ function ItemPurchasesBlock({
   onChanged,
   selectedIds,
   onToggleSelect,
+  onToggleExtension,
 }: {
   item: Item;
   onOpenDetail: (id: string) => void;
   onChanged: () => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string, next: boolean) => void;
+  onToggleExtension: (id: string, next: boolean) => void;
 }) {
   const [starting, setStarting] = useState(false);
   const minNet =
@@ -1703,6 +1731,9 @@ function ItemPurchasesBlock({
                 <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
                   Estado
                 </th>
+                <th className="border-b border-r border-slate-100 px-2 py-1.5 text-left font-semibold text-slate-600">
+                  Ampliar
+                </th>
                 <th className="border-b border-slate-100 px-1 py-1.5 w-10"></th>
               </tr>
             </thead>
@@ -1713,6 +1744,7 @@ function ItemPurchasesBlock({
                   purchase={p}
                   selected={selectedIds.has(p.id)}
                   onToggleSelect={(next) => onToggleSelect(p.id, next)}
+                  onToggleExtension={(next) => onToggleExtension(p.id, next)}
                   onOpen={() => onOpenDetail(p.id)}
                 />
               ))}
@@ -1736,6 +1768,7 @@ function PurchaseInlineRow({
   product,
   selected,
   onToggleSelect,
+  onToggleExtension,
   onOpen,
 }: {
   purchase: PurchaseSummary;
@@ -1746,6 +1779,7 @@ function PurchaseInlineRow({
   product?: string | null;
   selected: boolean;
   onToggleSelect: (next: boolean) => void;
+  onToggleExtension: (next: boolean) => void;
   onOpen: () => void;
 }) {
   const meta = PURCHASE_STATUS_META[purchase.status];
@@ -1837,6 +1871,13 @@ function PurchaseInlineRow({
           <span className={`h-1 w-1 rounded-full ${meta.tone.dot}`} />
           {meta.label}
         </span>
+      </td>
+      <td className="border-r border-slate-100 px-2 py-1.5">
+        <ExtensionToggle
+          active={purchase.needsExtension}
+          onToggle={onToggleExtension}
+          compact
+        />
       </td>
       <td className="px-1 py-1.5 text-center">
         <button

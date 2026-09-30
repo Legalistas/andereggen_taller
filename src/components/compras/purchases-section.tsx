@@ -158,6 +158,28 @@ export default function PurchasesSection() {
   );
 
   /**
+   * Tilda "Ampliar" en una compra. Actualiza la fila en el acto y recién
+   * después confirma contra el server: es un tilde que el taller usa a mano
+   * alzada mientras revisa la lista.
+   */
+  const toggleExtension = async (id: string, next: boolean) => {
+    setPurchases((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, needsExtension: next } : p)),
+    );
+    try {
+      const res = await fetch(`/api/purchases/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ needsExtension: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      // Si falló, volvemos a lo que dice el server.
+      await fetchPurchases();
+    }
+  };
+
+  /**
    * Acciones en lote sobre lo seleccionado, con una sola fecha para todas:
    * "purchase" = se hizo el pedido al proveedor, "receive" = llegaron.
    */
@@ -381,6 +403,7 @@ export default function PurchasesSection() {
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onToggleSelectAll={toggleSelectAll}
+            onToggleExtension={toggleExtension}
           />
         </div>
       </Card>

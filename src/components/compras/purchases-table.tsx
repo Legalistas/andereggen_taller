@@ -49,6 +49,7 @@ export default function PurchasesTable({
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
+  onToggleExtension,
 }: {
   rows: PurchaseRow[];
   onOpenDetail: (row: PurchaseRow) => void;
@@ -56,6 +57,8 @@ export default function PurchasesTable({
   selectedIds: Set<string>;
   onToggleSelect: (id: string, next: boolean) => void;
   onToggleSelectAll: (next: boolean) => void;
+  /** Tilda/destilda "Ampliar" en la fila. */
+  onToggleExtension: (id: string, next: boolean) => void;
 }) {
   // "Seleccionar todo" opera sobre la página visible.
   const allSelected =
@@ -87,6 +90,7 @@ export default function PurchasesTable({
           <TableHead>Proveedor flete</TableHead>
           <TableHead className="text-right">Flete</TableHead>
           <TableHead>Estado</TableHead>
+          <TableHead className="w-24">Ampliar</TableHead>
           <TableHead className="w-12"></TableHead>
         </TableRow>
       </TableHeader>
@@ -94,7 +98,7 @@ export default function PurchasesTable({
         {rows.length === 0 && (
           <TableRow>
             <TableCell
-              colSpan={11}
+              colSpan={12}
               className="text-center py-10 text-sm text-slate-500"
             >
               Sin compras en este estado.
@@ -224,6 +228,12 @@ export default function PurchasesTable({
                 </span>
               </TableCell>
               <TableCell>
+                <ExtensionToggle
+                  active={r.needsExtension}
+                  onToggle={(next) => onToggleExtension(r.id, next)}
+                />
+              </TableCell>
+              <TableCell>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -240,5 +250,45 @@ export default function PurchasesTable({
         })}
       </TableBody>
     </Table>
+  );
+}
+
+/**
+ * Badge "Ampliar" — mismo amarillo flúo que la urgencia del calendario.
+ *
+ * Marca los repuestos que aparecieron con el auto ya en el taller: no estaban
+ * presupuestados ni aprobados por el seguro, y la ampliación se gestiona
+ * después, muchas veces con el auto ya entregado. Por eso tiene que saltar a
+ * la vista en la lista, sin abrir el detalle.
+ */
+export function ExtensionToggle({
+  active,
+  onToggle,
+  compact,
+}: {
+  active: boolean;
+  onToggle: (next: boolean) => void;
+  /** Versión chica, para las tablas de la administrativa. */
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(!active)}
+      title={
+        active
+          ? "Marcado para ampliar — click para desmarcar"
+          : "Marcar: hay que incluirlo en una ampliación"
+      }
+      className={`inline-flex items-center gap-1 rounded border font-bold uppercase tracking-wider transition-colors ${
+        compact ? "px-1 py-px text-[9px]" : "px-1.5 py-0.5 text-[10px]"
+      } ${
+        active
+          ? "bg-[#fbff2b] border-yellow-500 text-yellow-950"
+          : "border-dashed border-slate-300 text-slate-400 hover:border-yellow-400 hover:text-yellow-700"
+      }`}
+    >
+      Ampliar
+    </button>
   );
 }

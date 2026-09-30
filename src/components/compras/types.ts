@@ -37,6 +37,11 @@ export type PurchaseRow = {
   }>;
   receiptUrl: string | null;
   notes: string | null;
+  /**
+   * "Ampliar": el repuesto salió con el auto ya en el taller, sin estar
+   * presupuestado ni aprobado. Se marca en amarillo en todas las listas.
+   */
+  needsExtension: boolean;
   createdAt: string;
   updatedAt: string;
   // spec v3 · Compras directas (insumos/herramientas) sin item ni vehículo.

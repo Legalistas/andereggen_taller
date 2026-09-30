@@ -725,6 +725,15 @@ model Purchase {
   receiptUrl String?
   notes      String? @db.Text
 
+  /**
+   * spec Compras v5 · "Ampliar" — el repuesto apareció con el auto ya en el
+   * taller: no estaba presupuestado ni aprobado por el seguro, y hay que
+   * meterlo en una ampliación. La gestión suele hacerse después de que el
+   * auto se fue, así que el taller necesita verlo marcado en amarillo en
+   * todas las listas para no perderlo de vista.
+   */
+  needsExtension Boolean @default(false)
+
   createdById String?
   createdBy   User?    @relation("PurchaseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
