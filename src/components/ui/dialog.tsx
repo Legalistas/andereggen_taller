@@ -30,6 +30,15 @@ function DialogClose({
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
+/**
+ * Escala de capas de la app (para no volver a tapar un diálogo con otro):
+ *   z-50  · diálogos y sheets normales
+ *   z-60  · Administrativa (ocupa la pantalla entera)
+ *   z-70  · lo que se abre desde la Administrativa (detalle de compra, etc.)
+ *   z-80  · lo que se abre desde ahí (alta de pago)
+ *   z-100 · select, popover y dropdown — siempre arriba de todo, porque
+ *           pertenecen al formulario que los abrió
+ */
 function DialogOverlay({
   className,
   ...props
