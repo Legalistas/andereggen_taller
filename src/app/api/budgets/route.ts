@@ -20,12 +20,16 @@ export async function GET(request: Request) {
   const status = url.searchParams.get("status") as BudgetStatus | null;
   const dateFrom = url.searchParams.get("dateFrom");
   const dateTo = url.searchParams.get("dateTo");
+  // Origen del lead ("pautas", "whatsapp", "referido"…). Permite responder
+  // cuánto presupuestamos de lo que entró por publicidad.
+  const source = url.searchParams.get("source")?.trim() || null;
   const amountMin = url.searchParams.get("amountMin");
   const amountMax = url.searchParams.get("amountMax");
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
 
   const where: Prisma.BudgetWhereInput = {
     ...(status && STATUSES.includes(status) && { status }),
+    ...(source && { lead: { source } }),
     ...(dateFrom && { createdAt: { gte: new Date(dateFrom) } }),
     ...(dateTo && {
       createdAt: {
@@ -76,8 +80,17 @@ export async function GET(request: Request) {
       rejectedAt: true,
       createdAt: true,
       updatedAt: true,
+      // Fuente del lead: la columna "Origen" de Cotizaciones y su filtro.
+      lead: { select: { source: true } },
     },
   });
 
-  return NextResponse.json({ budgets });
+  // Aplanamos `lead.source` a `source` para que la fila del listado no tenga
+  // que conocer la forma de la relación.
+  return NextResponse.json({
+    budgets: budgets.map(({ lead, ...b }) => ({
+      ...b,
+      source: lead?.source ?? null,
+    })),
+  });
 }

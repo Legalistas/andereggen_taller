@@ -70,6 +70,8 @@ import type { BudgetStatus } from "../../../generated/prisma/client";
 type QuoteLite = {
   id: string;
   leadId: string;
+  /** Fuente del lead ("pautas", "whatsapp"…). null si el lead no la tiene. */
+  source: string | null;
   number: number;
   extensionSuffix?: number;
   parentBudgetId?: string | null;
@@ -191,6 +193,19 @@ export default function QuotesSection() {
   // Filtros de período: rango por días (rolling) o un mes calendario puntual.
   // El valor "month:YYYY-MM" filtra desde el primero del mes hasta el primero
   // del siguiente, así "todos los de mayo" da exactamente eso.
+  /**
+   * Origen del lead. Sirve sobre todo para aislar lo que entró por pautas y
+   * ver cuánto se presupuestó con eso.
+   */
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [leadSources, setLeadSources] = useState<
+    Array<{ key: string; label: string }>
+  >([]);
+  /** Muestra el label configurado; si la fuente ya no existe, el key crudo. */
+  const sourceLabel = useCallback(
+    (key: string) => leadSources.find((s) => s.key === key)?.label ?? key,
+    [leadSources],
+  );
   const [periodFilter, setPeriodFilter] = useState<
     "all" | "7d" | "30d" | "90d" | `month:${string}`
   >("all");
@@ -230,6 +245,7 @@ export default function QuotesSection() {
         const params = new URLSearchParams();
         if (search) params.set("search", search);
         if (statusFilter !== "all") params.set("status", statusFilter);
+        if (sourceFilter !== "all") params.set("source", sourceFilter);
         if (periodFilter !== "all") {
           if (periodFilter.startsWith("month:")) {
             // "month:2026-05" → del 01/05 al 01/06 (excluyente)
@@ -259,8 +275,19 @@ export default function QuotesSection() {
         setLoading(false);
       }
     },
-    [search, statusFilter, periodFilter],
+    [search, statusFilter, sourceFilter, periodFilter],
   );
+
+  // Fuentes configuradas (Settings → Fuentes de lead). Si todavía no hay
+  // ninguna cargada, el filtro queda con "Todos los orígenes" nada más.
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch("/api/lead-sources?active=1", { signal: ac.signal })
+      .then((r) => r.json())
+      .then((body) => setLeadSources(body.sources ?? []))
+      .catch(() => {});
+    return () => ac.abort();
+  }, []);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -531,7 +558,7 @@ export default function QuotesSection() {
             Recargar
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
           <div className="grid gap-1.5">
             <Label className="text-xs text-muted-foreground">Estado</Label>
             <Select
@@ -548,6 +575,22 @@ export default function QuotesSection() {
                 <SelectItem value="accepted">Aceptado</SelectItem>
                 <SelectItem value="rejected">Rechazado</SelectItem>
                 <SelectItem value="expired">Vencido</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label className="text-xs text-muted-foreground">Origen</Label>
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los orígenes</SelectItem>
+                {leadSources.map((s) => (
+                  <SelectItem key={s.key} value={s.key}>
+                    {s.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -651,6 +694,14 @@ export default function QuotesSection() {
                     <div className="text-xs text-muted-foreground">
                       {q.customerEmail}
                     </div>
+                    {/* Origen del lead — sin columna propia para no ensanchar
+                        la tabla; con el filtro arriba alcanza para aislar,
+                        por ejemplo, todo lo que entró por pautas. */}
+                    {q.source && (
+                      <span className="mt-0.5 inline-block text-[10px] uppercase tracking-wider text-slate-500 bg-slate-100 rounded px-1.5 py-px">
+                        {sourceLabel(q.source)}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1 text-sm">
