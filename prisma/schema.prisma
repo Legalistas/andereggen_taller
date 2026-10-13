@@ -65,6 +65,7 @@ model User {
   repairInvoicePaymentsCreated RepairInvoicePayment[] @relation("RepairInvoicePaymentCreatedBy")
   cashMovementsCreated         CashMovement[]         @relation("CashMovementCreatedBy")
   pendingCashPaymentsCreated   PendingCashPayment[]   @relation("PendingCashPaymentCreatedBy")
+  cardPurchasesCreated         CardPurchase[]         @relation("CardPurchaseCreatedBy")
   monthlyKpiEntriesCreated     MonthlyKpiEntry[]      @relation("MonthlyKpiEntryCreatedBy")
   purchasesCreated             Purchase[]             @relation("PurchaseCreatedBy")
   purchasePaymentsCreated      PurchasePayment[]      @relation("PurchasePaymentCreatedBy")
@@ -1584,6 +1585,9 @@ model CashMovement {
   purchaseFreightPayment Purchase?        @relation("PurchaseFreightPayment")
   // spec v3 · Pagos parciales de Purchase (reemplazan a los dos de arriba).
   purchasePartialPayment PurchasePayment? @relation("PurchasePartialPayment")
+  // spec Tarjetas oct '26 · Si este EGRESO es el pago de un resumen de
+  // tarjeta, las cuotas que pagó.
+  cardInstallments       CardInstallment[] @relation("CardInstallmentPayment")
 
   @@index([cashBoxId])
   @@index([paidAt])
@@ -1633,6 +1637,83 @@ model PendingCashPayment {
   @@index([cashBoxId])
   @@index([status])
   @@index([dueDate])
+}
+
+// spec Tarjetas oct '26 · Compras con tarjeta de crédito en cuotas.
+// Reemplaza el Excel que se llevaba aparte. Una compra con tarjeta NO sale
+// de ninguna caja cuando se hace: genera sus cuotas, una por resumen (mes).
+// Al pagar un resumen se crea el CashMovement EGRESO real en la caja elegida
+// y sus cuotas quedan pagadas.
+model CreditCard {
+  id         String    @id @default(uuid())
+  name       String
+  /**
+   * Una tarjeta archivada deja de ofrecerse para cargar compras; el
+   * historial no se toca.
+   */
+  archivedAt DateTime?
+
+  purchases    CardPurchase[]
+  installments CardInstallment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CardPurchase {
+  id           String     @id @default(uuid())
+  creditCardId String
+  creditCard   CreditCard @relation(fields: [creditCardId], references: [id])
+  amount       Decimal    @db.Decimal(14, 2)
+  /**
+   * Rubro, del mismo catálogo que los egresos de caja ("Insumos",
+   * "Impuestos · Luz", …).
+   */
+  concept      String
+  /**
+   * Proveedor y producto / detalle: para conciliar contra el resumen.
+   */
+  supplier     String?
+  notes        String?    @db.Text
+  reference    String?
+  purchasedAt  DateTime
+
+  installments CardInstallment[]
+
+  createdById String?
+  createdBy   User?    @relation("CardPurchaseCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([creditCardId])
+  @@index([purchasedAt])
+}
+
+model CardInstallment {
+  id           String       @id @default(uuid())
+  purchaseId   String
+  purchase     CardPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  creditCardId String
+  creditCard   CreditCard   @relation(fields: [creditCardId], references: [id])
+  number       Int
+  total        Int
+  /**
+   * Resumen en el que cae la cuota: "AAAA-MM".
+   */
+  period       String
+  amount       Decimal      @db.Decimal(14, 2)
+
+  /**
+   * EGRESO de caja que pagó el resumen. Null = cuota pendiente. Si ese
+   * movimiento se borra, la cuota vuelve a pendiente.
+   */
+  movementId String?
+  movement   CashMovement? @relation("CardInstallmentPayment", fields: [movementId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([creditCardId, period])
+  @@index([purchaseId])
+  @@index([movementId])
 }
 
 // spec KPIs jul '26 · Valores MANUALES del tablero de KPIs.

@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import CardsPanel from "./cards-panel";
 import CollectionsTable from "./collections-table";
 import GeneralPanel from "./general-panel";
 
@@ -196,6 +197,7 @@ export default function CajaSection() {
         <TabsList>
           <TabsTrigger value="general">Caja general</TabsTrigger>
           <TabsTrigger value="cobros">Cobros por vehículo</TabsTrigger>
+          <TabsTrigger value="tarjetas">Tarjetas</TabsTrigger>
         </TabsList>
         <TabsContent value="general" className="mt-4">
           <GeneralPanel
@@ -206,6 +208,9 @@ export default function CajaSection() {
         </TabsContent>
         <TabsContent value="cobros" className="mt-4">
           <CollectionsTable byInsurance={data?.byInsurance ?? []} />
+        </TabsContent>
+        <TabsContent value="tarjetas" className="mt-4">
+          <CardsPanel boxes={data?.boxes ?? []} onReload={() => fetchBoxes()} />
         </TabsContent>
       </Tabs>
 

@@ -1,0 +1,112 @@
+/**
+ * POST /api/caja/cards/[id]/pay
+ *
+ * spec Tarjetas oct '26 · Paga un resumen de la tarjeta. Crea un
+ * CashMovement EGRESO en la caja elegida por la suma de las cuotas de ese
+ * resumen y las deja pagadas (apuntando a ese movimiento). Todo atómico.
+ *
+ * Body: { cashBoxId, paidAt?: ISO, period?: "AAAA-MM", method? }
+ * Sin `period` se paga todo lo que la tarjeta tiene pendiente.
+ */
+
+import { NextResponse } from "next/server";
+import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { PERIODO } from "@/lib/cuotas";
+import { prisma } from "@/lib/prisma";
+import type { PaymentMethod } from "../../../../../../../generated/prisma/client";
+
+type RouteContext = { params: Promise<{ id: string }> };
+
+const VALID_METHODS: PaymentMethod[] = [
+  "EFECTIVO",
+  "TRANSFERENCIA",
+  "CHEQUE",
+  "TARJETA",
+  "MERCADOPAGO",
+  "OTRO",
+];
+
+export async function POST(request: Request, ctx: RouteContext) {
+  const authError = await verifyAuth(request);
+  if (authError) return authError;
+  const session = await getServerSession();
+  const { id } = await ctx.params;
+
+  const body = await request.json().catch(() => null);
+  const { cashBoxId, paidAt, period, method } = (body ?? {}) as Record<
+    string,
+    unknown
+  >;
+
+  if (typeof cashBoxId !== "string" || !cashBoxId) {
+    return NextResponse.json({ error: "Caja es obligatoria" }, { status: 400 });
+  }
+  if (period !== undefined && period !== null && period !== "") {
+    if (typeof period !== "string" || !PERIODO.test(period)) {
+      return NextResponse.json(
+        { error: "El resumen es inválido" },
+        { status: 400 },
+      );
+    }
+  }
+  const resumen = typeof period === "string" && period ? period : null;
+  const m: PaymentMethod =
+    method && VALID_METHODS.includes(method as PaymentMethod)
+      ? (method as PaymentMethod)
+      : "TRANSFERENCIA";
+
+  const [card, box] = await Promise.all([
+    prisma.creditCard.findUnique({ where: { id } }),
+    prisma.cashBox.findUnique({ where: { id: cashBoxId } }),
+  ]);
+  if (!card) {
+    return NextResponse.json(
+      { error: "Tarjeta no encontrada" },
+      { status: 404 },
+    );
+  }
+  if (!box) {
+    return NextResponse.json({ error: "Caja no encontrada" }, { status: 404 });
+  }
+
+  const pendientes = await prisma.cardInstallment.findMany({
+    where: {
+      creditCardId: id,
+      movementId: null,
+      ...(resumen ? { period: resumen } : {}),
+    },
+    select: { id: true, amount: true },
+  });
+  const total =
+    Math.round(pendientes.reduce((s, c) => s + Number(c.amount), 0) * 100) /
+    100;
+  if (total <= 0) {
+    return NextResponse.json(
+      { error: "No hay cuotas pendientes para pagar" },
+      { status: 400 },
+    );
+  }
+
+  const movement = await prisma.$transaction(async (tx) => {
+    const pago = await tx.cashMovement.create({
+      data: {
+        cashBoxId,
+        type: "EGRESO",
+        amount: total,
+        method: m,
+        concept: `Resumen tarjeta ${card.name}`,
+        notes: `${resumen ? `Resumen ${resumen}` : "Todo lo pendiente"} · ${pendientes.length} cuota${pendientes.length === 1 ? "" : "s"}`,
+        paidAt:
+          typeof paidAt === "string" && paidAt ? new Date(paidAt) : new Date(),
+        createdById: session?.user?.id ?? null,
+      },
+    });
+    await tx.cardInstallment.updateMany({
+      where: { id: { in: pendientes.map((c) => c.id) } },
+      data: { movementId: pago.id },
+    });
+    return pago;
+  });
+
+  return NextResponse.json({ movement, total }, { status: 201 });
+}

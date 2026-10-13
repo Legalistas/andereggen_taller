@@ -18,6 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  MAX_CUOTAS,
+  periodoDe,
+  repartirCuotas,
+  sumarMeses,
+} from "@/lib/cuotas";
 import type { CashBoxSummary } from "./caja-section";
 
 /**
@@ -125,6 +131,23 @@ export default function MovementDialog({
   // en vez de INGRESO / EGRESO.
   const [isPase, setIsPase] = useState(false);
 
+  // spec Tarjetas oct '26 · Un EGRESO con método "Tarjeta" puede ser una
+  // compra con tarjeta de crédito: no sale de la caja ahora, genera cuotas y
+  // la plata sale al pagar cada resumen (pestaña Tarjetas).
+  const [cards, setCards] = useState<{ id: string; name: string }[]>([]);
+  const [cardId, setCardId] = useState("");
+  const [cuotas, setCuotas] = useState("1");
+  // Vacío = el resumen del mes siguiente a la compra.
+  const [primerResumen, setPrimerResumen] = useState("");
+  const [supplier, setSupplier] = useState("");
+  useEffect(() => {
+    if (type !== "EGRESO") return;
+    fetch("/api/caja/cards")
+      .then((r) => (r.ok ? r.json() : { cards: [] }))
+      .then((d: { cards: { id: string; name: string }[] }) => setCards(d.cards))
+      .catch(() => setCards([]));
+  }, [type]);
+
   // spec v2 · Para INGRESO opcional: vincular el cobro a un vehículo por
   // N° interno. Si se vincula y se elige una factura, el ingreso se
   // registra como RepairInvoicePayment (aparece en Caja + en la ficha del
@@ -231,11 +254,43 @@ export default function MovementDialog({
       : "PASE_OUT"
     : type;
 
+  const payingWithCard =
+    type === "EGRESO" && !isPase && method === "TARJETA" && !!cardId;
+  const cuotasNum = Math.min(
+    MAX_CUOTAS,
+    Math.max(1, Math.trunc(Number(cuotas)) || 1),
+  );
+  const resumenPorDefecto = sumarMeses(
+    periodoDe(new Date(`${paidAt}T12:00:00`)),
+    1,
+  );
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      if (willLinkToRepair) {
+      if (payingWithCard) {
+        // Compra con tarjeta de crédito → cuotas, sin CashMovement.
+        const res = await fetch("/api/caja/card-purchases", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            creditCardId: cardId,
+            amount: Number(amount),
+            concept,
+            supplier: supplier.trim() || null,
+            notes: notes.trim() || null,
+            reference: reference.trim() || null,
+            purchasedAt: localNoonISO(paidAt),
+            installments: cuotasNum,
+            firstPeriod: primerResumen || resumenPorDefecto,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error ?? `HTTP ${res.status}`);
+        }
+      } else if (willLinkToRepair) {
         // Cobro vinculado a factura del cliente → aparece en Caja + ficha.
         const res = await fetch(
           `/api/repair-invoices/${selectedInvoiceId}/payments`,
@@ -373,6 +428,81 @@ export default function MovementDialog({
             </div>
           </div>
 
+          {/* spec Tarjetas oct '26 · Compra con tarjeta de crédito en cuotas. */}
+          {type === "EGRESO" &&
+            !isPase &&
+            method === "TARJETA" &&
+            cards.length > 0 && (
+              <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-2.5">
+                <div className="grid gap-1">
+                  <Label className="text-xs">Tarjeta de crédito</Label>
+                  <Select
+                    value={cardId || "__ninguna__"}
+                    onValueChange={(v) =>
+                      setCardId(v === "__ninguna__" ? "" : v)
+                    }
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__ninguna__">
+                        No: sale de la caja ahora
+                      </SelectItem>
+                      {cards.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {payingWithCard && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Cuotas</Label>
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={MAX_CUOTAS}
+                          className="bg-white"
+                          value={cuotas}
+                          onChange={(e) => setCuotas(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Primer resumen</Label>
+                        <Input
+                          type="month"
+                          className="bg-white"
+                          value={primerResumen || resumenPorDefecto}
+                          onChange={(e) => setPrimerResumen(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Proveedor</Label>
+                      <Input
+                        className="bg-white"
+                        value={supplier}
+                        onChange={(e) => setSupplier(e.target.value)}
+                        placeholder="A quién se le compró"
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      {cuotasNum > 1 && Number(amount) > 0
+                        ? `${cuotasNum} cuotas de ${repartirCuotas(Number(amount), cuotasNum)[0].toLocaleString("es-AR", { style: "currency", currency: "ARS" })}, una por resumen. `
+                        : ""}
+                      No sale de ninguna caja ahora: sale al pagar cada resumen
+                      en la pestaña Tarjetas.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
           {/* spec v2 · Vinculador con vehículo por N° interno (solo INGRESO).
               Si el ingreso corresponde al cobro de un cliente, se guarda como
               RepairInvoicePayment y aparece también en "Facturación y cobros"
@@ -418,9 +548,9 @@ export default function MovementDialog({
                   {linkedRepair.invoices.length === 0 ? (
                     <p className="text-[11px] text-amber-700">
                       Este vehículo todavía no tiene facturas cargadas. El
-                      ingreso se guardará como movimiento libre — para
-                      impactar en "Facturación y cobros" primero creá la
-                      factura desde la ficha del vehículo.
+                      ingreso se guardará como movimiento libre — para impactar
+                      en "Facturación y cobros" primero creá la factura desde la
+                      ficha del vehículo.
                     </p>
                   ) : (
                     <div className="grid gap-1">
@@ -435,7 +565,9 @@ export default function MovementDialog({
                         <SelectContent>
                           {linkedRepair.invoices.map((inv) => (
                             <SelectItem key={inv.id} value={inv.id}>
-                              #{inv.number} — total ${inv.amount.toLocaleString("es-AR")} · saldo ${inv.remaining.toLocaleString("es-AR")}
+                              #{inv.number} — total $
+                              {inv.amount.toLocaleString("es-AR")} · saldo $
+                              {inv.remaining.toLocaleString("es-AR")}
                             </SelectItem>
                           ))}
                         </SelectContent>
