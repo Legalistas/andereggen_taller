@@ -18,12 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  MAX_CUOTAS,
-  periodoDe,
-  repartirCuotas,
-  sumarMeses,
-} from "@/lib/cuotas";
+import { MAX_CUOTAS, periodoPrimeraCuota, repartirCuotas } from "@/lib/cuotas";
 import type { CashBoxSummary } from "./caja-section";
 
 /**
@@ -56,7 +51,7 @@ const METHODS = [
 // Algunos conceptos tienen sub-categoría (ej. Impuestos → Luz / Agua / …).
 // Cuando el concepto elegido tiene subs, el `concept` guardado queda como
 // `"<Concepto> · <Sub>"` para que filtrar por texto siga funcionando.
-const EGRESO_CONCEPTS = [
+export const EGRESO_CONCEPTS = [
   "Sueldos",
   "Flete",
   "Aportes entidades",
@@ -134,17 +129,19 @@ export default function MovementDialog({
   // spec Tarjetas oct '26 · Un EGRESO con método "Tarjeta" puede ser una
   // compra con tarjeta de crédito: no sale de la caja ahora, genera cuotas y
   // la plata sale al pagar cada resumen (pestaña Tarjetas).
-  const [cards, setCards] = useState<{ id: string; name: string }[]>([]);
+  const [cards, setCards] = useState<
+    { id: string; name: string; closingDay: number | null }[]
+  >([]);
   const [cardId, setCardId] = useState("");
   const [cuotas, setCuotas] = useState("1");
-  // Vacío = el resumen del mes siguiente a la compra.
+  // Vacío = el resumen que le toca según el día de cierre de la tarjeta.
   const [primerResumen, setPrimerResumen] = useState("");
   const [supplier, setSupplier] = useState("");
   useEffect(() => {
     if (type !== "EGRESO") return;
     fetch("/api/caja/cards")
       .then((r) => (r.ok ? r.json() : { cards: [] }))
-      .then((d: { cards: { id: string; name: string }[] }) => setCards(d.cards))
+      .then((d) => setCards(d.cards))
       .catch(() => setCards([]));
   }, [type]);
 
@@ -260,9 +257,9 @@ export default function MovementDialog({
     MAX_CUOTAS,
     Math.max(1, Math.trunc(Number(cuotas)) || 1),
   );
-  const resumenPorDefecto = sumarMeses(
-    periodoDe(new Date(`${paidAt}T12:00:00`)),
-    1,
+  const resumenPorDefecto = periodoPrimeraCuota(
+    new Date(`${paidAt}T00:00:00.000Z`),
+    cards.find((c) => c.id === cardId)?.closingDay ?? null,
   );
 
   const handleSave = async () => {
@@ -283,7 +280,7 @@ export default function MovementDialog({
             reference: reference.trim() || null,
             purchasedAt: localNoonISO(paidAt),
             installments: cuotasNum,
-            firstPeriod: primerResumen || resumenPorDefecto,
+            firstPeriod: primerResumen || undefined,
           }),
         });
         if (!res.ok) {

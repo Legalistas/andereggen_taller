@@ -1648,6 +1648,14 @@ model CreditCard {
   id         String    @id @default(uuid())
   name       String
   /**
+   * Día del mes en que cierra el resumen y día en que vence (1-31). Igual
+   * que en el backoffice de Legalistas: una compra hecha hasta el día de
+   * cierre entra en el resumen de ese mes; después, en el del siguiente.
+   * Sin día de cierre, la primera cuota va al mes siguiente a la compra.
+   */
+  closingDay Int?
+  dueDay     Int?
+  /**
    * Una tarjeta archivada deja de ofrecerse para cargar compras; el
    * historial no se toca.
    */
@@ -1700,6 +1708,11 @@ model CardInstallment {
    * Resumen en el que cae la cuota: "AAAA-MM".
    */
   period       String
+  /**
+   * Vencimiento del resumen en el que cae (según los días de la tarjeta al
+   * cargar la compra).
+   */
+  dueDate      DateTime
   amount       Decimal      @db.Decimal(14, 2)
 
   /**

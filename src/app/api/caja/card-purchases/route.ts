@@ -2,11 +2,15 @@
  * POST /api/caja/card-purchases
  *
  * spec Tarjetas oct '26 · Registra una compra con tarjeta de crédito y arma
- * sus cuotas (una por resumen). No crea ningún CashMovement: la plata sale
- * de una caja recién cuando se paga cada resumen (/api/caja/cards/[id]/pay).
+ * sus cuotas (una por resumen), con las mismas reglas que el backoffice de
+ * Legalistas: el primer resumen sale del día de cierre de la tarjeta y cada
+ * cuota lleva el vencimiento de su resumen. No crea ningún CashMovement: la
+ * plata sale de una caja recién cuando se paga cada resumen
+ * (/api/caja/cards/[id]/pay).
  *
  * Body: { creditCardId, amount, concept, supplier?, notes?, reference?,
- *         purchasedAt?: ISO, installments?: 1..36, firstPeriod?: "AAAA-MM" }
+ *         purchasedAt?: ISO, installments?: 1..60, firstPeriod?: "AAAA-MM" }
+ * `firstPeriod` es para corregir a mano el resumen de la primera cuota.
  */
 
 import { NextResponse } from "next/server";
@@ -108,6 +112,8 @@ export async function POST(request: Request) {
           fecha,
           total,
           cuotas,
+          diaCierre: card.closingDay,
+          diaVencimiento: card.dueDay,
           primerPeriodo:
             typeof firstPeriod === "string" && firstPeriod
               ? firstPeriod

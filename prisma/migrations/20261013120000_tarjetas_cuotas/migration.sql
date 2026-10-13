@@ -1,12 +1,16 @@
 -- spec Tarjetas oct '26 · Compras con tarjeta de crédito en cuotas
--- (Requerimientos, sección M, puntos 50 y 51). Tres tablas nuevas: las
--- tarjetas, las compras y sus cuotas. Una cuota queda pagada cuando apunta
--- al EGRESO de caja que pagó su resumen. Solo agrega: no toca nada existente.
+-- (Requerimientos, sección M, puntos 50 y 51), con el mismo esquema que el
+-- backoffice de Legalistas: cada tarjeta con su día de cierre y de
+-- vencimiento, cada compra con sus cuotas, y cada cuota en un resumen (mes)
+-- con su vencimiento. Una cuota queda pagada cuando apunta al EGRESO de caja
+-- que pagó su resumen. Solo agrega: no toca nada existente.
 
 -- CreateTable
 CREATE TABLE "CreditCard" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "closingDay" INTEGER,
+    "dueDay" INTEGER,
     "archivedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -38,6 +42,7 @@ CREATE TABLE "CardInstallment" (
     "number" INTEGER NOT NULL,
     "total" INTEGER NOT NULL,
     "period" TEXT NOT NULL,
+    "dueDate" TIMESTAMP(3) NOT NULL,
     "amount" DECIMAL(14,2) NOT NULL,
     "movementId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

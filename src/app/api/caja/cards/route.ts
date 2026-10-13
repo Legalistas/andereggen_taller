@@ -4,11 +4,12 @@
  *
  * spec Tarjetas oct '26 · Las compras con tarjeta no salen de ninguna caja
  * hasta que se paga el resumen. Acá se ve cuánto hay pendiente en cada
- * tarjeta y en qué resumen (mes) cae.
+ * tarjeta, en qué resumen (mes) cae y cuándo vence.
  */
 
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
+import { leerDia } from "@/lib/cuotas";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
       by: ["creditCardId", "period"],
       where: { movementId: null },
       _sum: { amount: true },
+      _min: { dueDate: true },
       _count: true,
       orderBy: { period: "asc" },
     }),
@@ -36,12 +38,15 @@ export async function GET(request: Request) {
         .filter((p) => p.creditCardId === card.id)
         .map((p) => ({
           period: p.period,
+          dueDate: p._min.dueDate?.toISOString() ?? null,
           amount: Number(p._sum.amount ?? 0),
           count: p._count,
         }));
       return {
         id: card.id,
         name: card.name,
+        closingDay: card.closingDay,
+        dueDay: card.dueDay,
         archived: card.archivedAt !== null,
         pendingAmount: statements.reduce((s, r) => s + r.amount, 0),
         pendingCount: statements.reduce((s, r) => s + r.count, 0),
@@ -63,7 +68,17 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  const closingDay = leerDia(body?.closingDay);
+  const dueDay = leerDia(body?.dueDay);
+  if (closingDay === undefined || dueDay === undefined) {
+    return NextResponse.json(
+      { error: "El día de cierre y el de vencimiento van de 1 a 31" },
+      { status: 400 },
+    );
+  }
 
-  const card = await prisma.creditCard.create({ data: { name } });
+  const card = await prisma.creditCard.create({
+    data: { name, closingDay, dueDay },
+  });
   return NextResponse.json({ card }, { status: 201 });
 }

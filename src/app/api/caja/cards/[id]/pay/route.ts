@@ -2,11 +2,13 @@
  * POST /api/caja/cards/[id]/pay
  *
  * spec Tarjetas oct '26 · Paga un resumen de la tarjeta. Crea un
- * CashMovement EGRESO en la caja elegida por la suma de las cuotas de ese
- * resumen y las deja pagadas (apuntando a ese movimiento). Todo atómico.
+ * CashMovement EGRESO en la caja elegida y deja pagadas las cuotas de ese
+ * resumen (apuntando a ese movimiento). Todo atómico.
  *
- * Body: { cashBoxId, paidAt?: ISO, period?: "AAAA-MM", method? }
- * Sin `period` se paga todo lo que la tarjeta tiene pendiente.
+ * Body: { cashBoxId, paidAt?: ISO, period?: "AAAA-MM", amount?, method? }
+ * Sin `period` se paga todo lo que la tarjeta tiene pendiente. `amount`
+ * puede ser mayor a la suma de las cuotas (intereses o cargos del resumen),
+ * nunca menor; sin `amount` se paga esa suma.
  */
 
 import { NextResponse } from "next/server";
@@ -26,6 +28,8 @@ const VALID_METHODS: PaymentMethod[] = [
   "OTRO",
 ];
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
 export async function POST(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
   if (authError) return authError;
@@ -33,7 +37,7 @@ export async function POST(request: Request, ctx: RouteContext) {
   const { id } = await ctx.params;
 
   const body = await request.json().catch(() => null);
-  const { cashBoxId, paidAt, period, method } = (body ?? {}) as Record<
+  const { cashBoxId, paidAt, period, amount, method } = (body ?? {}) as Record<
     string,
     unknown
   >;
@@ -77,9 +81,7 @@ export async function POST(request: Request, ctx: RouteContext) {
     },
     select: { id: true, amount: true },
   });
-  const total =
-    Math.round(pendientes.reduce((s, c) => s + Number(c.amount), 0) * 100) /
-    100;
+  const total = r2(pendientes.reduce((s, c) => s + Number(c.amount), 0));
   if (total <= 0) {
     return NextResponse.json(
       { error: "No hay cuotas pendientes para pagar" },
@@ -87,15 +89,29 @@ export async function POST(request: Request, ctx: RouteContext) {
     );
   }
 
+  const pagado =
+    amount === undefined || amount === null || amount === ""
+      ? total
+      : r2(Number(amount));
+  if (!Number.isFinite(pagado) || pagado < total - 0.01) {
+    return NextResponse.json(
+      {
+        error: `El pago tiene que cubrir las cuotas del resumen (${total.toFixed(2)})`,
+      },
+      { status: 400 },
+    );
+  }
+  const cargos = r2(pagado - total);
+
   const movement = await prisma.$transaction(async (tx) => {
     const pago = await tx.cashMovement.create({
       data: {
         cashBoxId,
         type: "EGRESO",
-        amount: total,
+        amount: pagado,
         method: m,
         concept: `Resumen tarjeta ${card.name}`,
-        notes: `${resumen ? `Resumen ${resumen}` : "Todo lo pendiente"} · ${pendientes.length} cuota${pendientes.length === 1 ? "" : "s"}`,
+        notes: `${resumen ? `Resumen ${resumen}` : "Todo lo pendiente"} · ${pendientes.length} cuota${pendientes.length === 1 ? "" : "s"}${cargos > 0 ? ` + ${cargos.toFixed(2)} de cargos` : ""}`,
         paidAt:
           typeof paidAt === "string" && paidAt ? new Date(paidAt) : new Date(),
         createdById: session?.user?.id ?? null,
@@ -108,5 +124,5 @@ export async function POST(request: Request, ctx: RouteContext) {
     return pago;
   });
 
-  return NextResponse.json({ movement, total }, { status: 201 });
+  return NextResponse.json({ movement, total, cargos }, { status: 201 });
 }
