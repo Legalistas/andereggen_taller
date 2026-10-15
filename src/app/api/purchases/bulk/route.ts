@@ -14,10 +14,10 @@
  *
  * Reglas por compra:
  *  - Nunca retrocede: una compra ya recibida no vuelve a "En camino".
- *  - "receive" archiva la compra si no queda saldo pendiente y la manda a
- *    "Pendiente de pago" si debe algo — el mismo criterio que el alta de un
- *    pago. Si el Repair todavía no tiene `partsReceivedAt`, se lo setea
- *    (dispara "Repuestos recibidos" en Producción).
+ *  - "receive" deja la compra en "En taller". Nunca archiva: archivar es
+ *    manual, así el repuesto sigue a la vista de todo el equipo aunque ya
+ *    esté pagado. Si el Repair todavía no tiene `partsReceivedAt`, se lo
+ *    setea (dispara "Repuestos recibidos" en Producción).
  *  - Las que siguen en "Cotizar" (y en "Definir", para recibir) se saltean:
  *    todavía no se compraron y marcarlas sería un error de selección.
  */
@@ -86,7 +86,6 @@ export async function POST(request: Request) {
       freightAmount: true,
       purchasedAt: true,
       receivedAt: true,
-      payments: { select: { kind: true, amount: true } },
       item: {
         select: {
           budget: {
@@ -118,7 +117,6 @@ export async function POST(request: Request) {
   const skipped = purchases.length - eligible.length;
 
   let updated = 0;
-  let archived = 0;
 
   await prisma.$transaction(async (tx) => {
     // Varias compras del mismo vehículo: la fecha de "repuestos recibidos"
@@ -141,32 +139,16 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const paidParts = p.payments
-        .filter((x) => x.kind === "PARTS")
-        .reduce((s, x) => s + Number(x.amount), 0);
-      const paidFreight = p.payments
-        .filter((x) => x.kind === "FREIGHT")
-        .reduce((s, x) => s + Number(x.amount), 0);
-
-      // Mismo margen de 1 centavo que usa el alta de pagos, para que un
-      // redondeo no deje la compra abierta para siempre.
-      const partsCovered =
-        Number(p.amount) === 0 || paidParts + 0.01 >= Number(p.amount);
-      const freightCovered =
-        Number(p.freightAmount) === 0 ||
-        paidFreight + 0.01 >= Number(p.freightAmount);
-      const fullyPaid = partsCovered && freightCovered;
-
+      // Una ya archivada o pendiente de pago no retrocede; el resto queda
+      // "En taller", pagada o no. Archivar es decisión del usuario.
       await tx.purchase.update({
         where: { id: p.id },
         data: {
           receivedAt: p.receivedAt ?? when,
-          status: fullyPaid ? "ARCHIVADA" : "PENDIENTE_PAGO",
-          ...(fullyPaid && { archivedAt: when }),
+          ...(AFTER_RECEPTION.includes(p.status) ? {} : { status: "EN_TALLER" }),
         },
       });
       updated += 1;
-      if (fullyPaid) archived += 1;
 
       const repair = p.item?.budget?.repair ?? p.budget?.repair;
       if (repair && !repair.partsReceivedAt && !repairsTouched.has(repair.id)) {
@@ -182,7 +164,6 @@ export async function POST(request: Request) {
   return NextResponse.json({
     action,
     updated,
-    archived,
     skipped,
     date: when.toISOString(),
   });

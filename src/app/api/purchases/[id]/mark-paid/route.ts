@@ -188,23 +188,17 @@ export async function POST(request: Request, ctx: RouteContext) {
     if (kind === "PARTS") patch.paidPartsAt = when;
     if (kind === "FREIGHT") patch.paidFreightAt = when;
 
-    // spec Compras v4 · Pagar no archiva si el repuesto todavía no llegó.
-    // En el taller es habitual pagar por adelantado (lo coordina Alfredo) y
-    // con la regla vieja la compra se archivaba al cargar el pago: el
-    // repuesto seguía viajando y ya no lo veía nadie. Ahora la compra se
-    // queda en su etapa (Comprar / En camino / Seguro) y se archiva recién
-    // cuando se marca como recibida sin saldo pendiente.
+    // spec Compras v5 · Pagar NUNCA archiva. Se paga por adelantado (lo
+    // coordina Alfredo) y el repuesto tiene que seguir a la vista de todo el
+    // equipo hasta que alguien lo archive a mano: un portón pagado que se
+    // archivaba solo aparecía en Caja pero nadie más lo veía.
+    // Lo único que cambia de estado es el saldo: llegó y debe → "Pendiente
+    // de pago"; estaba ahí y se canceló → vuelve a "En taller".
     const alreadyReceived = purchase.receivedAt !== null;
-
-    if (partsCovered && freightCovered) {
-      if (alreadyReceived) {
-        patch.status = "ARCHIVADA";
-        patch.archivedAt = when;
-      }
-      // Pagada pero sin llegar: no se toca el estado.
-    } else if (alreadyReceived) {
-      // Llegó y queda saldo → al tab "Pendiente de pago".
+    if (alreadyReceived && !(partsCovered && freightCovered)) {
       patch.status = "PENDIENTE_PAGO";
+    } else if (purchase.status === "PENDIENTE_PAGO") {
+      patch.status = "EN_TALLER";
     }
 
     await tx.purchase.update({ where: { id }, data: patch });
