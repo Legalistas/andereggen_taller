@@ -185,11 +185,11 @@ export async function GET(request: Request) {
 }
 
 /**
- * POST /api/repairs — crea una reparación directa (spec 5.1) o desde Budget.
- * Body:
- *  - Modo directo: { directCreation: true, customerId, vehicleId?, reason, ... }
- *    — usa customer+vehicle existentes y copia snapshot.
- *  - Modo desde budget: { budgetId } — crea el snapshot desde el budget aceptado.
+ * POST /api/repairs — crea la reparación a partir de un presupuesto ganado.
+ * Body: { budgetId, assignedMechanicId?, scheduledAt?, estimatedDeliveryAt?, notes? }
+ *
+ * spec Producción v6 · El modo directo (sin presupuesto) se dio de baja: todo
+ * ingreso, incluso por grúa, se carga como cotización y pasa por Ganado.
  */
 export async function POST(request: Request) {
   const authError = await verifyAuth(request);
@@ -201,48 +201,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const {
-    budgetId,
-    customerId,
-    vehicleId,
-    newCustomer,
-    newVehicle,
-    reason,
-    assignedMechanicId,
-    scheduledAt,
-    estimatedDeliveryAt,
-    notes,
-  } = body as {
-    budgetId?: string;
-    customerId?: string;
-    vehicleId?: string | null;
-    newCustomer?: {
-      name: string;
-      email: string;
-      phone: string;
-      dni?: string;
-      dniType?: string;
-    } | null;
-    newVehicle?: {
-      brand: string;
-      model: string;
-      year: string;
-      domain: string;
-      chassis?: string;
-      /** Color del vehículo — se carga al ingresar y sale en la Ficha Técnica. */
-      color?: string;
-      perladoTricapa?: boolean;
-      secure?: string;
-      thirdPartySecure?: string;
-      coverageType?: "todo_riesgo" | "terceros" | null;
-      franchise?: number | string | null;
-    } | null;
-    reason?: string;
-    assignedMechanicId?: string | null;
-    scheduledAt?: string | null;
-    estimatedDeliveryAt?: string | null;
-    notes?: string | null;
-  };
+  const { budgetId, assignedMechanicId, scheduledAt, estimatedDeliveryAt, notes } =
+    body as {
+      budgetId?: string;
+      assignedMechanicId?: string | null;
+      scheduledAt?: string | null;
+      estimatedDeliveryAt?: string | null;
+      notes?: string | null;
+    };
 
   // ────── Modo desde Budget ──────
   if (budgetId) {
@@ -318,246 +284,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ repair }, { status: 201 });
   }
 
-  // ────── Modo directo (spec 5.1) ──────
-  // Cubre 3 casos:
-  //  a) customerId existente + vehicleId existente
-  //  b) customerId existente + newVehicle (vehículo nuevo del cliente)
-  //  c) newCustomer + newVehicle (cliente y vehículo nuevos)
-  if (!customerId && !newCustomer) {
-    return NextResponse.json(
-      { error: "customerId o newCustomer son requeridos" },
-      { status: 400 },
-    );
-  }
-
-  // Validaciones de newCustomer / newVehicle
-  if (newCustomer) {
-    if (!newCustomer.name || !newCustomer.email || !newCustomer.phone) {
-      return NextResponse.json(
-        { error: "newCustomer requiere name, email y phone" },
-        { status: 400 },
-      );
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newCustomer.email.trim())) {
-      return NextResponse.json(
-        { error: "Email del cliente inválido" },
-        { status: 400 },
-      );
-    }
-  }
-  if (newVehicle) {
-    if (
-      !newVehicle.brand ||
-      !newVehicle.model ||
-      !newVehicle.year ||
-      !newVehicle.domain
-    ) {
-      return NextResponse.json(
-        { error: "newVehicle requiere brand, model, year y domain" },
-        { status: 400 },
-      );
-    }
-  }
-  // Si es cliente nuevo, también necesita vehículo nuevo (no hay vehicleId
-  // existente posible para él).
-  if (newCustomer && !newVehicle) {
-    return NextResponse.json(
-      { error: "Cliente nuevo requiere también newVehicle" },
-      { status: 400 },
-    );
-  }
-
-  // Todo en una transacción para garantizar atomicidad
-  let repair: Awaited<ReturnType<typeof prisma.repair.create>>;
-  try {
-    repair = await prisma.$transaction(async (tx) => {
-      // 1. Resolver / crear customer
-      let resolvedCustomerId: string;
-      let customerSnapshot: {
-        name: string;
-        email: string;
-        phone: string;
-      };
-
-      if (newCustomer) {
-        // Verificar que no exista un customer con el mismo email
-        const dupe = await tx.customer.findUnique({
-          where: { email: newCustomer.email.trim().toLowerCase() },
-        });
-        if (dupe) {
-          throw new Error(
-            `Ya existe un cliente con el email ${newCustomer.email}. Usá "Cliente existente".`,
-          );
-        }
-        // Defaults de país/provincia (AR/Santa Fe/Rafaela)
-        const ar =
-          (await tx.country.findUnique({ where: { code: "AR" } })) ??
-          (await tx.country.findFirst({ orderBy: { name: "asc" } }));
-        if (!ar) throw new Error("No hay países configurados (corré seed).");
-        const sf =
-          (await tx.state.findFirst({
-            where: { countryId: ar.id, name: "Santa Fe" },
-          })) ??
-          (await tx.state.findFirst({
-            where: { countryId: ar.id },
-            orderBy: { name: "asc" },
-          }));
-        if (!sf) throw new Error("No hay provincias configuradas.");
-
-        const created = await tx.customer.create({
-          data: {
-            name: newCustomer.name.trim(),
-            email: newCustomer.email.trim().toLowerCase(),
-            phone: newCustomer.phone.trim(),
-            dni: newCustomer.dni?.trim() || null,
-            dniType: newCustomer.dniType?.trim() || null,
-            countryId: ar.id,
-            stateId: sf.id,
-            city: "Rafaela",
-            cp: "-",
-            address: "-",
-          },
-        });
-        resolvedCustomerId = created.id;
-        customerSnapshot = {
-          name: created.name,
-          email: created.email,
-          phone: created.phone,
-        };
-      } else {
-        const existing = await tx.customer.findUnique({
-          where: { id: customerId as string },
-        });
-        if (!existing) throw new Error("Cliente no existe");
-        resolvedCustomerId = existing.id;
-        customerSnapshot = {
-          name: existing.name,
-          email: existing.email,
-          phone: existing.phone,
-        };
-      }
-
-      // 2. Resolver / crear vehicle
-      let resolvedVehicleId: string;
-      let vehicleSnapshot: {
-        brand: string;
-        model: string;
-        year: string;
-        domain: string;
-        secure: string | null;
-      };
-
-      if (newVehicle) {
-        const cov =
-          newVehicle.coverageType === "todo_riesgo" ||
-          newVehicle.coverageType === "terceros"
-            ? newVehicle.coverageType
-            : null;
-        const fr =
-          cov === "todo_riesgo" &&
-          newVehicle.franchise !== null &&
-          newVehicle.franchise !== undefined &&
-          newVehicle.franchise !== ""
-            ? Number(newVehicle.franchise)
-            : null;
-        const createdV = await tx.customerVehicle.create({
-          data: {
-            customerId: resolvedCustomerId,
-            brand: newVehicle.brand.trim(),
-            model: newVehicle.model.trim(),
-            year: newVehicle.year.trim(),
-            domain: newVehicle.domain.trim().toUpperCase(),
-            chassis: newVehicle.chassis?.trim().toUpperCase() || null,
-            color: newVehicle.color?.trim() || null,
-            perladoTricapa: Boolean(newVehicle.perladoTricapa),
-            secure: newVehicle.secure ?? "",
-            thirdPartySecure: newVehicle.thirdPartySecure ?? "",
-            coverageType: cov,
-            franchise: fr,
-          },
-        });
-        resolvedVehicleId = createdV.id;
-        vehicleSnapshot = {
-          brand: createdV.brand,
-          model: createdV.model,
-          year: createdV.year,
-          domain: createdV.domain,
-          secure: createdV.secure || null,
-        };
-      } else {
-        // Cliente existente con vehicleId opcional
-        const where = vehicleId
-          ? { id: vehicleId, customerId: resolvedCustomerId }
-          : { customerId: resolvedCustomerId };
-        const existingV = vehicleId
-          ? await tx.customerVehicle.findFirst({ where })
-          : await tx.customerVehicle.findFirst({
-              where: { customerId: resolvedCustomerId },
-              orderBy: { createdAt: "asc" },
-            });
-        if (!existingV) {
-          throw new Error(
-            vehicleId
-              ? "Vehículo no pertenece al cliente"
-              : "El cliente no tiene vehículos cargados",
-          );
-        }
-        resolvedVehicleId = existingV.id;
-        vehicleSnapshot = {
-          brand: existingV.brand,
-          model: existingV.model,
-          year: existingV.year,
-          domain: existingV.domain,
-          secure: existingV.secure || null,
-        };
-      }
-
-      // 3. Crear la Repair
-      const internalNumber = await nextRepairInternalNumber(tx);
-      return tx.repair.create({
-        data: {
-          // spec Producción v4 · Siniestro 1 vacío: la reparación directa
-          // todavía no tiene presupuesto, pero el taller carga ahí el Nº de
-          // siniestro y los importes que apruebe el seguro.
-          claims: { create: { order: 1 } },
-          // spec 2.1 v2 · Nueva Reparación directa: si el usuario ya
-          // asignó turno arranca en "turno_asignado", si no en
-          // "turno_a_asignar".
-          status: scheduledAt ? "turno_asignado" : "turno_a_asignar",
-          internalNumber,
-          directCreation: true,
-          customerId: resolvedCustomerId,
-          vehicleId: resolvedVehicleId,
-          customerName: customerSnapshot.name,
-          customerEmail: customerSnapshot.email,
-          customerPhone: customerSnapshot.phone,
-          vehicleBrand: vehicleSnapshot.brand,
-          vehicleModel: vehicleSnapshot.model,
-          vehicleYear: vehicleSnapshot.year,
-          vehicleDomain: vehicleSnapshot.domain,
-          insuranceCompany: vehicleSnapshot.secure,
-          reason: reason?.trim() || null,
-          assignedMechanicId: assignedMechanicId ?? null,
-          scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
-          estimatedDeliveryAt: estimatedDeliveryAt
-            ? new Date(estimatedDeliveryAt)
-            : null,
-          notes: notes ?? null,
-          createdById: session?.user?.id ?? null,
-        },
-        include: {
-          assignedMechanic: {
-            select: { id: true, name: true, email: true, image: true },
-          },
-        },
-      });
-    });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Error al crear" },
-      { status: 400 },
-    );
-  }
-
-  return NextResponse.json({ repair }, { status: 201 });
+  // spec Producción v6 · La creación directa se dio de baja: todo ingreso,
+  // incluso por grúa, entra como cotización y llega acá al ganarse. Si no, se
+  // duplican vehículos y se rompen las estadísticas de oportunidades ganadas.
+  return NextResponse.json(
+    {
+      error:
+        "Las reparaciones se crean desde Cotizaciones al ganar la oportunidad. Cargá el ingreso como una cotización (aunque sea provisoria).",
+    },
+    { status: 410 },
+  );
 }
