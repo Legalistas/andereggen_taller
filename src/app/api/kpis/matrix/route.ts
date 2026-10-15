@@ -19,7 +19,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
 import {
   type InsuranceKey,
   KPI_GROUPS,
@@ -66,7 +66,7 @@ function bucketByCompany(name: string | null): InsuranceKey | null {
 // ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const session = await getServerSession();
 

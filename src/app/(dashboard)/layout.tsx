@@ -23,6 +23,7 @@ export default async function DashboardLayout({
           session.user.domainRole?.label ??
           session.user.domainRole?.name ??
           null,
+        roleName: session.user.domainRole?.name ?? null,
       }}
     >
       {children}

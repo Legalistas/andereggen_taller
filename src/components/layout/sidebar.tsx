@@ -76,7 +76,9 @@ export function Sidebar({ user, collapsed, onToggle, onNavigate }: Props) {
       {/* Navegación plana */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3">
         <ul className="space-y-0.5 px-2">
-          {SIDEBAR_ITEMS.map((item) => {
+          {SIDEBAR_ITEMS.filter(
+            (item) => !item.roles || (user.roleName && item.roles.includes(user.roleName)),
+          ).map((item) => {
             const Icon = item.icon;
             const isActive = item.href === activeHref;
             return (

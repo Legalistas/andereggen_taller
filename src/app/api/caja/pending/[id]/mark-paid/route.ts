@@ -10,13 +10,13 @@
  */
 
 import { NextResponse } from "next/server";
-import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const session = await getServerSession();
   const { id } = await ctx.params;

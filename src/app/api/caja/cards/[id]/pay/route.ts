@@ -12,7 +12,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { PERIODO } from "@/lib/cuotas";
 import { prisma } from "@/lib/prisma";
 import type { PaymentMethod } from "../../../../../../../generated/prisma/client";
@@ -31,7 +31,7 @@ const VALID_METHODS: PaymentMethod[] = [
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function POST(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const session = await getServerSession();
   const { id } = await ctx.params;

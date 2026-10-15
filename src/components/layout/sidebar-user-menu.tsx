@@ -18,6 +18,8 @@ export type SidebarUser = {
   name: string | null;
   email: string | null;
   role: string | null;
+  /** Nombre técnico del rol (super_admin, contable…) para filtrar el menú. */
+  roleName?: string | null;
 };
 
 function initials(name: string | null, email: string | null): string {

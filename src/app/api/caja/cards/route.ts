@@ -8,12 +8,12 @@
  */
 
 import { NextResponse } from "next/server";
-import { verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, verifyAuth } from "@/lib/auth-utils";
 import { leerDia } from "@/lib/cuotas";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
 
   const todas = new URL(request.url).searchParams.get("all") === "1";
@@ -57,7 +57,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
 
   const body = await request.json().catch(() => null);

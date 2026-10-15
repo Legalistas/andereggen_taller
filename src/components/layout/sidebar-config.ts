@@ -11,11 +11,14 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { FINANCE_ROLES } from "@/lib/roles";
 
 export type SidebarItem = {
   label: string;
   icon: LucideIcon;
   href: string;
+  /** Si está, solo estos roles ven el ítem (la página también lo exige). */
+  roles?: readonly string[];
 };
 
 /**
@@ -29,10 +32,10 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   { label: "Calendario", icon: Calendar, href: "/calendario" },
   // spec sección 4 v2 · Módulo Caja — cobros, egresos, transferencias entre
   // las 5 cajas del taller. Administrado por el rol Contable (Ayelén).
-  { label: "Caja", icon: Wallet, href: "/caja" },
+  { label: "Caja", icon: Wallet, href: "/caja", roles: FINANCE_ROLES },
   // spec Compras v2 · Ciclo completo de compras (Cotizar → Archivada, 7 estados).
   { label: "Compras", icon: ShoppingCart, href: "/compras" },
-  { label: "Estadísticas", icon: BarChartBig, href: "/estadisticas" },
+  { label: "Estadísticas", icon: BarChartBig, href: "/estadisticas", roles: FINANCE_ROLES },
   { label: "Inventario", icon: Package, href: "/inventario" },
   { label: "Clientes", icon: Users, href: "/customers" },
   { label: "Usuarios", icon: UserCog, href: "/users" },

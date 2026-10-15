@@ -11,11 +11,11 @@
 
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const session = await getServerSession();
 

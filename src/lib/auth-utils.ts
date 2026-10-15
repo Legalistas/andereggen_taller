@@ -21,6 +21,8 @@ export const INTERNAL_ROLES = [
  */
 export const ADMIN_ROLES = ["super_admin", "admin_taller"] as const;
 
+export { FINANCE_ROLES } from "./roles";
+
 /**
  * Obtiene la sesión del request actual. Server-only.
  */

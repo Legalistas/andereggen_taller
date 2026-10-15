@@ -16,7 +16,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 
 type CollectionStatus = "pendiente" | "parcial" | "total" | "sin_facturar";
@@ -32,7 +32,7 @@ function computeStatus(
 }
 
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
 
   const url = new URL(request.url);

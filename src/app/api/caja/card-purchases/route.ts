@@ -14,7 +14,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { MAX_CUOTAS, PERIODO, planDeCuotas } from "@/lib/cuotas";
 import { prisma } from "@/lib/prisma";
 
@@ -22,7 +22,7 @@ const texto = (v: unknown) =>
   typeof v === "string" && v.trim() ? v.trim() : null;
 
 export async function POST(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const session = await getServerSession();
 

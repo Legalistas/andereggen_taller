@@ -26,7 +26,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 import type {
   LeadStatus,
@@ -91,7 +91,7 @@ function bucketByCompanyName(name: string | null): InsuranceBucket {
 }
 
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const url = new URL(request.url);
   return NextResponse.json(await computeStats(url.searchParams.get("month")));

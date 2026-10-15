@@ -10,12 +10,12 @@
  */
 
 import { NextResponse } from "next/server";
-import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { MANUAL_KPI_KEYS } from "@/lib/kpis/catalog";
 import { prisma } from "@/lib/prisma";
 
 export async function PUT(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const session = await getServerSession();
 

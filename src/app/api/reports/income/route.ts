@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, verifyAuth } from "@/lib/auth-utils";
 import { paymentStatusFor } from "@/lib/payments";
 import { prisma } from "@/lib/prisma";
 import type {
@@ -20,7 +20,7 @@ import type {
  *  - topCustomers: top 5 por monto cobrado
  */
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
 
   const url = new URL(request.url);

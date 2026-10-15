@@ -8,7 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 import type {
   PaymentMethod,
@@ -31,7 +31,7 @@ const VALID_STATUSES: PendingCashPaymentStatus[] = [
 ];
 
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
 
   const url = new URL(request.url);
@@ -73,7 +73,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const session = await getServerSession();
 

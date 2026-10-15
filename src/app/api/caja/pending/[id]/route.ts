@@ -7,13 +7,13 @@
  */
 
 import { NextResponse } from "next/server";
-import { verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function DELETE(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const { id } = await ctx.params;
 
@@ -35,7 +35,7 @@ export async function DELETE(request: Request, ctx: RouteContext) {
 }
 
 export async function PATCH(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request);
+  const authError = await verifyAuth(request, FINANCE_ROLES);
   if (authError) return authError;
   const { id } = await ctx.params;
 
