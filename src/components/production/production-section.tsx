@@ -36,6 +36,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  COLUMNS,
+  IN_WORKSHOP_STATUSES,
   type KanbanRepair,
   ProductionKanban,
   type RepairStatus,
@@ -77,6 +79,10 @@ export default function ProductionSection() {
   const [searchTerm, setSearchTerm] = useState("");
   const [mechanicFilter, setMechanicFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortBy>("recent");
+  // Solo las etapas con el auto adentro del taller.
+  const [inWorkshopOnly, setInWorkshopOnly] = useState(false);
+  // Multi-tilde: cards sobre las que aplicar "Mover a…" / "Motorista…" en lote.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Mecánicos disponibles para filtro + dialog nueva reparación
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
@@ -173,6 +179,7 @@ export default function ProductionSection() {
   const filteredRepairs = useMemo(() => {
     const t = searchTerm.toLowerCase();
     const filtered = repairs.filter((r) => {
+      if (inWorkshopOnly && !IN_WORKSHOP_STATUSES.includes(r.status)) return false;
       if (mechanicFilter === "unassigned" && r.assignedMechanic) return false;
       if (
         mechanicFilter !== "all" &&
@@ -212,7 +219,7 @@ export default function ProductionSection() {
       }
     });
     return sorted;
-  }, [repairs, searchTerm, mechanicFilter, sortBy]);
+  }, [repairs, searchTerm, mechanicFilter, sortBy, inWorkshopOnly]);
 
   const activeFiltersCount =
     (mechanicFilter !== "all" ? 1 : 0) + (searchTerm ? 1 : 0);
@@ -276,6 +283,45 @@ export default function ProductionSection() {
     } catch {
       await fetchRepairs();
     }
+  };
+
+  const handleAssignMechanic = async (
+    repairId: string,
+    mechanicId: string | null,
+  ) => {
+    const mech = mechanics.find((m) => m.id === mechanicId) ?? null;
+    setRepairs((prev) =>
+      prev.map((r) =>
+        r.id === repairId
+          ? { ...r, assignedMechanic: mech ? { ...mech, image: null } : null }
+          : r,
+      ),
+    );
+    try {
+      const res = await fetch(`/api/repairs/${repairId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignedMechanicId: mechanicId }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      await fetchRepairs();
+    }
+  };
+
+  const toggleSelect = (repairId: string, next: boolean) =>
+    setSelectedIds((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(repairId);
+      else s.delete(repairId);
+      return s;
+    });
+
+  /** Aplica una acción a cada card tildada y limpia la selección. */
+  const applyToSelected = async (fn: (id: string) => Promise<void>) => {
+    const ids = [...selectedIds];
+    setSelectedIds(new Set());
+    for (const id of ids) await fn(id);
   };
 
   const handleDelete = async (repairId: string) => {
@@ -795,6 +841,19 @@ export default function ProductionSection() {
           </SelectContent>
         </Select>
 
+        <Button
+          variant={inWorkshopOnly ? "default" : "outline"}
+          onClick={() => setInWorkshopOnly((v) => !v)}
+          className="gap-1.5"
+          title="Solo las etapas con el auto adentro: Pendientes de repuestos, Chapa, Pintura y Calidad"
+        >
+          <Wrench className="h-4 w-4" />
+          En taller
+          <span className="text-[10px] tabular-nums opacity-80">
+            {repairs.filter((r) => IN_WORKSHOP_STATUSES.includes(r.status)).length}
+          </span>
+        </Button>
+
         <div className="flex items-center gap-2 shrink-0 ml-auto">
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
             <SelectTrigger className="w-44 bg-white">
@@ -827,12 +886,69 @@ export default function ProductionSection() {
         </div>
       )}
 
+      {selectedIds.size > 0 && (
+        <div className="rounded-md border border-[#003b73]/20 bg-[#003b73]/5 px-3 py-2 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-medium text-slate-700">
+            {selectedIds.size} seleccionada(s)
+          </span>
+          <Select
+            value=""
+            onValueChange={(v) =>
+              applyToSelected((id) => handleStatusChange(id, v as RepairStatus))
+            }
+          >
+            <SelectTrigger className="h-8 w-48 bg-white text-xs">
+              <SelectValue placeholder="Mover a…" />
+            </SelectTrigger>
+            <SelectContent>
+              {COLUMNS.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value=""
+            onValueChange={(v) =>
+              applyToSelected((id) =>
+                handleAssignMechanic(id, v === "__none" ? null : v),
+              )
+            }
+          >
+            <SelectTrigger className="h-8 w-48 bg-white text-xs">
+              <SelectValue placeholder="Motorista…" />
+            </SelectTrigger>
+            <SelectContent>
+              {mechanics.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name ?? m.email ?? m.id}
+                </SelectItem>
+              ))}
+              <SelectItem value="__none">Sin asignar</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelectedIds(new Set())}
+            className="h-8 text-slate-600"
+          >
+            Limpiar
+          </Button>
+        </div>
+      )}
+
       <ProductionKanban
         repairs={filteredRepairs}
         loading={loading}
         onStatusChange={handleStatusChange}
         onOpenDetail={(r) => setCanvasRepairId(r.id)}
         onDelete={handleDelete}
+        mechanics={mechanics}
+        onAssignMechanic={handleAssignMechanic}
+        selectedIds={selectedIds}
+        onToggleSelect={toggleSelect}
       />
 
       {/* Canvas lateral con detalle de la reparación */}

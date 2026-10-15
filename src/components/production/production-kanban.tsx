@@ -114,7 +114,22 @@ export type KanbanRepair = {
   } | null;
 };
 
-const COLUMNS: Array<{
+/** Mecánico tal como lo lista /api/users?role=mecanico. */
+export type MechanicLite = {
+  id: string;
+  name: string | null;
+  email: string | null;
+};
+
+/** Etapas en las que el auto está físicamente adentro del taller. */
+export const IN_WORKSHOP_STATUSES: RepairStatus[] = [
+  "pendientes_repuestos",
+  "chapa",
+  "pintura",
+  "calidad",
+];
+
+export const COLUMNS: Array<{
   id: RepairStatus;
   label: string;
   icon: typeof Calendar;
@@ -205,6 +220,12 @@ type Props = {
   onStatusChange: (repairId: string, next: RepairStatus) => Promise<void>;
   onOpenDetail?: (repair: KanbanRepair) => void;
   onDelete?: (repairId: string) => void;
+  /** Selector rápido de motorista en cada card (mismo patrón que "Mover a…"). */
+  mechanics?: MechanicLite[];
+  onAssignMechanic?: (repairId: string, mechanicId: string | null) => Promise<void>;
+  /** Multi-tilde para operar sobre varias cards a la vez. */
+  selectedIds?: Set<string>;
+  onToggleSelect?: (repairId: string, next: boolean) => void;
 };
 
 export function ProductionKanban({
@@ -213,6 +234,10 @@ export function ProductionKanban({
   onStatusChange,
   onOpenDetail,
   onDelete,
+  mechanics,
+  onAssignMechanic,
+  selectedIds,
+  onToggleSelect,
 }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<RepairStatus | null>(
@@ -362,6 +387,10 @@ export function ProductionKanban({
                   onOpenDetail={onOpenDetail}
                   onDelete={onDelete}
                   onMove={onStatusChange}
+                  mechanics={mechanics}
+                  onAssignMechanic={onAssignMechanic}
+                  selected={selectedIds?.has(r.id) ?? false}
+                  onToggleSelect={onToggleSelect}
                 />
               ))}
             </div>
@@ -383,6 +412,10 @@ const RepairCard = memo(function RepairCard({
   onOpenDetail,
   onDelete,
   onMove,
+  mechanics,
+  onAssignMechanic,
+  selected,
+  onToggleSelect,
 }: {
   repair: KanbanRepair;
   dragging: boolean;
@@ -392,6 +425,10 @@ const RepairCard = memo(function RepairCard({
   onOpenDetail?: (repair: KanbanRepair) => void;
   onDelete?: (repairId: string) => void;
   onMove: (repairId: string, next: RepairStatus) => Promise<void>;
+  mechanics?: MechanicLite[];
+  onAssignMechanic?: (repairId: string, mechanicId: string | null) => Promise<void>;
+  selected: boolean;
+  onToggleSelect?: (repairId: string, next: boolean) => void;
 }) {
   const delivery = deliveryStatus(repair);
   const hasBudget = !!repair.budget;
@@ -437,6 +474,19 @@ const RepairCard = memo(function RepairCard({
             </p>
           )}
         </div>
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => onToggleSelect(repair.id, e.target.checked)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Seleccionar reparación"
+            className={`h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-[#003b73] focus:ring-[#003b73] ${
+              selected ? "" : "opacity-0 group-hover:opacity-100"
+            }`}
+          />
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -467,6 +517,32 @@ const RepairCard = memo(function RepairCard({
                 {c.label}
               </DropdownMenuItem>
             ))}
+            {onAssignMechanic && mechanics && mechanics.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-xs text-slate-500" disabled>
+                  Motorista…
+                </DropdownMenuItem>
+                {mechanics.map((m) => (
+                  <DropdownMenuItem
+                    key={m.id}
+                    disabled={repair.assignedMechanic?.id === m.id}
+                    onClick={() => onAssignMechanic(repair.id, m.id)}
+                  >
+                    <Wrench className="h-3.5 w-3.5 mr-2" />
+                    {m.name ?? m.email ?? m.id}
+                  </DropdownMenuItem>
+                ))}
+                {repair.assignedMechanic && (
+                  <DropdownMenuItem
+                    onClick={() => onAssignMechanic(repair.id, null)}
+                    className="text-slate-500"
+                  >
+                    Sin asignar
+                  </DropdownMenuItem>
+                )}
+              </>
+            )}
             {onDelete && (
               <>
                 <DropdownMenuSeparator />

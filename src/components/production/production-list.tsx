@@ -42,7 +42,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { KanbanRepair, RepairStatus } from "./production-kanban";
+import {
+  COLUMNS,
+  IN_WORKSHOP_STATUSES,
+  type KanbanRepair,
+  type MechanicLite,
+  type RepairStatus,
+} from "./production-kanban";
 
 const STATUS_LABEL: Record<RepairStatus, string> = {
   turno_a_asignar: "Turno a Asignar",
@@ -135,6 +141,43 @@ export default function ProductionList() {
   const [enteredFrom, setEnteredFrom] = useState("");
   const [enteredTo, setEnteredTo] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("recent");
+  // Multi-tilde para "Mover a…" / "Motorista…" en lote.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [mechanics, setMechanics] = useState<MechanicLite[]>([]);
+
+  useEffect(() => {
+    fetch("/api/users?role=mecanico")
+      .then((r) => r.json())
+      .then((b) => setMechanics((b.users ?? []) as MechanicLite[]))
+      .catch(() => setMechanics([]));
+  }, []);
+
+  const toggleSelect = (id: string, next: boolean) =>
+    setSelectedIds((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(id);
+      else s.delete(id);
+      return s;
+    });
+
+  /** Aplica el PATCH a cada fila tildada, limpia la selección y recarga. */
+  const applyToSelected = async (
+    path: (id: string) => string,
+    body: Record<string, unknown>,
+  ) => {
+    const ids = [...selectedIds];
+    setSelectedIds(new Set());
+    await Promise.all(
+      ids.map((id) =>
+        fetch(path(id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      ),
+    );
+    await fetchRepairs();
+  };
 
   const fetchRepairs = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -343,6 +386,27 @@ export default function ProductionList() {
             />
           </div>
 
+          {/* Atajo: solo lo que está físicamente adentro del taller. */}
+          <Button
+            variant={
+              IN_WORKSHOP_STATUSES.every((s) => statusFilter.has(s)) &&
+              statusFilter.size === IN_WORKSHOP_STATUSES.length
+                ? "default"
+                : "outline"
+            }
+            onClick={() =>
+              setStatusFilter((prev) =>
+                prev.size === IN_WORKSHOP_STATUSES.length &&
+                IN_WORKSHOP_STATUSES.every((s) => prev.has(s))
+                  ? new Set()
+                  : new Set(IN_WORKSHOP_STATUSES),
+              )
+            }
+            className="bg-white data-[variant=default]:bg-[#003b73]"
+            title="Pendientes de repuestos + Chapa + Pintura + Calidad"
+          >
+            En taller
+          </Button>
           {/* Estados: se pueden tildar varios (ej. Chapa + Pintura para ver
               todo lo que está en taller). Vacío = todos. */}
           <Popover>
@@ -552,11 +616,75 @@ export default function ProductionList() {
         </span>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="rounded-md border border-[#003b73]/20 bg-[#003b73]/5 px-3 py-2 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-medium text-slate-700">
+            {selectedIds.size} seleccionada(s)
+          </span>
+          <Select
+            value=""
+            onValueChange={(v) =>
+              applyToSelected((id) => `/api/repairs/${id}/status`, { status: v })
+            }
+          >
+            <SelectTrigger className="h-8 w-48 bg-white text-xs">
+              <SelectValue placeholder="Mover a…" />
+            </SelectTrigger>
+            <SelectContent>
+              {COLUMNS.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value=""
+            onValueChange={(v) =>
+              applyToSelected((id) => `/api/repairs/${id}`, {
+                assignedMechanicId: v === "__none" ? null : v,
+              })
+            }
+          >
+            <SelectTrigger className="h-8 w-48 bg-white text-xs">
+              <SelectValue placeholder="Motorista…" />
+            </SelectTrigger>
+            <SelectContent>
+              {mechanics.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name ?? m.email ?? m.id}
+                </SelectItem>
+              ))}
+              <SelectItem value="__none">Sin asignar</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelectedIds(new Set())}
+            className="h-8 text-slate-600"
+          >
+            Limpiar
+          </Button>
+        </div>
+      )}
+
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8">
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id))}
+                    onChange={(e) =>
+                      setSelectedIds(e.target.checked ? new Set(filtered.map((r) => r.id)) : new Set())
+                    }
+                    aria-label="Seleccionar todas"
+                    className="h-4 w-4 rounded border-slate-300 text-[#003b73] focus:ring-[#003b73]"
+                  />
+                </TableHead>
                 <TableHead className="w-20">N° int.</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Vehículo</TableHead>
@@ -572,7 +700,7 @@ export default function ProductionList() {
               {loading && repairs.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={9}
+                    colSpan={10}
                     className="text-center py-12 text-sm text-muted-foreground"
                   >
                     <Loader2 className="h-4 w-4 inline animate-spin mr-2" />
@@ -583,7 +711,7 @@ export default function ProductionList() {
               {!loading && filtered.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={9}
+                    colSpan={10}
                     className="text-center py-12 text-sm text-muted-foreground italic"
                   >
                     Sin reparaciones que coincidan con los filtros.
@@ -593,7 +721,19 @@ export default function ProductionList() {
               {filtered.map((r) => {
                 const payers = payersOf(r);
                 return (
-                  <TableRow key={r.id} className="hover:bg-slate-50">
+                  <TableRow
+                    key={r.id}
+                    className={selectedIds.has(r.id) ? "bg-[#003b73]/5" : "hover:bg-slate-50"}
+                  >
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(r.id)}
+                        onChange={(e) => toggleSelect(r.id, e.target.checked)}
+                        aria-label="Seleccionar reparación"
+                        className="h-4 w-4 rounded border-slate-300 text-[#003b73] focus:ring-[#003b73]"
+                      />
+                    </TableCell>
                     <TableCell>
                       {r.internalNumber !== null ? (
                         <span className="font-mono text-xs font-bold text-[#003b73]">
