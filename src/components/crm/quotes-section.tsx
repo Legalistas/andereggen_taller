@@ -72,6 +72,8 @@ type QuoteLite = {
   leadId: string;
   /** Fuente del lead ("pautas", "whatsapp"…). null si el lead no la tiene. */
   source: string | null;
+  /** N° interno de la tarjeta de Producción (mismo para todos los pptos del caso). */
+  internalNumber: number | null;
   number: number;
   extensionSuffix?: number;
   parentBudgetId?: string | null;
@@ -543,7 +545,7 @@ export default function QuotesSection() {
       <Card className="p-4 space-y-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <Input
-            placeholder="Buscar por cliente, email o patente..."
+            placeholder="Buscar por cliente, email, patente o N° interno..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="md:max-w-md"
@@ -687,6 +689,14 @@ export default function QuotesSection() {
                       <span className="ml-1.5 text-[9px] uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded font-sans">
                         Ampliación
                       </span>
+                    )}
+                    {q.internalNumber !== null && (
+                      <div
+                        className="mt-0.5 text-[10px] font-bold tracking-wider text-[#003b73]"
+                        title="N° interno de la tarjeta en Producción — todos los presupuestos del caso comparten este número"
+                      >
+                        INT #{q.internalNumber}
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>

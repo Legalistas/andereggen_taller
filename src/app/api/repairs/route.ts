@@ -87,7 +87,17 @@ export async function GET(request: Request) {
           claimNumber: true,
           approvedLabor: true,
           approvedParts: true,
-          budget: { select: { id: true, number: true, grandTotal: true } },
+          budget: {
+            select: {
+              id: true,
+              number: true,
+              grandTotal: true,
+              extensions: {
+                where: { status: "accepted" },
+                select: { grandTotal: true },
+              },
+            },
+          },
         },
       },
     },
@@ -150,7 +160,13 @@ export async function GET(request: Request) {
       .filter((b): b is NonNullable<typeof b> => b !== null);
     const budgetsTotal =
       claimBudgets.length > 0
-        ? claimBudgets.reduce((acc, b) => acc + Number(b.grandTotal), 0)
+        ? claimBudgets.reduce(
+            (acc, b) =>
+              acc +
+              Number(b.grandTotal) +
+              b.extensions.reduce((s, e) => s + Number(e.grandTotal), 0),
+            0,
+          )
         : rest.budget
           ? Number(rest.budget.grandTotal)
           : null;

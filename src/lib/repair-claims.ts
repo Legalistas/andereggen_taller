@@ -26,6 +26,12 @@ export const CLAIM_BUDGET_SELECT = {
   // seguro aprueba el presupuesto tal cual y no hay que recortar nada.
   laborTotal: true,
   partsSubtotal: true,
+  // Ampliaciones aceptadas: suman al presupuestado de la tarjeta; si no, el
+  // "vs ppto" compara lo aprobado (que ya las incluye) contra el original.
+  extensions: {
+    where: { status: "accepted" },
+    select: { id: true, number: true, extensionSuffix: true, grandTotal: true },
+  },
 } satisfies Prisma.BudgetSelect;
 
 export const CLAIM_INCLUDE = {

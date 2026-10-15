@@ -23,6 +23,17 @@ export async function GET(request: Request) {
   // Origen del lead ("pautas", "whatsapp", "referido"…). Permite responder
   // cuánto presupuestamos de lo que entró por publicidad.
   const source = url.searchParams.get("source")?.trim() || null;
+  // "464", "#464" o "INT-464": buscar por N° interno de la tarjeta.
+  const intMatch = search.match(/^(?:int-?|#)?(\d+)$/i);
+  const internalNumber = intMatch ? Number(intMatch[1]) : null;
+  // A la tarjeta se llega por el principal (Repair.budgetId), por siniestro,
+  // o —en una ampliación— por el padre.
+  const byInternal = (n: number): Prisma.BudgetWhereInput[] => [
+    { repair: { internalNumber: n } },
+    { claim: { repair: { internalNumber: n } } },
+    { parentBudget: { repair: { internalNumber: n } } },
+    { parentBudget: { claim: { repair: { internalNumber: n } } } },
+  ];
   const amountMin = url.searchParams.get("amountMin");
   const amountMax = url.searchParams.get("amountMax");
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
@@ -44,6 +55,7 @@ export async function GET(request: Request) {
         { vehicleDomain: { contains: search, mode: "insensitive" } },
         { vehicleBrand: { contains: search, mode: "insensitive" } },
         { vehicleModel: { contains: search, mode: "insensitive" } },
+        ...(internalNumber !== null ? byInternal(internalNumber) : []),
       ],
     }),
     ...(amountMin && { grandTotal: { gte: Number(amountMin) } }),
@@ -82,15 +94,30 @@ export async function GET(request: Request) {
       updatedAt: true,
       // Fuente del lead: la columna "Origen" de Cotizaciones y su filtro.
       lead: { select: { source: true } },
+      // N° interno de la tarjeta de Producción: el id único del caso.
+      repair: { select: { internalNumber: true } },
+      claim: { select: { repair: { select: { internalNumber: true } } } },
+      parentBudget: {
+        select: {
+          repair: { select: { internalNumber: true } },
+          claim: { select: { repair: { select: { internalNumber: true } } } },
+        },
+      },
     },
   });
 
   // Aplanamos `lead.source` a `source` para que la fila del listado no tenga
   // que conocer la forma de la relación.
   return NextResponse.json({
-    budgets: budgets.map(({ lead, ...b }) => ({
+    budgets: budgets.map(({ lead, repair, claim, parentBudget, ...b }) => ({
       ...b,
       source: lead?.source ?? null,
+      internalNumber:
+        repair?.internalNumber ??
+        claim?.repair.internalNumber ??
+        parentBudget?.repair?.internalNumber ??
+        parentBudget?.claim?.repair.internalNumber ??
+        null,
     })),
   });
 }

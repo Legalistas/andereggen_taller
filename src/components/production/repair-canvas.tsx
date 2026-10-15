@@ -112,7 +112,22 @@ type ClaimBudget = {
   laborTotal: string | number;
   /** Repuestos presupuestados — default al copiar importes. */
   partsSubtotal: string | number;
+  /** Ampliaciones aceptadas del presupuesto. */
+  extensions?: Array<{
+    id: string;
+    number: number;
+    extensionSuffix: number;
+    grandTotal: string | number;
+  }>;
 };
+
+/** Presupuesto + sus ampliaciones aceptadas: lo que realmente se cotizó. */
+function budgetTotal(b: ClaimBudget): number {
+  return (
+    Number(b.grandTotal) +
+    (b.extensions ?? []).reduce((s, e) => s + Number(e.grandTotal), 0)
+  );
+}
 
 /**
  * Siniestro de la tarjeta. Un auto puede estar en el taller por dos
@@ -1256,7 +1271,7 @@ function BudgetsSection({
   const budgets: ClaimBudget[] = fallback
     ? [fallback]
     : linked.map((x) => x.budget);
-  const total = budgets.reduce((acc, b) => acc + Number(b.grandTotal), 0);
+  const total = budgets.reduce((acc, b) => acc + budgetTotal(b), 0);
 
   return (
     <SectionCard
@@ -1389,6 +1404,25 @@ function LinkedBudgetCard({
         <p className="font-semibold text-base text-slate-900 mt-1 tabular-nums">
           {ARS.format(Number(budget.grandTotal))}
         </p>
+        {(budget.extensions ?? []).map((e) => (
+          <a
+            key={e.id}
+            href={`/api/budgets/${e.id}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-between text-[11px] text-amber-800 hover:underline"
+            title="Ampliación aceptada — abre su PDF"
+          >
+            <span className="font-mono">+ #{e.number}-A{e.extensionSuffix}</span>
+            <span className="tabular-nums">{ARS.format(Number(e.grandTotal))}</span>
+          </a>
+        ))}
+        {(budget.extensions ?? []).length > 0 && (
+          <p className="mt-1 text-[11px] font-semibold text-slate-700 tabular-nums flex justify-between">
+            <span>Total con ampliaciones</span>
+            <span>{ARS.format(budgetTotal(budget))}</span>
+          </p>
+        )}
         {/* spec v2 (27/7) · Ver presupuesto cerrado abre el PDF que se
             envió al cliente en una nueva pestaña — NO el modal editable.
             Va inline: se mira en el navegador sin descargar nada. */}
@@ -1811,7 +1845,7 @@ function ApprovalSection({
     .filter((b): b is ClaimBudget => b !== null);
   const budgetGrand =
     claimBudgets.length > 0
-      ? claimBudgets.reduce((acc, b) => acc + Number(b.grandTotal), 0)
+      ? claimBudgets.reduce((acc, b) => acc + budgetTotal(b), 0)
       : repair.budget
         ? Number(repair.budget.grandTotal)
         : null;
