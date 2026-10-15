@@ -148,9 +148,11 @@ export async function POST(request: Request, ctx: RouteContext) {
         where: { id: updated.leadId },
         select: { customerId: true, vehicleId: true },
       });
-      const existingRepair = await tx.repair.findUnique({
-        where: { budgetId: updated.id },
-      });
+      // Ya tiene tarjeta si es el presupuesto principal de una o si está
+      // colgado como siniestro (ej. "Nuevo presupuesto" desde Producción).
+      const existingRepair =
+        (await tx.repair.findUnique({ where: { budgetId: updated.id } })) ??
+        (await tx.repairClaim.findUnique({ where: { budgetId: updated.id } }));
       if (!existingRepair && leadForRepair) {
         await tx.repair.create({
           data: {

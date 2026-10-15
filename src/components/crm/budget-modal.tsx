@@ -132,7 +132,8 @@ type Props = {
    *  contexto, requiere extensionPayer (Seguro/Franquicia/Particular), y al
    *  guardar hace POST a /api/budgets/[parent]/extend. */
   extendingFromBudgetId?: string;
-  onSaved?: () => void;
+  /** Recibe el presupuesto guardado; Producción lo usa para vincularlo a la tarjeta. */
+  onSaved?: (budget?: { id: string }) => void;
   hideTrigger?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -569,9 +570,12 @@ export default function BudgetModal({
           .catch(() => ({ error: "Error desconocido" }));
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
+      const saved = (await res.json().catch(() => ({}))) as {
+        budget?: { id: string };
+      };
       resetForm();
       setOpen(false);
-      onSaved?.();
+      onSaved?.(saved.budget);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al guardar");
     } finally {

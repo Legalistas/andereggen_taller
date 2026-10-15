@@ -1229,6 +1229,9 @@ function BudgetsSection({
   onLinkBudget: (budgetId: string) => Promise<void>;
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
+  // Nuevo presupuesto sobre el mismo vehículo (ej. seguro + trabajo
+  // particular). Al guardarlo queda como siniestro de esta misma tarjeta.
+  const [newOpen, setNewOpen] = useState(false);
 
   const linked = (repair.claims ?? [])
     .map((c) => ({ claim: c, budget: c.budget }))
@@ -1303,6 +1306,29 @@ function BudgetsSection({
         <Plus className="h-3 w-3" />
         Vincular presupuesto
       </button>
+      {repair.lead && (
+        <button
+          type="button"
+          onClick={() => setNewOpen(true)}
+          className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-[#003b73] bg-[#003b73]/10 hover:bg-[#003b73]/15 transition-colors"
+          title="Presupuesto nuevo sobre este vehículo (no una ampliación): queda en esta misma tarjeta"
+        >
+          <FileText className="h-3 w-3" />
+          Nuevo presupuesto
+        </button>
+      )}
+      {repair.lead && (
+        <BudgetModal
+          leadId={repair.lead.id}
+          hideTrigger
+          open={newOpen}
+          onOpenChange={setNewOpen}
+          onSaved={(budget) => {
+            setNewOpen(false);
+            if (budget?.id) onLinkBudget(budget.id);
+          }}
+        />
+      )}
 
       <LinkBudgetDialog
         repairId={repair.id}
