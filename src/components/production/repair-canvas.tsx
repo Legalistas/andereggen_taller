@@ -1634,7 +1634,11 @@ function NotesSection({
   const lastSavedRef = useRef(value);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Solo tomamos el valor del server si lo cambió otro: cuando vuelve nuestro
+  // propio guardado, el usuario puede haber seguido tipeando y pisarlo le
+  // borraba texto a mitad de frase.
   useEffect(() => {
+    if (value === lastSavedRef.current) return;
     setDraft(value);
     lastSavedRef.current = value;
   }, [value]);

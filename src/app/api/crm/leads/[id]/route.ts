@@ -61,6 +61,7 @@ export async function GET(request: Request, ctx: RouteContext) {
       },
       vehicle: true,
       inspector: { select: ACTOR_SELECT },
+      perito: { select: ACTOR_SELECT },
       insuranceAgent: { select: ACTOR_SELECT },
       insuranceCompany: {
         select: {
@@ -123,6 +124,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     lostNotes,
     vehicleId,
     inspectorId,
+    peritoId,
     insuranceAgentId,
     insuranceCompanyId,
     insuranceResponsibility,
@@ -134,6 +136,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     lostNotes?: string | null;
     vehicleId?: string | null;
     inspectorId?: string | null;
+    peritoId?: string | null;
     insuranceAgentId?: string | null;
     insuranceCompanyId?: string | null;
     insuranceResponsibility?: InsuranceResponsibility | null;
@@ -230,6 +233,10 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     const err = await checkRole(inspectorId, "inspector");
     if (err) return NextResponse.json({ error: err }, { status: 400 });
   }
+  if (peritoId !== undefined && peritoId !== null) {
+    const err = await checkRole(peritoId, "inspector");
+    if (err) return NextResponse.json({ error: err }, { status: 400 });
+  }
   if (insuranceAgentId !== undefined && insuranceAgentId !== null) {
     const err = await checkRole(insuranceAgentId, "productor_seguros");
     if (err) return NextResponse.json({ error: err }, { status: 400 });
@@ -282,6 +289,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
         ...(lostNotes !== undefined && { lostNotes }),
         ...(vehicleId !== undefined && { vehicleId }),
         ...(inspectorId !== undefined && { inspectorId }),
+        ...(peritoId !== undefined && { peritoId }),
         ...(insuranceAgentId !== undefined && { insuranceAgentId }),
         ...(insuranceCompanyId !== undefined && { insuranceCompanyId }),
         ...(insuranceResponsibility !== undefined && {
@@ -302,6 +310,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
         },
         vehicle: true,
         inspector: { select: ACTOR_SELECT },
+      perito: { select: ACTOR_SELECT },
         insuranceAgent: { select: ACTOR_SELECT },
         insuranceCompany: {
           select: {

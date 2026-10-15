@@ -182,6 +182,7 @@ export default function LeadsSection() {
    * que abrir el lead para completarlos.
    */
   const [inspector, setInspector] = useState<UserLite | null>(null);
+  const [perito, setPerito] = useState<UserLite | null>(null);
   const [insuranceAgent, setInsuranceAgent] = useState<UserLite | null>(null);
   const [insuranceCompany, setInsuranceCompany] =
     useState<InsuranceCompanyLite | null>(null);
@@ -363,6 +364,7 @@ export default function LeadsSection() {
     setVehicleCoverageType("");
     setVehicleFranchise("");
     setInspector(null);
+    setPerito(null);
     setInsuranceAgent(null);
     setInsuranceCompany(null);
     setLeadNotes("");
@@ -523,6 +525,7 @@ export default function LeadsSection() {
     // se hubieran cargado después en la ficha: así las métricas por productor
     // y por compañía cuentan desde que se tomó el presupuesto.
     if (inspector) payload.inspectorId = inspector.id;
+    if (perito) payload.peritoId = perito.id;
     if (insuranceAgent) payload.insuranceAgentId = insuranceAgent.id;
     if (insuranceCompany) payload.insuranceCompanyId = insuranceCompany.id;
 
@@ -768,7 +771,7 @@ export default function LeadsSection() {
                 </div>
                 <div className="grid gap-2">
                   <ActorRow
-                    label="Perito / Inspector"
+                    label="Inspector"
                     icon={Shield}
                     accent="text-cyan-700"
                     accentBg="bg-cyan-50"
@@ -776,6 +779,16 @@ export default function LeadsSection() {
                     roleKey="inspector"
                     current={inspector}
                     onPick={setInspector}
+                  />
+                  <ActorRow
+                    label="Perito"
+                    icon={Shield}
+                    accent="text-sky-700"
+                    accentBg="bg-sky-50"
+                    avatarBg="bg-sky-600"
+                    roleKey="inspector"
+                    current={perito}
+                    onPick={setPerito}
                   />
                   <ActorRow
                     label="Productor de seguros"

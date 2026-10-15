@@ -25,6 +25,7 @@ const LEAD_INCLUDE = {
     },
   },
   inspector: { select: { id: true, name: true, email: true, image: true } },
+  perito: { select: { id: true, name: true, email: true, image: true } },
   insuranceAgent: {
     select: { id: true, name: true, email: true, image: true },
   },
@@ -161,6 +162,7 @@ export async function POST(request: Request) {
     notes,
     source,
     inspectorId,
+    peritoId,
     insuranceAgentId,
     insuranceCompanyId,
   } = body as {
@@ -200,6 +202,7 @@ export async function POST(request: Request) {
      * (rol "inspector") y productor de seguros.
      */
     inspectorId?: string | null;
+    peritoId?: string | null;
     insuranceAgentId?: string | null;
     /** Aseguradora que paga — el tercer actor del lead. */
     insuranceCompanyId?: string | null;
@@ -219,6 +222,7 @@ export async function POST(request: Request) {
   // acá — la ficha del lead tampoco lo hace y el selector ya filtra por rol.
   for (const [field, userId] of [
     ["inspectorId", inspectorId],
+    ["peritoId", peritoId],
     ["insuranceAgentId", insuranceAgentId],
   ] as const) {
     if (!userId) continue;
@@ -404,6 +408,7 @@ export async function POST(request: Request) {
         notes: notes ?? null,
         source: source ?? null,
         inspectorId: inspectorId || null,
+        peritoId: peritoId || null,
         insuranceAgentId: insuranceAgentId || null,
         insuranceCompanyId: insuranceCompanyId || null,
         createdById: session?.user?.id ?? null,

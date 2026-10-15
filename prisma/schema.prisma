@@ -53,6 +53,7 @@ model User {
   // Business relations
   leadsCreated                 Lead[]                 @relation("LeadCreatedBy")
   leadsAsInspector             Lead[]                 @relation("LeadInspector")
+  leadsAsPerito                Lead[]                 @relation("LeadPerito")
   leadsAsInsurance             Lead[]                 @relation("LeadInsuranceAgent")
   budgetsCreated               Budget[]               @relation("BudgetCreatedBy")
   budgetEmailsSent             BudgetEmailLog[]       @relation("BudgetEmailSentBy")
@@ -316,7 +317,8 @@ model Lead {
   createdById  String?
 
   // Actores externos de la cotización (spec 4.3 + 8.1)
-  inspectorId        String? // User con rol "inspector"
+  inspectorId        String? // User con rol "inspector" — inspector de la aseguradora
+  peritoId           String? // User con rol "inspector" — perito, puede ser otra persona
   insuranceAgentId   String? // User con rol "productor_seguros"
   insuranceCompanyId String? // FK a InsuranceCompany — 4to actor (spec 8.1)
 
@@ -339,6 +341,7 @@ model Lead {
   vehicle          CustomerVehicle?  @relation(fields: [vehicleId], references: [id])
   createdBy        User?             @relation("LeadCreatedBy", fields: [createdById], references: [id])
   inspector        User?             @relation("LeadInspector", fields: [inspectorId], references: [id], onDelete: SetNull)
+  perito           User?             @relation("LeadPerito", fields: [peritoId], references: [id], onDelete: SetNull)
   insuranceAgent   User?             @relation("LeadInsuranceAgent", fields: [insuranceAgentId], references: [id], onDelete: SetNull)
   insuranceCompany InsuranceCompany? @relation(fields: [insuranceCompanyId], references: [id], onDelete: SetNull)
   budgets          Budget[]
@@ -352,6 +355,7 @@ model Lead {
   @@index([vehicleId])
   @@index([createdById])
   @@index([inspectorId])
+  @@index([peritoId])
   @@index([insuranceAgentId])
   @@index([orderReceivedAt])
 }

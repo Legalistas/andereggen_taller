@@ -177,6 +177,7 @@ type LeadDetail = {
   customer: CustomerDetail;
   vehicle: VehicleDetail | null;
   inspector: UserLite | null;
+  perito: UserLite | null;
   insuranceAgent: UserLite | null;
   insuranceCompany: InsuranceCompanyLite | null;
   insuranceResponsibility: InsuranceResponsibility | null;
@@ -565,12 +566,16 @@ export function LeadCanvas({
               <ActorsSection
                 leadId={lead.id}
                 inspector={lead.inspector}
+                perito={lead.perito}
                 insuranceAgent={lead.insuranceAgent}
                 insuranceCompany={lead.insuranceCompany}
                 onChange={(kind, userId) =>
                   patchLead({
-                    [kind === "inspector" ? "inspectorId" : "insuranceAgentId"]:
-                      userId,
+                    [{
+                      inspector: "inspectorId",
+                      perito: "peritoId",
+                      insurance: "insuranceAgentId",
+                    }[kind]]: userId,
                   })
                 }
                 onChangeCompany={(companyId) =>
@@ -750,6 +755,7 @@ function SectionCard({
 function ActorsSection({
   leadId: _leadId,
   inspector,
+  perito,
   insuranceAgent,
   insuranceCompany,
   onChange,
@@ -757,9 +763,13 @@ function ActorsSection({
 }: {
   leadId: string;
   inspector: UserLite | null;
+  perito: UserLite | null;
   insuranceAgent: UserLite | null;
   insuranceCompany: InsuranceCompanyLite | null;
-  onChange: (kind: "inspector" | "insurance", userId: string | null) => void;
+  onChange: (
+    kind: "inspector" | "perito" | "insurance",
+    userId: string | null,
+  ) => void;
   onChangeCompany: (companyId: string | null) => void;
 }) {
   return (
@@ -771,7 +781,7 @@ function ActorsSection({
     >
       <div className="grid gap-2">
         <ActorRow
-          label="Perito / Inspector"
+          label="Inspector"
           icon={Shield}
           accent="text-cyan-700"
           accentBg="bg-cyan-50"
@@ -779,6 +789,16 @@ function ActorsSection({
           roleKey="inspector"
           current={inspector}
           onPick={(user) => onChange("inspector", user?.id ?? null)}
+        />
+        <ActorRow
+          label="Perito"
+          icon={Shield}
+          accent="text-sky-700"
+          accentBg="bg-sky-50"
+          avatarBg="bg-sky-600"
+          roleKey="inspector"
+          current={perito}
+          onPick={(user) => onChange("perito", user?.id ?? null)}
         />
         <ActorRow
           label="Productor de seguros"
@@ -1077,7 +1097,11 @@ function NotesSection({
   const lastSavedRef = useRef(value);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Solo tomamos el valor del server si lo cambió otro: cuando vuelve nuestro
+  // propio guardado, el usuario puede haber seguido tipeando y pisarlo le
+  // borraba texto a mitad de frase.
   useEffect(() => {
+    if (value === lastSavedRef.current) return;
     setDraft(value);
     lastSavedRef.current = value;
   }, [value]);
@@ -1585,7 +1609,11 @@ function LostNotesField({
   const lastSavedRef = useRef(value);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Solo tomamos el valor del server si lo cambió otro: cuando vuelve nuestro
+  // propio guardado, el usuario puede haber seguido tipeando y pisarlo le
+  // borraba texto a mitad de frase.
   useEffect(() => {
+    if (value === lastSavedRef.current) return;
     setDraft(value);
     lastSavedRef.current = value;
   }, [value]);
