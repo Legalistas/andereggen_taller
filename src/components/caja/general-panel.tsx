@@ -565,54 +565,6 @@ export default function GeneralPanel({ boxes, monthParam, onReload }: Props) {
         )}
       </div>
 
-      {/* spec v2 · Egresos por rubro del mes — para ver rápido cuánto se
-          gastó en cada concepto (Brixar, Sueldos, etc.). Click en un chip
-          filtra el listado. */}
-      {egresoConcepts.length > 0 && (
-        <Card className="p-3">
-          <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2">
-            Egresos del mes por rubro
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {egresoConcepts.map((c) => {
-              const active = conceptFilter === c.concept;
-              return (
-                <button
-                  key={c.concept}
-                  type="button"
-                  onClick={() =>
-                    setConceptFilter(active ? "all" : c.concept)
-                  }
-                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition ${
-                    active
-                      ? "border-[#003b73] bg-[#003b73] text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                  }`}
-                  title={`Filtrar movimientos por "${c.concept}"`}
-                >
-                  <span>{c.concept}</span>
-                  <span
-                    className={`tabular-nums font-semibold ${
-                      active ? "text-white" : "text-rose-700"
-                    }`}
-                  >
-                    {ARS.format(c.total)}
-                  </span>
-                </button>
-              );
-            })}
-            {conceptFilter !== "all" && (
-              <button
-                type="button"
-                onClick={() => setConceptFilter("all")}
-                className="text-[11px] text-[#003b73] hover:underline px-1"
-              >
-                limpiar filtro
-              </button>
-            )}
-          </div>
-        </Card>
-      )}
 
       {/* Lista de movimientos */}
       <Card className="p-0 overflow-hidden">
