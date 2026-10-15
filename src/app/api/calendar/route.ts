@@ -25,7 +25,19 @@ type CalendarEvent = {
   needsTransport: boolean;
   /** Urgencia del cliente — interno, se pinta en amarillo flúo. */
   isUrgent: boolean;
+  /** Prioridad media (amarillo); `isUrgent` es la alta (rojo). */
+  isPriority: boolean;
   urgencyNote: string | null;
+  /** Repuestos del vehículo por etapa — para saber si la entrega es viable. */
+  compras: {
+    total: number;
+    porDefinir: number;
+    enCamino: number;
+    enTaller: number;
+    pendientePago: number;
+  } | null;
+  /** Plata del caso: aprobado vs facturado vs cobrado. */
+  admin: { aprobado: number | null; facturado: number; cobrado: number };
   /**
    * Quién provee los repuestos: "TALLER" | "SEGURO". Solo informativo en el
    * calendario — el taller quiere ver de un vistazo si tiene que comprarlos.
@@ -46,7 +58,11 @@ const REPAIR_SELECT = {
   estimatedDeliveryAt: true,
   needsTransport: true,
   isUrgent: true,
+  isPriority: true,
   urgencyNote: true,
+  approvedInsurance: true,
+  approvedFranchise: true,
+  approvedCustomer: true,
   partsPurchaser: true,
   status: true,
   notes: true,
@@ -107,39 +123,103 @@ export async function GET(request: Request) {
     }),
   ]);
 
-  const turnos: CalendarEvent[] = scheduled
-    .filter((r) => r.scheduledAt)
-    .map((r) => ({
+  // spec Calendario v3 · Compras y facturación por vehículo, en dos queries
+  // para todo el mes (no una por evento). Una compra llega a la tarjeta por
+  // su presupuesto (principal o siniestro), directo o vía el repuesto.
+  const ids = [...new Set([...scheduled, ...deliveries].map((r) => r.id))];
+  const viaBudget = {
+    OR: [{ repair: { id: { in: ids } } }, { claim: { repairId: { in: ids } } }],
+  };
+  const repairOf = {
+    select: {
+      repair: { select: { id: true } },
+      claim: { select: { repairId: true } },
+    },
+  };
+  const [purchases, invoices] = ids.length
+    ? await Promise.all([
+        prisma.purchase.findMany({
+          where: { OR: [{ budget: viaBudget }, { item: { budget: viaBudget } }] },
+          select: {
+            status: true,
+            budget: repairOf,
+            item: { select: { budget: repairOf } },
+          },
+        }),
+        prisma.repairInvoice.findMany({
+          where: { repairId: { in: ids } },
+          select: {
+            repairId: true,
+            amount: true,
+            payments: { select: { amount: true } },
+          },
+        }),
+      ])
+    : [[], []];
+
+  const compras = new Map<string, NonNullable<CalendarEvent["compras"]>>();
+  for (const p of purchases) {
+    const b = p.budget ?? p.item?.budget;
+    const rid = b?.repair?.id ?? b?.claim?.repairId;
+    if (!rid) continue;
+    const c = compras.get(rid) ?? {
+      total: 0,
+      porDefinir: 0,
+      enCamino: 0,
+      enTaller: 0,
+      pendientePago: 0,
+    };
+    c.total += 1;
+    if (p.status === "COTIZAR" || p.status === "DECIDIR") c.porDefinir += 1;
+    else if (p.status === "PENDIENTE_PAGO") c.pendientePago += 1;
+    else if (p.status === "EN_TALLER" || p.status === "ARCHIVADA")
+      c.enTaller += 1;
+    else c.enCamino += 1;
+    compras.set(rid, c);
+  }
+  const admin = new Map<string, { facturado: number; cobrado: number }>();
+  for (const inv of invoices) {
+    const a = admin.get(inv.repairId) ?? { facturado: 0, cobrado: 0 };
+    a.facturado += Number(inv.amount);
+    a.cobrado += inv.payments.reduce((s, x) => s + Number(x.amount), 0);
+    admin.set(inv.repairId, a);
+  }
+
+  const toEvent = (r: (typeof scheduled)[number], date: Date): CalendarEvent => {
+    const approved =
+      r.approvedInsurance === null &&
+      r.approvedFranchise === null &&
+      r.approvedCustomer === null
+        ? null
+        : Number(r.approvedInsurance ?? 0) +
+          Number(r.approvedFranchise ?? 0) +
+          Number(r.approvedCustomer ?? 0);
+    return {
       repairId: r.id,
       internalNumber: r.internalNumber,
       customerName: r.customerName,
       vehicleSummary: summarizeVehicle(r),
       vehicleDomain: r.vehicleDomain,
-      date: r.scheduledAt!.toISOString(),
+      date: date.toISOString(),
       needsTransport: r.needsTransport,
       isUrgent: r.isUrgent,
+      isPriority: r.isPriority,
       urgencyNote: r.urgencyNote,
       partsPurchaser: r.partsPurchaser,
       status: r.status,
       notes: r.notes,
-    }));
+      compras: compras.get(r.id) ?? null,
+      admin: { aprobado: approved, ...(admin.get(r.id) ?? { facturado: 0, cobrado: 0 }) },
+    };
+  };
+
+  const turnos: CalendarEvent[] = scheduled
+    .filter((r) => r.scheduledAt)
+    .map((r) => toEvent(r, r.scheduledAt as Date));
 
   const entregas: CalendarEvent[] = deliveries
     .filter((r) => r.estimatedDeliveryAt)
-    .map((r) => ({
-      repairId: r.id,
-      internalNumber: r.internalNumber,
-      customerName: r.customerName,
-      vehicleSummary: summarizeVehicle(r),
-      vehicleDomain: r.vehicleDomain,
-      date: r.estimatedDeliveryAt!.toISOString(),
-      needsTransport: r.needsTransport,
-      isUrgent: r.isUrgent,
-      urgencyNote: r.urgencyNote,
-      partsPurchaser: r.partsPurchaser,
-      status: r.status,
-      notes: r.notes,
-    }));
+    .map((r) => toEvent(r, r.estimatedDeliveryAt as Date));
 
   return NextResponse.json({
     month: `${monthRef.getFullYear()}-${String(monthRef.getMonth() + 1).padStart(2, "0")}`,

@@ -22,6 +22,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * spec 2.3 v2 · Turnos pendientes por asignar. Lista los repairs con
@@ -43,6 +50,7 @@ type PendingRow = {
   needsTransport: boolean;
   /** Urgencia del cliente — interno, amarillo flúo. */
   isUrgent: boolean;
+  isPriority: boolean;
   urgencyNote: string | null;
   /** "TALLER" | "SEGURO" — quién provee los repuestos. Informativo. */
   partsPurchaser: string | null;
@@ -173,17 +181,17 @@ export default function PendingTurnosPanel({
                   <span className="text-sm font-medium text-slate-900 truncate">
                     {r.customerName}
                   </span>
-                  {r.isUrgent && (
+                  {(r.isUrgent || r.isPriority) && (
                     <span
-                      className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-yellow-950 bg-[#fbff2b] border border-yellow-500 rounded px-1 py-0.5"
-                      title={
-                        r.urgencyNote
-                          ? `Urgente: ${r.urgencyNote}`
-                          : "Urgente (interno)"
-                      }
+                      className={`inline-flex items-center gap-0.5 text-[10px] font-semibold rounded px-1 py-0.5 border ${
+                        r.isUrgent
+                          ? "text-red-950 bg-red-200 border-red-500"
+                          : "text-yellow-950 bg-[#fbff2b] border-yellow-500"
+                      }`}
+                      title={r.urgencyNote ?? "Interno"}
                     >
                       <Zap className="h-2.5 w-2.5" />
-                      Urgente
+                      {r.isUrgent ? "Urgente" : "Prioridad"}
                     </span>
                   )}
                   {r.needsTransport && (
@@ -268,6 +276,7 @@ function AssignTurnoDialog({
   const [scheduledAt, setScheduledAt] = useState(defaultDate ?? nowLocalDateTime());
   const [needsTransport, setNeedsTransport] = useState(row.needsTransport);
   const [isUrgent, setIsUrgent] = useState(row.isUrgent);
+  const [isPriority, setIsPriority] = useState(row.isPriority);
   const [urgencyNote, setUrgencyNote] = useState(row.urgencyNote ?? "");
   const [estimatedDelivery, setEstimatedDelivery] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -281,6 +290,7 @@ function AssignTurnoDialog({
         scheduledAt: parseLocalDateTime(scheduledAt),
         needsTransport,
         isUrgent,
+        isPriority,
         urgencyNote: urgencyNote.trim() || null,
       };
       if (estimatedDelivery) {
@@ -348,25 +358,32 @@ function AssignTurnoDialog({
           {/* Urgencia: interno. No se menciona en el mail de confirmación
               que sale al asignar el turno. */}
           <div className="rounded-md border border-yellow-300 bg-yellow-50/60 p-3 grid gap-2">
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isUrgent}
-                onChange={(e) => setIsUrgent(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-yellow-600 focus:ring-yellow-500"
-              />
-              <div className="grid gap-0.5">
-                <span className="text-sm font-medium text-slate-800 inline-flex items-center gap-1">
-                  <Zap className="h-3 w-3 text-yellow-600" />
-                  El cliente tiene urgencia con la fecha
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  Se marca en amarillo flúo en el calendario. Interno: al
-                  cliente no se le avisa nada.
-                </span>
-              </div>
-            </label>
-            {isUrgent && (
+            <div className="grid gap-1">
+              <Label className="text-xs inline-flex items-center gap-1">
+                <Zap className="h-3 w-3 text-yellow-600" />
+                Prioridad del cliente con la fecha
+              </Label>
+              <Select
+                value={isUrgent ? "urgente" : isPriority ? "media" : "none"}
+                onValueChange={(v) => {
+                  setIsUrgent(v === "urgente");
+                  setIsPriority(v === "media");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin prioridad</SelectItem>
+                  <SelectItem value="media">Media — amarillo</SelectItem>
+                  <SelectItem value="urgente">Urgente — rojo</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-[11px] text-slate-500">
+                Interno: al cliente no se le avisa nada.
+              </span>
+            </div>
+            {(isUrgent || isPriority) && (
               <div className="grid gap-1 pl-6">
                 <Label className="text-xs">¿Por qué / para cuándo?</Label>
                 <Input

@@ -1260,6 +1260,8 @@ model Repair {
   isUrgent    Boolean @default(false)
   /** Por qué / para cuándo la urgencia. Interno, igual que el flag. */
   urgencyNote String? @db.Text
+  /** Prioridad media (amarillo). `isUrgent` es la alta (rojo). Interno. */
+  isPriority  Boolean @default(false)
 
   // Compañía de seguro que paga — snapshot al crear el repair. Visible en
   // la card del kanban mientras el auto está en taller. Texto libre porque

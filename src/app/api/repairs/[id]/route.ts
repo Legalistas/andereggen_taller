@@ -136,6 +136,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     approvedNotes,
     needsTransport,
     isUrgent,
+    isPriority,
     urgencyNote,
   } = body as Record<string, unknown>;
 
@@ -340,6 +341,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       // Urgencia del cliente: dato interno del taller. Nunca se incluye en
       // los mails ni en el contexto de notificaciones.
       ...(isUrgent !== undefined && { isUrgent: Boolean(isUrgent) }),
+      ...(isPriority !== undefined && { isPriority: Boolean(isPriority) }),
       ...(urgencyNote !== undefined && {
         urgencyNote: ((urgencyNote as string | null) ?? "").trim() || null,
       }),

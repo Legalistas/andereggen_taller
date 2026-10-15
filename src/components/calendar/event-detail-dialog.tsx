@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowRightLeft,
   Calendar as CalendarIcon,
+  CircleDollarSign,
   Loader2,
   LogIn,
   LogOut,
@@ -23,6 +24,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * spec 2.3 v2 · Modal de detalle de un evento del calendario. Muestra el
@@ -44,8 +52,17 @@ export type EventDialogInput = {
   date: string;
   needsTransport: boolean;
   isUrgent: boolean;
+  isPriority: boolean;
   urgencyNote: string | null;
   partsPurchaser: string | null;
+  compras: {
+    total: number;
+    porDefinir: number;
+    enCamino: number;
+    enTaller: number;
+    pendientePago: number;
+  } | null;
+  admin: { aprobado: number | null; facturado: number; cobrado: number };
   status: string;
   notes: string | null;
 };
@@ -68,6 +85,12 @@ const STATUS_LABEL: Record<string, string> = {
   experiencia_cliente: "Experiencia del Cliente",
   archivado: "Archivado",
 };
+
+const MONEY = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  maximumFractionDigits: 0,
+});
 
 /** ISO → `YYYY-MM-DDTHH:mm` local para `datetime-local`. */
 function toLocalDateTime(iso: string): string {
@@ -112,6 +135,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
   );
   const [needsTransport, setNeedsTransport] = useState(event.needsTransport);
   const [isUrgent, setIsUrgent] = useState(event.isUrgent);
+  const [isPriority, setIsPriority] = useState(event.isPriority);
   const [urgencyNote, setUrgencyNote] = useState(event.urgencyNote ?? "");
   const [notes, setNotes] = useState(event.notes ?? "");
   const [saving, setSaving] = useState(false);
@@ -124,6 +148,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
     );
     setNeedsTransport(event.needsTransport);
     setIsUrgent(event.isUrgent);
+    setIsPriority(event.isPriority);
     setUrgencyNote(event.urgencyNote ?? "");
     setNotes(event.notes ?? "");
     setError(null);
@@ -135,6 +160,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
       (isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date)) ||
     needsTransport !== event.needsTransport ||
     isUrgent !== event.isUrgent ||
+    isPriority !== event.isPriority ||
     urgencyNote !== (event.urgencyNote ?? "") ||
     notes !== originalNotes;
 
@@ -145,6 +171,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
       const body: Record<string, unknown> = {
         needsTransport,
         isUrgent,
+        isPriority,
         urgencyNote: urgencyNote.trim() || null,
         notes: notes.trim() || null,
       };
@@ -210,28 +237,35 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
             />
           </div>
 
-          {/* Urgencia — uso interno. El evento se pinta en amarillo flúo en
-              la grilla; al cliente no se le avisa nada. */}
+          {/* Prioridad — uso interno: rojo urgente, amarillo media. Al
+              cliente no se le avisa nada. */}
           <div className="rounded-md border border-yellow-300 bg-yellow-50/60 p-3 grid gap-2">
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isUrgent}
-                onChange={(e) => setIsUrgent(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-yellow-600 focus:ring-yellow-500"
-              />
-              <div className="grid gap-0.5">
-                <span className="text-sm font-medium text-slate-800 inline-flex items-center gap-1">
-                  <Zap className="h-3 w-3 text-yellow-600" />
-                  El cliente tiene urgencia con la fecha
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  Se marca en amarillo flúo en el calendario. Es interno: no se
-                  le notifica nada al cliente.
-                </span>
-              </div>
-            </label>
-            {isUrgent && (
+            <div className="grid gap-1">
+              <Label className="text-xs inline-flex items-center gap-1">
+                <Zap className="h-3 w-3 text-yellow-600" />
+                Prioridad del cliente con la fecha
+              </Label>
+              <Select
+                value={isUrgent ? "urgente" : isPriority ? "media" : "none"}
+                onValueChange={(v) => {
+                  setIsUrgent(v === "urgente");
+                  setIsPriority(v === "media");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin prioridad</SelectItem>
+                  <SelectItem value="media">Media — amarillo</SelectItem>
+                  <SelectItem value="urgente">Urgente — rojo</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-[11px] text-slate-500">
+                Interno: no se le notifica nada al cliente.
+              </span>
+            </div>
+            {(isUrgent || isPriority) && (
               <div className="grid gap-1 pl-6">
                 <Label className="text-xs">¿Por qué / para cuándo?</Label>
                 <Input
@@ -273,6 +307,32 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
                   ? "los provee el taller"
                   : "los provee el seguro"}
               </span>
+            </div>
+          )}
+
+          {/* Compras y Administración del vehículo: lo que hace falta para
+              decidir si la entrega/recolección es viable. */}
+          {(event.compras || event.admin.aprobado !== null || event.admin.facturado > 0) && (
+            <div className="rounded-md border bg-slate-50 p-3 grid gap-1 text-xs text-slate-700">
+              {event.compras && (
+                <div className="flex items-center gap-2">
+                  <Package className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span>
+                    Repuestos: <b>{event.compras.enTaller}/{event.compras.total}</b> en taller
+                    {event.compras.enCamino > 0 && ` · ${event.compras.enCamino} en camino`}
+                    {event.compras.porDefinir > 0 && ` · ${event.compras.porDefinir} por definir`}
+                    {event.compras.pendientePago > 0 && ` · ${event.compras.pendientePago} pdte. pago`}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <CircleDollarSign className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                <span>
+                  Aprobado <b>{event.admin.aprobado === null ? "—" : MONEY.format(event.admin.aprobado)}</b>
+                  {" · "}facturado <b>{MONEY.format(event.admin.facturado)}</b>
+                  {" · "}cobrado <b>{MONEY.format(event.admin.cobrado)}</b>
+                </span>
+              </div>
             </div>
           )}
 

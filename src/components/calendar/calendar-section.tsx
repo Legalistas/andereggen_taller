@@ -55,7 +55,17 @@ type CalendarEvent = {
    * en amarillo flúo. Es INTERNO: no se le notifica nada al cliente.
    */
   isUrgent: boolean;
+  /** Prioridad media (amarillo); `isUrgent` es la alta (rojo). */
+  isPriority: boolean;
   urgencyNote: string | null;
+  compras: {
+    total: number;
+    porDefinir: number;
+    enCamino: number;
+    enTaller: number;
+    pendientePago: number;
+  } | null;
+  admin: { aprobado: number | null; facturado: number; cobrado: number };
   /** "TALLER" | "SEGURO" — quién provee los repuestos. Solo informativo. */
   partsPurchaser: string | null;
   status: string;
@@ -367,22 +377,21 @@ export default function CalendarSection() {
    */
   const toggleFlag = async (
     repairId: string,
-    field: "needsTransport" | "isUrgent",
-    next: boolean,
+    patch: Partial<Pick<CalendarEvent, "needsTransport" | "isUrgent" | "isPriority">>,
   ) => {
     setSavingId(repairId);
     try {
       const res = await fetch(`/api/repairs/${repairId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: next }),
+        body: JSON.stringify(patch),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData((prev) => {
         if (!prev) return prev;
         const patch = (arr: CalendarEvent[]) =>
           arr.map((e) =>
-            e.repairId === repairId ? { ...e, [field]: next } : e,
+            e.repairId === repairId ? { ...e, ...patch } : e,
           );
         return {
           ...prev,
@@ -402,9 +411,17 @@ export default function CalendarSection() {
   };
 
   const toggleTransport = (repairId: string, next: boolean) =>
-    toggleFlag(repairId, "needsTransport", next);
-  const toggleUrgent = (repairId: string, next: boolean) =>
-    toggleFlag(repairId, "isUrgent", next);
+    toggleFlag(repairId, { needsTransport: next });
+  // Un solo botón que rota: sin prioridad → media (amarillo) → urgente (rojo).
+  const cycleUrgency = (ev: CalendarEvent) =>
+    toggleFlag(
+      ev.repairId,
+      ev.isUrgent
+        ? { isUrgent: false, isPriority: false }
+        : ev.isPriority
+          ? { isUrgent: true, isPriority: false }
+          : { isUrgent: false, isPriority: true },
+    );
 
   return (
     <div className="space-y-4">
@@ -575,7 +592,7 @@ export default function CalendarSection() {
                       onToggleTransport={(next) =>
                         toggleTransport(ev.repairId, next)
                       }
-                      onToggleUrgent={(next) => toggleUrgent(ev.repairId, next)}
+                      onToggleUrgent={() => cycleUrgency(ev)}
                       onOpen={setOpenEvent}
                     />
                   ))}
@@ -585,7 +602,10 @@ export default function CalendarSection() {
                       events={events}
                       savingId={savingId}
                       onToggleTransport={toggleTransport}
-                      onToggleUrgent={toggleUrgent}
+                      onToggleUrgent={(id) => {
+                        const ev = events.find((e) => e.repairId === id);
+                        if (ev) cycleUrgency(ev);
+                      }}
                       onOpen={setOpenEvent}
                     />
                   )}
@@ -649,7 +669,31 @@ export default function CalendarSection() {
  *    amarillo flúo a la urgencia).
  *  - Azul / verde = ingreso / entrega, cuando no hay nada marcado.
  */
-const URGENT_CHIP = "bg-[#fbff2b] border-yellow-500 text-yellow-950";
+const URGENT_CHIP = "bg-red-200 border-red-500 text-red-950";
+const PRIORITY_CHIP = "bg-[#fbff2b] border-yellow-500 text-yellow-950";
+
+/** Texto corto de compras + plata para el tooltip del chip. */
+function summary(ev: CalendarEvent): string {
+  const parts: string[] = [];
+  if (ev.compras) {
+    parts.push(
+      `Repuestos: ${ev.compras.enTaller}/${ev.compras.total} en taller` +
+        (ev.compras.porDefinir ? `, ${ev.compras.porDefinir} por definir` : "") +
+        (ev.compras.pendientePago ? `, ${ev.compras.pendientePago} pdte. pago` : ""),
+    );
+  }
+  if (ev.admin.aprobado !== null || ev.admin.facturado > 0) {
+    parts.push(
+      `Aprobado ${ARS.format(ev.admin.aprobado ?? 0)} · facturado ${ARS.format(ev.admin.facturado)} · cobrado ${ARS.format(ev.admin.cobrado)}`,
+    );
+  }
+  return parts.join("\n");
+}
+const ARS = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  maximumFractionDigits: 0,
+});
 
 function EventChip({
   event,
@@ -666,7 +710,9 @@ function EventChip({
 }) {
   const bg = event.isUrgent
     ? URGENT_CHIP
-    : event.kind === "ingreso"
+    : event.isPriority
+      ? PRIORITY_CHIP
+      : event.kind === "ingreso"
       ? "bg-blue-50 border-blue-200 text-blue-900"
       : "bg-emerald-50 border-emerald-200 text-emerald-900";
   const Icon = event.kind === "ingreso" ? LogIn : LogOut;
@@ -682,7 +728,12 @@ function EventChip({
           type="button"
           onClick={() => onOpen(event)}
           className="truncate text-left hover:underline"
-          title={`${event.customerName} · ${event.vehicleSummary} · ${event.vehicleDomain}`}
+          title={[
+            `${event.customerName} · ${event.vehicleSummary} · ${event.vehicleDomain}`,
+            summary(event),
+          ]
+            .filter(Boolean)
+            .join("\n")}
         >
           {event.customerName}
         </button>
@@ -694,15 +745,17 @@ function EventChip({
             onClick={() => onToggleUrgent(!event.isUrgent)}
             title={
               event.isUrgent
-                ? `Urgente${event.urgencyNote ? `: ${event.urgencyNote}` : ""} — click para desmarcar`
-                : "Marcar urgencia del cliente (interno)"
+                ? `Urgente${event.urgencyNote ? `: ${event.urgencyNote}` : ""} — click para quitar`
+                : event.isPriority
+                  ? `Prioridad media${event.urgencyNote ? `: ${event.urgencyNote}` : ""} — click para pasar a urgente`
+                  : "Marcar prioridad (interno): media → urgente"
             }
             className={`inline-flex items-center rounded p-0.5 disabled:opacity-50 ${
               event.isUrgent
-                ? // El chip ya es amarillo flúo: el botón necesita un tono más
-                  // oscuro para no desaparecer sobre el fondo.
-                  "bg-yellow-500 text-yellow-950 ring-1 ring-yellow-700/40"
-                : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                ? "bg-red-600 text-white ring-1 ring-red-800/40"
+                : event.isPriority
+                  ? "bg-yellow-500 text-yellow-950 ring-1 ring-yellow-700/40"
+                  : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
             }`}
           >
             <Zap className="h-3 w-3" />
@@ -799,7 +852,7 @@ function DayOverflow({
               event={ev}
               saving={savingId === ev.repairId}
               onToggleTransport={(next) => onToggleTransport(ev.repairId, next)}
-              onToggleUrgent={(next) => onToggleUrgent(ev.repairId, next)}
+              onToggleUrgent={() => onToggleUrgent(ev.repairId, false)}
               onOpen={onOpen}
             />
           ))}
@@ -866,17 +919,25 @@ function UpcomingList({ data }: { data: CalendarPayload | null }) {
               {ev.vehicleSummary} · {ev.vehicleDomain}
             </span>
             <span className="ml-auto flex items-center gap-2 shrink-0">
-              {ev.isUrgent && (
+              {(ev.isUrgent || ev.isPriority) && (
                 <span
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold bg-[#fbff2b] text-yellow-950 border border-yellow-500"
-                  title={
-                    ev.urgencyNote
-                      ? `Urgente: ${ev.urgencyNote}`
-                      : "Urgente (interno)"
-                  }
+                  className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold border ${
+                    ev.isUrgent
+                      ? "bg-red-200 text-red-950 border-red-500"
+                      : "bg-[#fbff2b] text-yellow-950 border-yellow-500"
+                  }`}
+                  title={ev.urgencyNote ?? "Interno"}
                 >
                   <Zap className="h-3 w-3" />
-                  Urgente
+                  {ev.isUrgent ? "Urgente" : "Prioridad"}
+                </span>
+              )}
+              {summary(ev) && (
+                <span
+                  className="text-[11px] text-slate-500 truncate max-w-56"
+                  title={summary(ev)}
+                >
+                  {summary(ev).split("\n")[0]}
                 </span>
               )}
               {ev.partsPurchaser && (

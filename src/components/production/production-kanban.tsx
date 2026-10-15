@@ -86,6 +86,8 @@ export type KanbanRepair = {
    * que no haya que abrir el calendario para saber qué hay que priorizar.
    */
   isUrgent: boolean;
+  /** Prioridad media (amarillo); `isUrgent` es la alta (rojo). */
+  isPriority: boolean;
   urgencyNote: string | null;
   /**
    * Importes aprobados por bucket. La Lista los usa para el filtro
@@ -587,19 +589,21 @@ const RepairCard = memo(function RepairCard({
         </div>
       )}
 
-      {/* Urgencia del cliente — mismo amarillo flúo que en el calendario. */}
-      {repair.isUrgent && (
+      {/* Prioridad del cliente — mismos colores que en el calendario:
+          rojo urgente, amarillo media. */}
+      {(repair.isUrgent || repair.isPriority) && (
         <div
-          className="mt-2 inline-flex items-center gap-1 rounded-md bg-[#fbff2b] border border-yellow-500 text-yellow-950 px-1.5 py-0.5 text-[10px] font-semibold max-w-full"
-          title={
-            repair.urgencyNote
-              ? `Urgente: ${repair.urgencyNote}`
-              : "El cliente tiene urgencia con la fecha"
-          }
+          className={`mt-2 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold max-w-full ${
+            repair.isUrgent
+              ? "bg-red-200 border-red-500 text-red-950"
+              : "bg-[#fbff2b] border-yellow-500 text-yellow-950"
+          }`}
+          title={repair.urgencyNote ?? "El cliente tiene prioridad con la fecha"}
         >
           <Zap className="h-3 w-3 shrink-0" />
           <span className="truncate">
-            {repair.urgencyNote ? `Urgente · ${repair.urgencyNote}` : "Urgente"}
+            {repair.isUrgent ? "Urgente" : "Prioridad"}
+            {repair.urgencyNote ? ` · ${repair.urgencyNote}` : ""}
           </span>
         </div>
       )}

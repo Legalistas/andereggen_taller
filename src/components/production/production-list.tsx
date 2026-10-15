@@ -742,17 +742,17 @@ export default function ProductionList() {
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}
-                      {r.isUrgent && (
+                      {(r.isUrgent || r.isPriority) && (
                         <div
-                          className="mt-1 inline-flex items-center gap-1 rounded bg-[#fbff2b] border border-yellow-500 text-yellow-950 px-1 py-px text-[9px] font-bold uppercase tracking-wider"
-                          title={
-                            r.urgencyNote
-                              ? `Urgente: ${r.urgencyNote}`
-                              : "El cliente tiene urgencia con la fecha"
-                          }
+                          className={`mt-1 inline-flex items-center gap-1 rounded border px-1 py-px text-[9px] font-bold uppercase tracking-wider ${
+                            r.isUrgent
+                              ? "bg-red-200 border-red-500 text-red-950"
+                              : "bg-[#fbff2b] border-yellow-500 text-yellow-950"
+                          }`}
+                          title={r.urgencyNote ?? "El cliente tiene prioridad con la fecha"}
                         >
                           <Zap className="h-2.5 w-2.5" />
-                          Urgente
+                          {r.isUrgent ? "Urgente" : "Prioridad"}
                         </div>
                       )}
                       {r.claimCount > 1 && (
