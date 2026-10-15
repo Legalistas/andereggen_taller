@@ -6,13 +6,12 @@
  * cuando el taller corrige un dato después (un apellido mal escrito, el
  * chasis, la franquicia), el presupuesto seguía mostrando el dato viejo.
  *
- * Criterio (definido con el taller):
- *  - Presupuestos NO aceptados (draft / sent / expired): se refrescan solos
- *    cada vez que se edita el cliente o el vehículo. Todavía se están
- *    negociando, así que lo correcto es el dato actual.
- *  - Aceptados y rechazados: quedan congelados. El cliente ya los aceptó (o
- *    los rechazó) con esos datos. Se pueden refrescar a mano con
- *    POST /api/budgets/[id]/refresh-snapshot desde la ficha.
+ * Criterio (spec CRM 6.4): se refrescan TODOS los presupuestos del cliente o
+ * del vehículo, estén en el estado que estén. Un apellido mal escrito o una
+ * patente con un dígito de menos no es historia que valga la pena preservar;
+ * los importes y conceptos no se tocan nunca, así que el PDF aceptado sigue
+ * valiendo lo mismo. El botón "Actualizar datos" de la ficha queda como
+ * atajo manual.
  *
  * Nunca se toca `vehiclePerladoTricapa`: en el presupuesto es un dato de
  * precio que el operador puede haber puesto distinto al del vehículo a
@@ -23,9 +22,6 @@ import type { Prisma } from "../../generated/prisma/client";
 import { prisma } from "./prisma";
 
 type Tx = Prisma.TransactionClient | typeof prisma;
-
-/** Estados cuyo snapshot se refresca automáticamente. */
-export const AUTO_SYNC_STATUSES = ["draft", "sent", "expired"] as const;
 
 type CustomerSource = {
   name: string;
@@ -86,7 +82,6 @@ export async function syncOpenBudgetSnapshots(
 
   const budgets = await tx.budget.findMany({
     where: {
-      status: { in: [...AUTO_SYNC_STATUSES] },
       lead: {
         ...(where.customerId && { customerId: where.customerId }),
         ...(where.vehicleId && { vehicleId: where.vehicleId }),

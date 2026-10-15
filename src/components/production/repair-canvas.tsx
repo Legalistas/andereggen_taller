@@ -1161,14 +1161,12 @@ function CustomerVehicleSection({
           </>
         )}
 
-        {/* spec Producción v4 · El snapshot dejó de ser inmutable mientras el
-            auto está en el taller: si se corrige un dato del cliente o del
-            vehículo, la tarjeta lo toma. Al entregar queda congelado como
-            registro del trabajo. */}
+        {/* spec CRM 6.4 · Los datos de identidad se actualizan siempre desde
+            la ficha del cliente y del vehículo; lo que no cambia nunca son los
+            importes. */}
         <p className="text-[10px] text-muted-foreground italic">
-          Mientras el vehículo está en el taller, estos datos se actualizan
-          solos si se corrige la ficha del cliente o del vehículo. Al entregar
-          la reparación quedan congelados. Color y chasis salen siempre de la
+          Estos datos se actualizan solos si se corrige la ficha del cliente o
+          del vehículo, en cualquier etapa. Color y chasis salen siempre de la
           ficha del vehículo.
         </p>
       </div>
