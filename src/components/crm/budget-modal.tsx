@@ -493,7 +493,9 @@ export default function BudgetModal({
   }, []);
 
   const handleSubmit = async () => {
-    if (!leadId) {
+    // La ampliación se guarda contra el presupuesto padre: no necesita lead
+    // (desde Producción el modal se abre sin él).
+    if (!leadId && !isExtending) {
       setError("Seleccioná o creá un lead antes de guardar el presupuesto.");
       return;
     }
@@ -1130,7 +1132,7 @@ export default function BudgetModal({
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={saving || !leadId}
+                disabled={saving || (!leadId && !isExtending)}
                 className="flex-1"
               >
                 {saving ? "Guardando..." : "Guardar presupuesto"}
