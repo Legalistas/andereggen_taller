@@ -7,20 +7,21 @@
  */
 
 import { NextResponse } from "next/server";
-import { FINANCE_ROLES, verifyAuth } from "@/lib/auth-utils";
+import { cajaScope, inScope, outOfScope } from "@/lib/caja-scope";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function DELETE(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
   const { id } = await ctx.params;
 
   const row = await prisma.pendingCashPayment.findUnique({ where: { id } });
   if (!row) {
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   }
+  if (!inScope(scope, row.cashBoxId)) return outOfScope();
   if (row.status === "PAGADO") {
     return NextResponse.json(
       {
@@ -35,14 +36,22 @@ export async function DELETE(request: Request, ctx: RouteContext) {
 }
 
 export async function PATCH(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
   const { id } = await ctx.params;
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
+  const current = await prisma.pendingCashPayment.findUnique({
+    where: { id },
+    select: { cashBoxId: true },
+  });
+  if (!current) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  if (!inScope(scope, current.cashBoxId)) return outOfScope();
   const { amount, concept, reference, notes, dueDate } = body as Record<
     string,
     unknown

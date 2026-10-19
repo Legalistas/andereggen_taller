@@ -8,7 +8,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { getServerSession } from "@/lib/auth-utils";
+import { cajaScope, inScope, outOfScope } from "@/lib/caja-scope";
 import { prisma } from "@/lib/prisma";
 import type {
   PaymentMethod,
@@ -31,21 +32,24 @@ const VALID_STATUSES: PendingCashPaymentStatus[] = [
 ];
 
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
 
   const url = new URL(request.url);
   const statusFilter = url.searchParams.get(
     "status",
   ) as PendingCashPaymentStatus | null;
   const cashBoxId = url.searchParams.get("cashBoxId");
+  if (cashBoxId && !inScope(scope, cashBoxId)) return outOfScope();
 
   const rows = await prisma.pendingCashPayment.findMany({
     where: {
       ...(statusFilter && VALID_STATUSES.includes(statusFilter)
         ? { status: statusFilter }
         : { status: "PENDIENTE" }), // por defecto sólo lo que queda por pagar
-      ...(cashBoxId && { cashBoxId }),
+      ...(cashBoxId
+        ? { cashBoxId }
+        : scope.boxIds && { cashBoxId: { in: scope.boxIds } }),
     },
     include: {
       cashBox: { select: { id: true, key: true, name: true } },
@@ -73,8 +77,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
   const session = await getServerSession();
 
   const body = await request.json().catch(() => null);
@@ -102,6 +106,7 @@ export async function POST(request: Request) {
       ? (method as PaymentMethod)
       : "EFECTIVO";
 
+  if (!inScope(scope, cashBoxId)) return outOfScope();
   const box = await prisma.cashBox.findUnique({ where: { id: cashBoxId } });
   if (!box) {
     return NextResponse.json({ error: "Caja no encontrada" }, { status: 404 });

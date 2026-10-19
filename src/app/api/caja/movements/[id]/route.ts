@@ -12,19 +12,19 @@
  */
 
 import { NextResponse } from "next/server";
-import { FINANCE_ROLES, verifyAuth } from "@/lib/auth-utils";
+import { cajaScope, inScope, outOfScope } from "@/lib/caja-scope";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function DELETE(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
   const { id } = await ctx.params;
 
   const movement = await prisma.cashMovement.findUnique({
     where: { id },
-    select: { id: true, transferGroupId: true },
+    select: { id: true, transferGroupId: true, cashBoxId: true },
   });
   if (!movement) {
     return NextResponse.json(
@@ -32,6 +32,7 @@ export async function DELETE(request: Request, ctx: RouteContext) {
       { status: 404 },
     );
   }
+  if (!inScope(scope, movement.cashBoxId)) return outOfScope();
 
   if (movement.transferGroupId) {
     // Borramos las dos contrapartes de la transferencia en una sola query.

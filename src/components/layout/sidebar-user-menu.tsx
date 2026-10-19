@@ -20,6 +20,8 @@ export type SidebarUser = {
   role: string | null;
   /** Nombre técnico del rol (super_admin, contable…) para filtrar el menú. */
   roleName?: string | null;
+  /** Tiene cajas habilitadas aunque su rol no sea de finanzas. */
+  canCaja?: boolean;
 };
 
 function initials(name: string | null, email: string | null): string {

@@ -7,7 +7,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { getServerSession } from "@/lib/auth-utils";
+import { cajaScope, inScope, outOfScope } from "@/lib/caja-scope";
 import { prisma } from "@/lib/prisma";
 import type { PaymentMethod } from "../../../../../generated/prisma/client";
 
@@ -21,11 +22,12 @@ const VALID_METHODS: PaymentMethod[] = [
 ];
 
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
 
   const url = new URL(request.url);
   const cashBoxId = url.searchParams.get("cashBoxId");
+  if (cashBoxId && !inScope(scope, cashBoxId)) return outOfScope();
   const monthParam = url.searchParams.get("month");
 
   const now = new Date();
@@ -48,7 +50,9 @@ export async function GET(request: Request) {
     prisma.cashMovement.findMany({
       where: {
         paidAt: { gte: startOfMonth, lt: startOfNextMonth },
-        ...(cashBoxId && { cashBoxId }),
+        ...(cashBoxId
+          ? { cashBoxId }
+          : scope.boxIds && { cashBoxId: { in: scope.boxIds } }),
       },
       include: {
         cashBox: { select: { id: true, key: true, name: true } },
@@ -62,7 +66,7 @@ export async function GET(request: Request) {
     prisma.repairInvoicePayment.findMany({
       where: {
         paidAt: { gte: startOfMonth, lt: startOfNextMonth },
-        cashBoxId: cashBoxId ?? { not: null },
+        cashBoxId: cashBoxId ?? (scope.boxIds ? { in: scope.boxIds } : { not: null }),
       },
       include: {
         cashBox: { select: { id: true, key: true, name: true } },
@@ -141,8 +145,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
   const session = await getServerSession();
 
   const body = await request.json().catch(() => null);
@@ -155,6 +159,7 @@ export async function POST(request: Request) {
   if (!cashBoxId || typeof cashBoxId !== "string") {
     return NextResponse.json({ error: "Caja es obligatoria" }, { status: 400 });
   }
+  if (!inScope(scope, cashBoxId)) return outOfScope();
   // spec v2 · Aceptamos PASE_IN / PASE_OUT además de INGRESO/EGRESO. Los
   // pases mueven plata en la caja pero no cuentan como ingreso/egreso
   // contable del mes.

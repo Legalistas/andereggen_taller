@@ -19,7 +19,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { FINANCE_ROLES, verifyAuth } from "@/lib/auth-utils";
+import { cajaScope } from "@/lib/caja-scope";
 import { prisma } from "@/lib/prisma";
 
 function parseMonth(monthParam: string | null): {
@@ -47,8 +47,8 @@ function parseMonth(monthParam: string | null): {
 }
 
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
 
   const url = new URL(request.url);
   const { monthRef, startOfMonth, startOfNextMonth } = parseMonth(
@@ -81,7 +81,10 @@ export async function GET(request: Request) {
     revenueSeriesRaw,
   ] = await Promise.all([
     prisma.cashBox.findMany({
-      where: { archivedAt: null },
+      where: {
+        archivedAt: null,
+        ...(scope.boxIds && { id: { in: scope.boxIds } }),
+      },
       orderBy: { sortOrder: "asc" },
     }),
     prisma.repairInvoicePayment.groupBy({
@@ -363,5 +366,20 @@ export async function GET(request: Request) {
       total: Number(r.total) || 0,
     })),
     revenueSeries,
+    // Usuario acotado a algunas cajas: lo que es global (facturación,
+    // cobros pendientes, serie, por compañía) no le corresponde.
+    ...(scope.scoped && {
+      scoped: true,
+      totals: {
+        balance: totalBalance,
+        monthCollections,
+        monthEgresos,
+        monthBilling: 0,
+        pendingAmount: 0,
+        avgCollectionDaysPostDelivery: null,
+      },
+      byInsurance: [],
+      revenueSeries: [],
+    }),
   });
 }

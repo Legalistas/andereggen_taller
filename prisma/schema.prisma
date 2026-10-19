@@ -40,6 +40,12 @@ model User {
   lastLoginMethod  String?
   // twoFactor plugin
   twoFactorEnabled Boolean   @default(false)
+  /**
+   * Cajas que este usuario puede ver y operar (keys: "caja_2", …). Vacío =
+   * sin acceso especial: entra a Caja solo si su rol es de finanzas, y ahí
+   * ve todas. Con keys, entra aunque no sea de finanzas, pero solo a esas.
+   */
+  cashBoxKeys      String[]  @default([])
 
   sessions  Session[]
   accounts  Account[]

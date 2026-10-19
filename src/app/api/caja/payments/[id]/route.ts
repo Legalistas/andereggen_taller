@@ -9,7 +9,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { FINANCE_ROLES, verifyAuth } from "@/lib/auth-utils";
+import { cajaScope, inScope, outOfScope } from "@/lib/caja-scope";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -17,17 +17,18 @@ type RouteContext = { params: Promise<{ id: string }> };
 const PAYMENT_TOLERANCE = 1;
 
 export async function DELETE(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
   const { id } = await ctx.params;
 
   const payment = await prisma.repairInvoicePayment.findUnique({
     where: { id },
-    select: { id: true, invoice: { select: { repairId: true } } },
+    select: { id: true, cashBoxId: true, invoice: { select: { repairId: true } } },
   });
   if (!payment) {
     return NextResponse.json({ error: "Cobro no encontrado" }, { status: 404 });
   }
+  if (!inScope(scope, payment.cashBoxId)) return outOfScope();
 
   await prisma.repairInvoicePayment.delete({ where: { id } });
 

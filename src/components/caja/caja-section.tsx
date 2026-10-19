@@ -77,6 +77,8 @@ export type BoxesPayload = {
   };
   byInsurance: Array<{ insurance: string; total: number }>;
   revenueSeries: Array<{ month: string; ingresos: number }>;
+  /** Usuario acotado a algunas cajas: sin cobros por vehículo ni tarjetas. */
+  scoped?: boolean;
 };
 
 const ARS = new Intl.NumberFormat("es-AR", {
@@ -196,8 +198,12 @@ export default function CajaSection() {
       <Tabs defaultValue="general" className="w-full">
         <TabsList>
           <TabsTrigger value="general">Caja general</TabsTrigger>
-          <TabsTrigger value="cobros">Cobros por vehículo</TabsTrigger>
-          <TabsTrigger value="tarjetas">Tarjetas</TabsTrigger>
+          {!data?.scoped && (
+            <>
+              <TabsTrigger value="cobros">Cobros por vehículo</TabsTrigger>
+              <TabsTrigger value="tarjetas">Tarjetas</TabsTrigger>
+            </>
+          )}
         </TabsList>
         <TabsContent value="general" className="mt-4">
           <GeneralPanel

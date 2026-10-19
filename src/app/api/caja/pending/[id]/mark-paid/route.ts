@@ -10,14 +10,15 @@
  */
 
 import { NextResponse } from "next/server";
-import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { getServerSession } from "@/lib/auth-utils";
+import { cajaScope, inScope, outOfScope } from "@/lib/caja-scope";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, ctx: RouteContext) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
   const session = await getServerSession();
   const { id } = await ctx.params;
 
@@ -33,6 +34,7 @@ export async function POST(request: Request, ctx: RouteContext) {
   if (!pending) {
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   }
+  if (!inScope(scope, pending.cashBoxId)) return outOfScope();
   if (pending.status !== "PENDIENTE") {
     return NextResponse.json(
       { error: `El pago ya está en estado ${pending.status.toLowerCase()}.` },

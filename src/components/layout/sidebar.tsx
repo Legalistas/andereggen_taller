@@ -77,7 +77,10 @@ export function Sidebar({ user, collapsed, onToggle, onNavigate }: Props) {
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3">
         <ul className="space-y-0.5 px-2">
           {SIDEBAR_ITEMS.filter(
-            (item) => !item.roles || (user.roleName && item.roles.includes(user.roleName)),
+            (item) =>
+              !item.roles ||
+              (user.roleName && item.roles.includes(user.roleName)) ||
+              (item.href === "/caja" && user.canCaja),
           ).map((item) => {
             const Icon = item.icon;
             const isActive = item.href === activeHref;

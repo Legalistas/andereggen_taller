@@ -11,12 +11,13 @@
 
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { getServerSession } from "@/lib/auth-utils";
+import { cajaScope, inScope, outOfScope } from "@/lib/caja-scope";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
-  if (authError) return authError;
+  const scope = await cajaScope(request);
+  if (scope instanceof Response) return scope;
   const session = await getServerSession();
 
   const body = await request.json().catch(() => null);
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
       { status: 404 },
     );
   }
+  if (!inScope(scope, fromBox.id) || !inScope(scope, toBox.id)) return outOfScope();
 
   const transferGroupId = randomUUID();
   const when = paidAt ? new Date(paidAt as string) : new Date();
