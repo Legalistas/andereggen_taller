@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Tag,
   Truck,
+  Wallet,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
@@ -33,6 +34,9 @@ const AppearanceTab = dynamic(() => import("./tabs/appearance-tab"), {
   loading: () => tabFallback,
 });
 const BudgetTab = dynamic(() => import("./tabs/budget-tab"), {
+  loading: () => tabFallback,
+});
+const CashConceptsTab = dynamic(() => import("./tabs/cash-concepts-tab"), {
   loading: () => tabFallback,
 });
 const InsurancesTab = dynamic(() => import("./tabs/insurances-tab"), {
@@ -181,6 +185,9 @@ export default function SettingsSection() {
             <TabsTrigger value="sources">
               <Tag className="h-4 w-4" /> Fuentes de lead
             </TabsTrigger>
+            <TabsTrigger value="cash-concepts">
+              <Wallet className="h-4 w-4" /> Rubros de caja
+            </TabsTrigger>
             <TabsTrigger value="appearance">
               <Palette className="h-4 w-4" /> Apariencia
             </TabsTrigger>
@@ -210,6 +217,9 @@ export default function SettingsSection() {
             </TabsContent>
             <TabsContent value="sources">
               <SourcesTab />
+            </TabsContent>
+            <TabsContent value="cash-concepts">
+              <CashConceptsTab />
             </TabsContent>
             <TabsContent value="appearance">
               <AppearanceTab settings={settings} onSave={updateSettings} />

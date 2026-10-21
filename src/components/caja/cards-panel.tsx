@@ -40,7 +40,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MAX_CUOTAS, periodoPrimeraCuota, repartirCuotas } from "@/lib/cuotas";
 import type { CashBoxSummary } from "./caja-section";
-import { EGRESO_CONCEPTS } from "./movement-dialog";
+import { useCashConcepts } from "./use-cash-concepts";
 
 /**
  * spec Tarjetas oct '26 · Pestaña Tarjetas de la Caja.
@@ -505,6 +505,7 @@ function PurchaseDialog({
   // Vacío = el resumen que le toca según el día de cierre de la tarjeta.
   const [primerResumen, setPrimerResumen] = useState("");
   const [rubro, setRubro] = useState("");
+  const concepts = useCashConcepts();
   const [rubroLibre, setRubroLibre] = useState("");
   const [supplier, setSupplier] = useState("");
   const [notes, setNotes] = useState("");
@@ -628,9 +629,9 @@ function PurchaseDialog({
                   <SelectValue placeholder="Elegí el rubro" />
                 </SelectTrigger>
                 <SelectContent>
-                  {EGRESO_CONCEPTS.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  {concepts.map((c) => (
+                    <SelectItem key={c.label} value={c.label}>
+                      {c.label}
                     </SelectItem>
                   ))}
                   <SelectItem value={OTRO}>Otro…</SelectItem>

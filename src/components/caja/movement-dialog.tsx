@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { MAX_CUOTAS, periodoPrimeraCuota, repartirCuotas } from "@/lib/cuotas";
 import type { CashBoxSummary } from "./caja-section";
+import { useCashConcepts } from "./use-cash-concepts";
 
 /**
  * spec 4.3 v2 · Dialog para registrar un INGRESO o EGRESO manual en una
@@ -44,49 +45,9 @@ const METHODS = [
   { value: "OTRO", label: "Otro" },
 ];
 
-// spec v2 · Catálogo de conceptos de EGRESO que el taller usa por mes.
-// El operador elige uno o "Otro…" para escribir libre. Al listar movimientos
-// esto permite agrupar/filtrar por rubro sin depender del texto libre.
-//
-// Algunos conceptos tienen sub-categoría (ej. Impuestos → Luz / Agua / …).
-// Cuando el concepto elegido tiene subs, el `concept` guardado queda como
-// `"<Concepto> · <Sub>"` para que filtrar por texto siga funcionando.
-export const EGRESO_CONCEPTS = [
-  "Sueldos",
-  "Flete",
-  "Aportes entidades",
-  "Gastos administrativos",
-  // "Inversiones construcción" se renombró a "Brixar" (está más abajo en la
-  // lista): era el mismo rubro con dos nombres. La migración
-  // 20260922140000_caja_concepto_brixar renombró los movimientos ya cargados.
-  "Publicidad",
-  "Repuestos",
-  "Albañiles",
-  "Particular",
-  "Varios",
-  "Mano de obra tercerizada",
-  "Mejoras de edificio",
-  "Impuestos",
-  "AP seguros",
-  "Gastos jefes de obras",
-  "Alquileres",
-  "Marketing",
-  "Brixar",
-];
-
-// Subcategorías por concepto — solo Impuestos por ahora. Extensible.
-const EGRESO_SUBCATEGORIES: Record<string, string[]> = {
-  Impuestos: [
-    "Luz",
-    "Agua",
-    "Gas",
-    "TGI",
-    "API inmobiliario",
-    "Seguros AP",
-    "Seguros vehículos",
-    "Patentes",
-  ],
-};
+// Los rubros de EGRESO viven en la tabla CashConcept (Configuración → Rubros
+// de caja). Cuando el rubro tiene subcategorías, el `concept` guardado queda
+// como "<Rubro> · <Sub>" para que el filtro por texto siga funcionando.
 const EGRESO_OTHER = "__otro__";
 
 /**
@@ -115,6 +76,9 @@ export default function MovementDialog({
   // spec v2 · Sub-categoría del concepto (ej. Impuestos → "Luz").
   // Solo se muestra si `conceptChoice` tiene subs en EGRESO_SUBCATEGORIES.
   const [conceptSub, setConceptSub] = useState<string>("");
+  const concepts = useCashConcepts();
+  const subsOf = (label: string) =>
+    concepts.find((c) => c.label === label)?.subs ?? [];
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [selectedBoxId, setSelectedBoxId] = useState(cashBoxId);
@@ -587,7 +551,7 @@ export default function MovementDialog({
                   if (v === EGRESO_OTHER) {
                     // Vacío, para que escriban.
                     setConcept("");
-                  } else if (EGRESO_SUBCATEGORIES[v]) {
+                  } else if (subsOf(v).length > 0) {
                     // Va a pedir sub — dejamos el concept vacío hasta que
                     // se elija la subcategoría.
                     setConcept("");
@@ -601,15 +565,15 @@ export default function MovementDialog({
                   <SelectValue placeholder="Elegí el rubro del egreso" />
                 </SelectTrigger>
                 <SelectContent>
-                  {EGRESO_CONCEPTS.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  {concepts.map((c) => (
+                    <SelectItem key={c.label} value={c.label}>
+                      {c.label}
                     </SelectItem>
                   ))}
                   <SelectItem value={EGRESO_OTHER}>Otro…</SelectItem>
                 </SelectContent>
               </Select>
-              {EGRESO_SUBCATEGORIES[conceptChoice] && (
+              {subsOf(conceptChoice).length > 0 && (
                 <div className="mt-1 grid gap-1">
                   <Label className="text-[10px] text-slate-500">
                     Subcategoría de {conceptChoice}
@@ -627,7 +591,7 @@ export default function MovementDialog({
                       <SelectValue placeholder="Elegí la subcategoría" />
                     </SelectTrigger>
                     <SelectContent>
-                      {EGRESO_SUBCATEGORIES[conceptChoice].map((s) => (
+                      {subsOf(conceptChoice).map((s) => (
                         <SelectItem key={s} value={s}>
                           {s}
                         </SelectItem>

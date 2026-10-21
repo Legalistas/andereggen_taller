@@ -1105,6 +1105,29 @@ model InsuranceCompany {
  * Fuentes de lead (web, whatsapp, manual, referido, etc.).
  * Hoy Lead.source es String libre; esta tabla da un catálogo consistente.
  */
+/**
+ * Rubros de egreso de la Caja (Sueldos, Brixar, Impuestos → Luz…). Antes era
+ * una lista fija en el código; ahora se administran desde Configuración.
+ * Los movimientos guardan el texto del rubro ("Impuestos · Luz"), así que
+ * editar o borrar un rubro no toca lo ya cargado.
+ */
+model CashConcept {
+  id       String  @id @default(uuid())
+  label    String
+  /** Rubro padre: las subcategorías (Luz, Agua…) cuelgan de uno. */
+  parentId String?
+  parent   CashConcept?  @relation("CashConceptChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children CashConcept[] @relation("CashConceptChildren")
+  order    Int     @default(100)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([parentId, label])
+  @@index([parentId])
+}
+
 model LeadSource {
   id       String  @id @default(uuid())
   key      String  @unique // slug estable, ej: "web"
