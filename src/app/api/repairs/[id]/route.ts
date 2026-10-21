@@ -5,10 +5,7 @@ import {
   sendRepairEventNotification,
 } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
-import {
-  CLAIM_INCLUDE,
-  CLAIM_ORDER_BY,
-} from "@/lib/repair-claims";
+import { CLAIM_INCLUDE, CLAIM_ORDER_BY } from "@/lib/repair-claims";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -54,7 +51,16 @@ export async function GET(request: Request, ctx: RouteContext) {
           grandTotal: true,
         },
       },
-      lead: { select: { id: true, status: true } },
+      lead: {
+        select: {
+          id: true,
+          status: true,
+          // Perito y productor: destinatarios al enviar un presupuesto o
+          // una ampliación desde la ficha (igual que en Cotizaciones).
+          inspector: { select: { id: true, name: true, email: true } },
+          insuranceAgent: { select: { id: true, name: true, email: true } },
+        },
+      },
       // Siniestros de la tarjeta: cada uno con su presupuesto y su desglose
       // de mano de obra / repuestos aprobados por el seguro.
       claims: { include: CLAIM_INCLUDE, orderBy: CLAIM_ORDER_BY },

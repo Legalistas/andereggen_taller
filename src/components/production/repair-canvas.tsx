@@ -61,6 +61,7 @@ import { loadCashBoxes, loadInsuranceCompanies } from "@/lib/client-cache";
 import { BudgetAdminDialog } from "../crm/budget-admin-dialog";
 import BudgetModal from "../crm/budget-modal";
 import { FichasDialog } from "../crm/fichas-dialog";
+import { SendBudgetDialog } from "../crm/send-budget-dialog";
 import type { RepairStatus } from "./production-kanban";
 
 type UserLite = {
@@ -118,6 +119,7 @@ type ClaimBudget = {
     number: number;
     extensionSuffix: number;
     grandTotal: string | number;
+    status: string;
   }>;
 };
 
@@ -125,9 +127,14 @@ type ClaimBudget = {
 function budgetTotal(b: ClaimBudget): number {
   return (
     Number(b.grandTotal) +
-    (b.extensions ?? []).reduce((s, e) => s + Number(e.grandTotal), 0)
+    (b.extensions ?? [])
+      .filter((e) => e.status === "accepted")
+      .reduce((s, e) => s + Number(e.grandTotal), 0)
   );
 }
+
+/** Un presupuesto o ampliación todavía abierto: se puede mandar al cliente. */
+const canSend = (status: string) => status === "draft" || status === "sent";
 
 /**
  * Siniestro de la tarjeta. Un auto puede estar en el taller por dos
@@ -186,7 +193,20 @@ type RepairDetail = {
     status: string;
     grandTotal: string | number;
   } | null;
-  lead: { id: string; status: string } | null;
+  lead: {
+    id: string;
+    status: string;
+    inspector?: {
+      id: string;
+      name: string | null;
+      email: string | null;
+    } | null;
+    insuranceAgent?: {
+      id: string;
+      name: string | null;
+      email: string | null;
+    } | null;
+  } | null;
   /** Siniestros de la tarjeta, ordenados (Siniestro 1, 2, 3…). */
   claims: RepairClaim[];
   /**
@@ -287,6 +307,10 @@ export function RepairCanvas({
   reloadNonce,
 }: Props) {
   const [repair, setRepair] = useState<RepairDetail | null>(null);
+  // Recarga interna: después de guardar o enviar una ampliación desde la
+  // ficha, para que aparezca con su estado sin cerrar y volver a abrir.
+  const [localNonce, setLocalNonce] = useState(0);
+  const refetch = useCallback(() => setLocalNonce((n) => n + 1), []);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingIndicator, setSavingIndicator] = useState<
@@ -334,7 +358,7 @@ export function RepairCanvas({
     return () => {
       cancelled = true;
     };
-  }, [repairId, reloadNonce]);
+  }, [repairId, reloadNonce, localNonce]);
 
   const patchRepair = useCallback(
     async (patch: Record<string, unknown>) => {
@@ -446,7 +470,10 @@ export function RepairCanvas({
       url: string,
       method: "POST" | "PATCH" | "DELETE",
       payload?: Record<string, unknown>,
-    ): Promise<{ ok: true } | { ok: false; status: number; body: Record<string, unknown> }> => {
+    ): Promise<
+      | { ok: true }
+      | { ok: false; status: number; body: Record<string, unknown> }
+    > => {
       markSaving();
       try {
         const res = await fetch(url, {
@@ -477,8 +504,13 @@ export function RepairCanvas({
 
   const patchClaim = useCallback(
     async (claimId: string, patch: Record<string, unknown>) => {
-      const r = await claimRequest(`/api/repair-claims/${claimId}`, "PATCH", patch);
-      if (!r.ok) alert((r.body.error as string) ?? "Error al guardar el siniestro");
+      const r = await claimRequest(
+        `/api/repair-claims/${claimId}`,
+        "PATCH",
+        patch,
+      );
+      if (!r.ok)
+        alert((r.body.error as string) ?? "Error al guardar el siniestro");
     },
     [claimRequest],
   );
@@ -486,7 +518,8 @@ export function RepairCanvas({
   const deleteClaim = useCallback(
     async (claimId: string) => {
       const r = await claimRequest(`/api/repair-claims/${claimId}`, "DELETE");
-      if (!r.ok) alert((r.body.error as string) ?? "Error al borrar el siniestro");
+      if (!r.ok)
+        alert((r.body.error as string) ?? "Error al borrar el siniestro");
     },
     [claimRequest],
   );
@@ -532,7 +565,9 @@ Se mueven también ${other.invoiceCount} factura(s) con sus cobros.`
           { ...payload, absorb: true },
         );
         if (!merged.ok) {
-          alert((merged.body.error as string) ?? "Error al vincular el presupuesto");
+          alert(
+            (merged.body.error as string) ?? "Error al vincular el presupuesto",
+          );
         }
         return;
       }
@@ -678,6 +713,7 @@ Se mueven también ${other.invoiceCount} factura(s) con sus cobros.`
               <BudgetsSection
                 repair={repair}
                 onLinkBudget={(budgetId) => addClaim({ budgetId })}
+                onRefetch={refetch}
               />
 
               <ApprovalSection
@@ -1237,9 +1273,11 @@ function VehicleField({
 function BudgetsSection({
   repair,
   onLinkBudget,
+  onRefetch,
 }: {
   repair: RepairDetail;
   onLinkBudget: (budgetId: string) => Promise<void>;
+  onRefetch: () => void;
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
   // Nuevo presupuesto sobre el mismo vehículo (ej. seguro + trabajo
@@ -1249,7 +1287,8 @@ function BudgetsSection({
   const linked = (repair.claims ?? [])
     .map((c) => ({ claim: c, budget: c.budget }))
     .filter(
-      (x): x is { claim: RepairClaim; budget: ClaimBudget } => x.budget !== null,
+      (x): x is { claim: RepairClaim; budget: ClaimBudget } =>
+        x.budget !== null,
     );
 
   // Tarjeta vieja sin siniestros cargados: mostramos igual su presupuesto.
@@ -1298,6 +1337,13 @@ function BudgetsSection({
             budget={budget}
             claimIndex={budgets.length > 1 ? i + 1 : null}
             leadId={repair.lead?.id}
+            customer={{
+              name: repair.customerName,
+              email: repair.customerEmail,
+            }}
+            inspector={repair.lead?.inspector ?? null}
+            insuranceAgent={repair.lead?.insuranceAgent ?? null}
+            onRefetch={onRefetch}
           />
         ))}
       </div>
@@ -1361,12 +1407,30 @@ function LinkedBudgetCard({
   budget,
   claimIndex,
   leadId,
+  customer,
+  onRefetch,
+  inspector,
+  insuranceAgent,
 }: {
   budget: ClaimBudget;
   /** Nº de siniestro al que pertenece, si la tarjeta tiene más de uno. */
   claimIndex: number | null;
   leadId: string | undefined;
+  /** Destinatario del mail al enviar el presupuesto o una ampliación. */
+  customer: { name: string; email: string };
+  inspector: { id: string; name: string | null; email: string | null } | null;
+  insuranceAgent: {
+    id: string;
+    name: string | null;
+    email: string | null;
+  } | null;
+  onRefetch: () => void;
 }) {
+  // Enviar por mail (presupuesto nuevo o ampliación hecha desde acá) al
+  // cliente, perito o productor: mismo diálogo que Cotizaciones.
+  const [sending, setSending] = useState<{ id: string; number: number } | null>(
+    null,
+  );
   // Dialog "Fichas" — Ficha Técnica + Ficha Ingreso/Egreso. Se abre desde acá
   // (Producción) porque el flujo es: turno asignado → imprimir fichas para
   // pegar en el auto y hacer firmar al cliente.
@@ -1402,18 +1466,57 @@ function LinkedBudgetCard({
         <p className="font-semibold text-base text-slate-900 mt-1 tabular-nums">
           {ARS.format(Number(budget.grandTotal))}
         </p>
-        {(budget.extensions ?? []).map((e) => (
-          <a
-            key={e.id}
-            href={`/api/budgets/${e.id}/pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between text-[11px] text-amber-800 hover:underline"
-            title="Ampliación aceptada — abre su PDF"
+        {canSend(budget.status) && (
+          <button
+            type="button"
+            onClick={() => setSending({ id: budget.id, number: budget.number })}
+            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-white bg-[#003b73] hover:bg-[#003b73]/90 transition-colors"
+            title="Mandar el presupuesto por mail al cliente"
           >
-            <span className="font-mono">+ #{e.number}-A{e.extensionSuffix}</span>
-            <span className="tabular-nums">{ARS.format(Number(e.grandTotal))}</span>
-          </a>
+            {budget.status === "draft"
+              ? "Enviar al cliente"
+              : "Reenviar al cliente"}
+          </button>
+        )}
+        {(budget.extensions ?? []).map((e) => (
+          <div
+            key={e.id}
+            className="mt-1 flex items-center justify-between gap-2 text-[11px] text-amber-800"
+          >
+            <a
+              href={`/api/budgets/${e.id}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono hover:underline"
+              title="Abre el PDF de la ampliación"
+            >
+              + #{e.number}-A{e.extensionSuffix}
+            </a>
+            <span className="flex items-center gap-1.5">
+              {e.status !== "accepted" && (
+                <span className="text-[9px] uppercase tracking-wider px-1 py-px rounded bg-amber-100 text-amber-800">
+                  {e.status === "draft"
+                    ? "Borrador"
+                    : e.status === "sent"
+                      ? "Enviada"
+                      : e.status}
+                </span>
+              )}
+              {canSend(e.status) && (
+                <button
+                  type="button"
+                  onClick={() => setSending({ id: e.id, number: e.number })}
+                  className="text-[10px] font-semibold text-[#003b73] hover:underline"
+                  title="Mandar la ampliación por mail al cliente"
+                >
+                  {e.status === "draft" ? "Enviar" : "Reenviar"}
+                </button>
+              )}
+              <span className="tabular-nums">
+                {ARS.format(Number(e.grandTotal))}
+              </span>
+            </span>
+          </div>
         ))}
         {(budget.extensions ?? []).length > 0 && (
           <p className="mt-1 text-[11px] font-semibold text-slate-700 tabular-nums flex justify-between">
@@ -1481,13 +1584,31 @@ function LinkedBudgetCard({
         open={fichasOpen}
         onOpenChange={setFichasOpen}
       />
+      <SendBudgetDialog
+        open={sending !== null}
+        onOpenChange={(v) => {
+          if (!v) setSending(null);
+        }}
+        budgetId={sending?.id ?? null}
+        budgetNumber={sending?.number}
+        customer={customer}
+        inspector={inspector}
+        insuranceAgent={insuranceAgent}
+        onSent={() => {
+          setSending(null);
+          onRefetch();
+        }}
+      />
       {/* BudgetModal en modo ampliación — montado solo cuando se abre. */}
       <BudgetModal
         extendingFromBudgetId={extendOpen ? budget.id : undefined}
         hideTrigger
         open={extendOpen}
         onOpenChange={setExtendOpen}
-        onSaved={() => setExtendOpen(false)}
+        onSaved={() => {
+          setExtendOpen(false);
+          onRefetch();
+        }}
       />
       {/* Administrativa (interno) — accesible desde producción. */}
       <BudgetAdminDialog
@@ -1826,13 +1947,17 @@ function ApprovalSection({
 }: {
   repair: RepairDetail;
   onPatch: (patch: Record<string, unknown>) => Promise<void>;
-  onPatchClaim: (claimId: string, patch: Record<string, unknown>) => Promise<void>;
+  onPatchClaim: (
+    claimId: string,
+    patch: Record<string, unknown>,
+  ) => Promise<void>;
   onDeleteClaim: (claimId: string) => Promise<void>;
   onAddClaim: (payload?: Record<string, unknown>) => Promise<void>;
 }) {
   const claims = repair.claims ?? [];
   const insuranceTotal = claims.reduce(
-    (acc, c) => acc + Number(c.approvedLabor ?? 0) + Number(c.approvedParts ?? 0),
+    (acc, c) =>
+      acc + Number(c.approvedLabor ?? 0) + Number(c.approvedParts ?? 0),
     0,
   );
   const total =
@@ -2274,9 +2399,8 @@ function InvoicesSection({
       </div>
       {approvedTotal > 0 && billed > 0 && billed !== approvedTotal && (
         <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-3">
-          Facturado {ARS.format(billed)} vs aprobado{" "}
-          {ARS.format(approvedTotal)} (diff{" "}
-          {ARS.format(billed - approvedTotal)})
+          Facturado {ARS.format(billed)} vs aprobado {ARS.format(approvedTotal)}{" "}
+          (diff {ARS.format(billed - approvedTotal)})
         </p>
       )}
 
@@ -2488,17 +2612,13 @@ function InvoiceCard({
           </div>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-sm font-bold tabular-nums">
-            {ARS.format(amount)}
-          </p>
+          <p className="text-sm font-bold tabular-nums">{ARS.format(amount)}</p>
           {pending > 0 ? (
             <p className="text-[10px] font-medium text-rose-600 tabular-nums">
               Pend. {ARS.format(pending)}
             </p>
           ) : (
-            <p className="text-[10px] font-medium text-emerald-600">
-              Cobrada
-            </p>
+            <p className="text-[10px] font-medium text-emerald-600">Cobrada</p>
           )}
         </div>
         <ChevronDown
@@ -2571,24 +2691,21 @@ function PaymentsList({
     }
     setAdding(true);
     try {
-      const res = await fetch(
-        `/api/repair-invoices/${invoiceId}/payments`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: amt,
-            // Bug histórico: `new Date("YYYY-MM-DD").toISOString()` interpreta
-            // como UTC 00:00 → en AR (UTC-3) se muestra el día anterior.
-            // Parseamos el YYYY-MM-DD como mediodía LOCAL para preservar
-            // la fecha que eligió el usuario.
-            paidAt: paidAtLocalNoon(draft.paidAt),
-            method: draft.method,
-            reference: draft.reference.trim() || null,
-            cashBoxId: draft.cashBoxId,
-          }),
-        },
-      );
+      const res = await fetch(`/api/repair-invoices/${invoiceId}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: amt,
+          // Bug histórico: `new Date("YYYY-MM-DD").toISOString()` interpreta
+          // como UTC 00:00 → en AR (UTC-3) se muestra el día anterior.
+          // Parseamos el YYYY-MM-DD como mediodía LOCAL para preservar
+          // la fecha que eligió el usuario.
+          paidAt: paidAtLocalNoon(draft.paidAt),
+          method: draft.method,
+          reference: draft.reference.trim() || null,
+          cashBoxId: draft.cashBoxId,
+        }),
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error ?? `HTTP ${res.status}`);
@@ -2610,10 +2727,9 @@ function PaymentsList({
 
   const removePayment = async (paymentId: string) => {
     if (!confirm("¿Eliminar este pago?")) return;
-    const res = await fetch(
-      `/api/repair-invoice-payments/${paymentId}`,
-      { method: "DELETE" },
-    );
+    const res = await fetch(`/api/repair-invoice-payments/${paymentId}`, {
+      method: "DELETE",
+    });
     if (res.ok) await onRefresh();
   };
 
@@ -2664,9 +2780,7 @@ function PaymentsList({
           </tbody>
         </table>
       ) : (
-        <p className="text-[11px] text-slate-400 italic">
-          Sin pagos cargados.
-        </p>
+        <p className="text-[11px] text-slate-400 italic">Sin pagos cargados.</p>
       )}
 
       <div className="pt-1 grid grid-cols-[80px_100px_1fr_1fr_80px_auto] gap-1.5 items-end">
@@ -2676,17 +2790,13 @@ function PaymentsList({
           step="0.01"
           placeholder="$"
           value={draft.amount}
-          onChange={(e) =>
-            setDraft((p) => ({ ...p, amount: e.target.value }))
-          }
+          onChange={(e) => setDraft((p) => ({ ...p, amount: e.target.value }))}
           className="h-8 text-xs"
         />
         <Input
           type="date"
           value={draft.paidAt}
-          onChange={(e) =>
-            setDraft((p) => ({ ...p, paidAt: e.target.value }))
-          }
+          onChange={(e) => setDraft((p) => ({ ...p, paidAt: e.target.value }))}
           className="h-8 text-xs"
         />
         <Select
@@ -2699,13 +2809,11 @@ function PaymentsList({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(Object.keys(PAYMENT_METHOD_LABEL) as PaymentMethod[]).map(
-              (m) => (
-                <SelectItem key={m} value={m}>
-                  {PAYMENT_METHOD_LABEL[m]}
-                </SelectItem>
-              ),
-            )}
+            {(Object.keys(PAYMENT_METHOD_LABEL) as PaymentMethod[]).map((m) => (
+              <SelectItem key={m} value={m}>
+                {PAYMENT_METHOD_LABEL[m]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         {/* spec 4.2 v2 · A qué caja va el cobro. Cobros a Caja 2 (línea
@@ -2761,4 +2869,3 @@ function formatShortDate(iso: string): string {
     year: "2-digit",
   });
 }
-

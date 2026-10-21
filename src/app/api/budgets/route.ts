@@ -93,7 +93,14 @@ export async function GET(request: Request) {
       createdAt: true,
       updatedAt: true,
       // Fuente del lead: la columna "Origen" de Cotizaciones y su filtro.
-      lead: { select: { source: true } },
+      // Perito y productor: destinatarios de "Enviar por mail" en la fila.
+      lead: {
+        select: {
+          source: true,
+          inspector: { select: { id: true, name: true, email: true } },
+          insuranceAgent: { select: { id: true, name: true, email: true } },
+        },
+      },
       // N° interno de la tarjeta de Producción: el id único del caso.
       repair: { select: { internalNumber: true } },
       claim: { select: { repair: { select: { internalNumber: true } } } },
@@ -112,6 +119,8 @@ export async function GET(request: Request) {
     budgets: budgets.map(({ lead, repair, claim, parentBudget, ...b }) => ({
       ...b,
       source: lead?.source ?? null,
+      inspector: lead?.inspector ?? null,
+      insuranceAgent: lead?.insuranceAgent ?? null,
       internalNumber:
         repair?.internalNumber ??
         claim?.repair.internalNumber ??

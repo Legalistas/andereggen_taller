@@ -29,6 +29,7 @@ import BudgetModal from "@/components/crm/budget-modal";
 import CustomerSelector, {
   type Customer,
 } from "@/components/crm/customer-selector";
+import { SendBudgetDialog } from "@/components/crm/send-budget-dialog";
 import VehicleForm from "@/components/crm/vehicle-form";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +73,12 @@ type QuoteLite = {
   leadId: string;
   /** Fuente del lead ("pautas", "whatsapp"…). null si el lead no la tiene. */
   source: string | null;
+  inspector?: { id: string; name: string | null; email: string | null } | null;
+  insuranceAgent?: {
+    id: string;
+    name: string | null;
+    email: string | null;
+  } | null;
   /** N° interno de la tarjeta de Producción (mismo para todos los pptos del caso). */
   internalNumber: number | null;
   number: number;
@@ -227,6 +234,8 @@ export default function QuotesSection() {
   const [budgetLeadId, setBudgetLeadId] = useState<string | null>(null);
   // Budget que se está ampliando (modo ampliación del BudgetModal).
   const [extendingFromId, setExtendingFromId] = useState<string | null>(null);
+  /** Fila desde la que se abre el envío por mail (borrador o reenvío). */
+  const [sendingQuote, setSendingQuote] = useState<QuoteLite | null>(null);
 
   // Detalle
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -754,6 +763,17 @@ export default function QuotesSection() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {(q.status === "draft" || q.status === "sent") && (
+                            <DropdownMenuItem
+                              className="gap-2"
+                              onClick={() => setSendingQuote(q)}
+                            >
+                              <Send className="h-4 w-4 text-[#003b73]" />
+                              {q.status === "draft"
+                                ? "Enviar por mail"
+                                : "Reenviar por mail"}
+                            </DropdownMenuItem>
+                          )}
                           {allowed.includes("sent") && (
                             <DropdownMenuItem
                               className="gap-2"
@@ -932,6 +952,24 @@ export default function QuotesSection() {
       {/* BudgetModal controlado — se abre después del flow de nueva cotización
           o cuando el operador elige "Ampliar" sobre un ppto aceptado. Los dos
           modos son mutuamente excluyentes a nivel UX (uno por vez). */}
+      <SendBudgetDialog
+        open={sendingQuote !== null}
+        onOpenChange={(v) => {
+          if (!v) setSendingQuote(null);
+        }}
+        budgetId={sendingQuote?.id ?? null}
+        budgetNumber={sendingQuote?.number}
+        customer={{
+          name: sendingQuote?.customerName ?? "",
+          email: sendingQuote?.customerEmail ?? "",
+        }}
+        inspector={sendingQuote?.inspector ?? null}
+        insuranceAgent={sendingQuote?.insuranceAgent ?? null}
+        onSent={() => {
+          setSendingQuote(null);
+          fetchQuotes();
+        }}
+      />
       <BudgetModal
         leadId={budgetLeadId ?? undefined}
         extendingFromBudgetId={extendingFromId ?? undefined}
@@ -987,8 +1025,7 @@ export default function QuotesSection() {
               {detail && (
                 <>
                   <span>
-                    Creada:{" "}
-                    {new Date(detail.createdAt).toLocaleString("es-AR")}
+                    Creada: {new Date(detail.createdAt).toLocaleString("es-AR")}
                   </span>
                   {detail.sentAt && (
                     <span>
@@ -1017,7 +1054,8 @@ export default function QuotesSection() {
           <div className="flex-1 overflow-y-auto px-6 py-5 bg-muted/20">
             {detailLoading && (
               <div className="py-10 text-center text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 inline animate-spin mr-2" /> Cargando…
+                <Loader2 className="h-4 w-4 inline animate-spin mr-2" />{" "}
+                Cargando…
               </div>
             )}
 

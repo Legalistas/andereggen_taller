@@ -28,9 +28,18 @@ export const CLAIM_BUDGET_SELECT = {
   partsSubtotal: true,
   // Ampliaciones aceptadas: suman al presupuestado de la tarjeta; si no, el
   // "vs ppto" compara lo aprobado (que ya las incluye) contra el original.
+  // Todas menos las rechazadas: una ampliación recién hecha desde Producción
+  // tiene que verse (y poder enviarse) desde la misma ficha. Al presupuestado
+  // suman solo las aceptadas.
   extensions: {
-    where: { status: "accepted" },
-    select: { id: true, number: true, extensionSuffix: true, grandTotal: true },
+    where: { status: { not: "rejected" } },
+    select: {
+      id: true,
+      number: true,
+      extensionSuffix: true,
+      grandTotal: true,
+      status: true,
+    },
   },
 } satisfies Prisma.BudgetSelect;
 
@@ -66,7 +75,8 @@ export async function syncApprovedInsurance(
   );
   const total = hasAmounts
     ? claims.reduce(
-        (acc, c) => acc + Number(c.approvedLabor ?? 0) + Number(c.approvedParts ?? 0),
+        (acc, c) =>
+          acc + Number(c.approvedLabor ?? 0) + Number(c.approvedParts ?? 0),
         0,
       )
     : null;
