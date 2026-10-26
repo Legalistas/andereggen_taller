@@ -33,7 +33,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -41,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -60,6 +60,8 @@ type Supplier = {
   email: string | null;
   address: string | null;
   notes: string | null;
+  cuit: string | null;
+  accountCode: string | null;
   isActive: boolean;
   createdAt: string;
 };
@@ -70,6 +72,8 @@ const emptyForm = {
   email: "",
   address: "",
   notes: "",
+  cuit: "",
+  accountCode: "",
   isActive: true,
 };
 
@@ -146,6 +150,8 @@ export default function SuppliersTab() {
       email: s.email ?? "",
       address: s.address ?? "",
       notes: s.notes ?? "",
+      cuit: s.cuit ?? "",
+      accountCode: s.accountCode ?? "",
       isActive: s.isActive,
     });
     setError(null);
@@ -160,9 +166,7 @@ export default function SuppliersTab() {
     setBusy(true);
     setError(null);
     try {
-      const url = editing
-        ? `/api/suppliers/${editing.id}`
-        : "/api/suppliers";
+      const url = editing ? `/api/suppliers/${editing.id}` : "/api/suppliers";
       const res = await fetch(url, {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -172,6 +176,8 @@ export default function SuppliersTab() {
           email: form.email || null,
           address: form.address || null,
           notes: form.notes || null,
+          cuit: form.cuit || null,
+          accountCode: form.accountCode || null,
           isActive: form.isActive,
         }),
       });
@@ -220,7 +226,7 @@ export default function SuppliersTab() {
       <div className="flex items-center gap-2 mb-4">
         <div className="flex-1">
           <Input
-            placeholder="Buscar por nombre, teléfono o email…"
+            placeholder="Buscar por nombre, CUIT, teléfono o email…"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -294,6 +300,16 @@ export default function SuppliersTab() {
             <TableRow key={s.id}>
               <TableCell>
                 <div className="font-medium">{s.name}</div>
+                {(s.cuit || s.accountCode) && (
+                  <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                    {[
+                      s.cuit && `CUIT ${s.cuit}`,
+                      s.accountCode && `Cta. ${s.accountCode}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                )}
                 {s.address && (
                   <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                     <MapPin className="h-3 w-3" /> {s.address}
@@ -442,6 +458,27 @@ export default function SuppliersTab() {
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1">
+                <Label className="text-xs">CUIT</Label>
+                <Input
+                  inputMode="numeric"
+                  value={form.cuit}
+                  onChange={(e) => setForm({ ...form, cuit: e.target.value })}
+                  placeholder="30-71234567-8"
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label className="text-xs">Código de cuenta corriente</Label>
+                <Input
+                  value={form.accountCode}
+                  onChange={(e) =>
+                    setForm({ ...form, accountCode: e.target.value })
+                  }
+                  placeholder="El del sistema contable"
+                />
+              </div>
+            </div>
             <div className="grid gap-1">
               <Label className="text-xs">Dirección</Label>
               <Input
@@ -501,10 +538,9 @@ export default function SuppliersTab() {
           <DialogHeader>
             <DialogTitle>Eliminar proveedor</DialogTitle>
             <DialogDescription>
-              ¿Seguro que querés eliminar{" "}
-              <strong>{deleteTarget?.name}</strong>? Las cotizaciones y
-              compras históricas van a conservar el nombre pero pierden el
-              link al proveedor.
+              ¿Seguro que querés eliminar <strong>{deleteTarget?.name}</strong>?
+              Las cotizaciones y compras históricas van a conservar el nombre
+              pero pierden el link al proveedor.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

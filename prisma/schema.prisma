@@ -650,11 +650,53 @@ model Supplier {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /**
+   * spec 13 · CUIT para vincular las facturas importadas de ARCA, y código de
+   * cuenta corriente del proveedor en el sistema contable.
+   */
+  cuit        String? @unique
+  accountCode String?
+
   quotes           BudgetAdminQuote[]
   purchases        Purchase[]         @relation("PurchasePartsSupplier")
   freightPurchases Purchase[]         @relation("PurchaseFreightSupplier")
+  invoices         SupplierInvoice[]
 
   @@index([isActive])
+}
+
+/**
+ * spec 13 · Factura de compra (comprobante recibido) importada del Excel de
+ * "Mis Comprobantes Recibidos" de ARCA. Montos en pesos (los de otra moneda se
+ * convierten con el tipo de cambio del comprobante); las notas de crédito se
+ * guardan en negativo para que los totales resten solos.
+ */
+model SupplierInvoice {
+  id          String    @id @default(uuid())
+  supplierId  String?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  issuerCuit  String
+  issuerName  String
+  typeCode    Int
+  typeName    String
+  pointOfSale Int
+  number      Int
+  date        DateTime  @db.Date
+  cae         String?
+  currency    String    @default("PES")
+  exchangeRate Decimal  @default(1) @db.Decimal(14, 6)
+  netTaxed    Decimal   @db.Decimal(14, 2)
+  netUntaxed  Decimal   @db.Decimal(14, 2)
+  exempt      Decimal   @db.Decimal(14, 2)
+  otherTaxes  Decimal   @db.Decimal(14, 2)
+  iva         Decimal   @db.Decimal(14, 2)
+  total       Decimal   @db.Decimal(14, 2)
+  importedById String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([issuerCuit, typeCode, pointOfSale, number])
+  @@index([date])
+  @@index([supplierId])
 }
 
 model Purchase {

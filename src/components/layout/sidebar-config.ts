@@ -5,6 +5,7 @@ import {
   FileText,
   type LucideIcon,
   Package,
+  Receipt,
   Settings,
   ShoppingCart,
   UserCog,
@@ -33,9 +34,16 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   // spec sección 4 v2 · Módulo Caja — cobros, egresos, transferencias entre
   // las 5 cajas del taller. Administrado por el rol Contable (Ayelén).
   { label: "Caja", icon: Wallet, href: "/caja", roles: FINANCE_ROLES },
+  // spec 13 · Facturas de proveedores importadas de ARCA (Mis Comprobantes).
+  { label: "Facturas", icon: Receipt, href: "/facturas", roles: FINANCE_ROLES },
   // spec Compras v2 · Ciclo completo de compras (Cotizar → Archivada, 7 estados).
   { label: "Compras", icon: ShoppingCart, href: "/compras" },
-  { label: "Estadísticas", icon: BarChartBig, href: "/estadisticas", roles: FINANCE_ROLES },
+  {
+    label: "Estadísticas",
+    icon: BarChartBig,
+    href: "/estadisticas",
+    roles: FINANCE_ROLES,
+  },
   { label: "Inventario", icon: Package, href: "/inventario" },
   { label: "Clientes", icon: Users, href: "/customers" },
   { label: "Usuarios", icon: UserCog, href: "/users" },

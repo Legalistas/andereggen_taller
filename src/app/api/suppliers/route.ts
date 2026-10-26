@@ -11,6 +11,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { limpiarCuit } from "@/lib/arca-comprobantes";
 import { verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 
@@ -24,7 +25,9 @@ export async function GET(request: Request) {
   const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
   const rawSize = Number(url.searchParams.get("pageSize") ?? "25");
   const pageSize =
-    rawSize === 0 ? 0 : Math.min(200, Math.max(1, Number.isFinite(rawSize) ? rawSize : 25));
+    rawSize === 0
+      ? 0
+      : Math.min(200, Math.max(1, Number.isFinite(rawSize) ? rawSize : 25));
 
   const where = {
     ...(search && {
@@ -32,6 +35,7 @@ export async function GET(request: Request) {
         { name: { contains: search, mode: "insensitive" as const } },
         { phone: { contains: search, mode: "insensitive" as const } },
         { email: { contains: search, mode: "insensitive" as const } },
+        { cuit: { contains: search.replace(/\D/g, "") || search } },
       ],
     }),
     ...(activeOnly && { isActive: true }),
@@ -68,16 +72,31 @@ export async function POST(request: Request) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
-  const { name, phone, email, address, notes, isActive } = body as Record<
-    string,
-    unknown
-  >;
+  const { name, phone, email, address, notes, isActive, cuit, accountCode } =
+    body as Record<string, unknown>;
 
   if (typeof name !== "string" || !name.trim()) {
     return NextResponse.json(
       { error: "El nombre es obligatorio" },
       { status: 400 },
     );
+  }
+
+  const cuitLimpio = limpiarCuit(cuit);
+  if (cuitLimpio === undefined) {
+    return NextResponse.json({ error: "CUIT inválido" }, { status: 400 });
+  }
+  if (cuitLimpio) {
+    const conCuit = await prisma.supplier.findUnique({
+      where: { cuit: cuitLimpio },
+      select: { name: true },
+    });
+    if (conCuit) {
+      return NextResponse.json(
+        { error: `El CUIT ya es de "${conCuit.name}".` },
+        { status: 409 },
+      );
+    }
   }
 
   // Unique por name — validamos antes para dar mejor error que el constraint.
@@ -101,6 +120,11 @@ export async function POST(request: Request) {
         typeof address === "string" && address.trim() ? address.trim() : null,
       notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
       isActive: typeof isActive === "boolean" ? isActive : true,
+      cuit: cuitLimpio,
+      accountCode:
+        typeof accountCode === "string" && accountCode.trim()
+          ? accountCode.trim()
+          : null,
     },
   });
 

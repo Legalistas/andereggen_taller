@@ -6,6 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { limpiarCuit } from "@/lib/arca-comprobantes";
 import { verifyAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 
@@ -28,10 +29,8 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
-  const { name, phone, email, address, notes, isActive } = body as Record<
-    string,
-    unknown
-  >;
+  const { name, phone, email, address, notes, isActive, cuit, accountCode } =
+    body as Record<string, unknown>;
 
   const data: Record<string, unknown> = {};
   if (name !== undefined) {
@@ -54,16 +53,42 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     data.name = trimmed;
   }
   if (phone !== undefined)
-    data.phone = typeof phone === "string" && phone.trim() ? phone.trim() : null;
+    data.phone =
+      typeof phone === "string" && phone.trim() ? phone.trim() : null;
   if (email !== undefined)
-    data.email = typeof email === "string" && email.trim() ? email.trim() : null;
+    data.email =
+      typeof email === "string" && email.trim() ? email.trim() : null;
   if (address !== undefined)
     data.address =
       typeof address === "string" && address.trim() ? address.trim() : null;
   if (notes !== undefined)
-    data.notes = typeof notes === "string" && notes.trim() ? notes.trim() : null;
-  if (isActive !== undefined)
-    data.isActive = Boolean(isActive);
+    data.notes =
+      typeof notes === "string" && notes.trim() ? notes.trim() : null;
+  if (isActive !== undefined) data.isActive = Boolean(isActive);
+  if (accountCode !== undefined)
+    data.accountCode =
+      typeof accountCode === "string" && accountCode.trim()
+        ? accountCode.trim()
+        : null;
+  if (cuit !== undefined) {
+    const cuitLimpio = limpiarCuit(cuit);
+    if (cuitLimpio === undefined) {
+      return NextResponse.json({ error: "CUIT inválido" }, { status: 400 });
+    }
+    if (cuitLimpio && cuitLimpio !== existing.cuit) {
+      const conCuit = await prisma.supplier.findUnique({
+        where: { cuit: cuitLimpio },
+        select: { name: true },
+      });
+      if (conCuit) {
+        return NextResponse.json(
+          { error: `El CUIT ya es de "${conCuit.name}".` },
+          { status: 409 },
+        );
+      }
+    }
+    data.cuit = cuitLimpio;
+  }
 
   const supplier = await prisma.supplier.update({ where: { id }, data });
   return NextResponse.json({ supplier });

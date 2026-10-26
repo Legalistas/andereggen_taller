@@ -287,7 +287,7 @@ export default function CajaSection() {
   );
 }
 
-function KpiCard({
+export function KpiCard({
   icon: Icon,
   iconTint,
   iconBg,
