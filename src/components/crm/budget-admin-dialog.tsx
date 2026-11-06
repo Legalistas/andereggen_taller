@@ -33,14 +33,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import NewDirectPurchaseDialog from "@/components/compras/new-direct-purchase-dialog";
-import { ExtensionToggle } from "@/components/compras/purchases-table";
 import PurchaseDetailDialog from "@/components/compras/purchase-detail-dialog";
-import {
-  invalidateCache,
-  loadCashBoxes,
-  loadSuppliers,
-  SUPPLIERS_KEY,
-} from "@/lib/client-cache";
+import { ExtensionToggle } from "@/components/compras/purchases-table";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -51,6 +45,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  invalidateCache,
+  loadCashBoxes,
+  loadSuppliers,
+  SUPPLIERS_KEY,
+} from "@/lib/client-cache";
 // Catálogo compartido de estados: la administrativa tenía su propia copia y
 // se quedó sin "Seguro", lo que rompía el tab Compras de los vehículos cuyos
 // repuestos manda la aseguradora.
@@ -569,10 +569,7 @@ function ItemDescriptionAutocomplete({
   const showCreateRow = typed.length > 0 && !hasExactMatch;
 
   return (
-    <div
-      data-autocomplete="item-description"
-      className="relative flex-1"
-    >
+    <div data-autocomplete="item-description" className="relative flex-1">
       <Input
         placeholder="Buscar o escribir descripción (ej: paragolpes delantero)"
         value={value}
@@ -988,7 +985,7 @@ function QuoteLine({
         <div className="flex items-baseline gap-1.5 mt-0.5">
           {hasDiscount ? (
             <>
-              <span className="text-[9px] text-slate-400 line-through font-mono">
+              <span className="text-[9px] text-slate-600 font-mono">
                 {ARS.format(Number(quote.price))}
               </span>
               <span className="text-[9px] text-amber-700 font-semibold">
@@ -1115,16 +1112,12 @@ function QuoteInlineForm({
   onCancel: () => void;
 }) {
   const [supplier, setSupplier] = useState(initial?.supplierName ?? "");
-  const [price, setPrice] = useState(
-    initial ? String(initial.price) : "",
-  );
+  const [price, setPrice] = useState(initial ? String(initial.price) : "");
   const [partCode, setPartCode] = useState(initial?.partCode ?? "");
   const [discount, setDiscount] = useState(
     initial?.discount != null ? String(initial.discount) : "",
   );
-  const [availability, setAvailability] = useState(
-    initial?.availability ?? "",
-  );
+  const [availability, setAvailability] = useState(initial?.availability ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [saving, setSaving] = useState(false);
 

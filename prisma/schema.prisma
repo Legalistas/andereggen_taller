@@ -1134,6 +1134,14 @@ model InsuranceCompany {
   notes       String? @db.Text
   isActive    Boolean @default(true)
 
+  /**
+   * Valores acordados con la aseguradora para clientes con todo riesgo,
+   * finales (con IVA). El presupuesto los propone sin IVA como valor unitario
+   * de Pintura (por paño) y de Chapa (por día); se pueden cambiar en cada uno.
+   */
+  paintPanelPrice Decimal? @db.Decimal(14, 2)
+  sheetDayPrice   Decimal? @db.Decimal(14, 2)
+
   // Leads vinculados a esta aseguradora (spec 8.1 — 4to actor)
   leads Lead[]
 

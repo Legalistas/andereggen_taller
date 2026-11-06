@@ -112,7 +112,8 @@ export default function PurchaseDetailDialog({
   // Suppliers locales — arrancan de la prop y se pueden extender inline al
   // crear un proveedor nuevo desde el modal. Se sincronizan cuando la prop
   // cambia (padre refetchea después de crear).
-  const [localSuppliers, setLocalSuppliers] = useState<SupplierLite[]>(suppliers);
+  const [localSuppliers, setLocalSuppliers] =
+    useState<SupplierLite[]>(suppliers);
   useEffect(() => {
     setLocalSuppliers(suppliers);
   }, [suppliers]);
@@ -304,8 +305,8 @@ export default function PurchaseDetailDialog({
                   </div>
                 ) : purchase.item.quotes.length === 0 ? (
                   <div className="p-3 text-xs text-slate-500 italic">
-                    Sin cotizaciones cargadas todavía. Cargálas desde el ítem
-                    en la ficha administrativa.
+                    Sin cotizaciones cargadas todavía. Cargálas desde el ítem en
+                    la ficha administrativa.
                   </div>
                 ) : (
                   <ul className="divide-y divide-slate-100">
@@ -344,7 +345,7 @@ export default function PurchaseDetailDialog({
                               {ARS.format(net)}
                             </div>
                             {discount > 0 && (
-                              <div className="text-[10px] text-slate-400 line-through tabular-nums">
+                              <div className="text-[10px] text-slate-500 tabular-nums">
                                 {ARS.format(price)}
                               </div>
                             )}
@@ -710,7 +711,9 @@ function PayDialog({
     .filter((p) => p.kind === which)
     .reduce((s, p) => s + Number(p.amount), 0);
   const due =
-    which === "PARTS" ? Number(purchase.amount) : Number(purchase.freightAmount);
+    which === "PARTS"
+      ? Number(purchase.amount)
+      : Number(purchase.freightAmount);
   const remaining = Math.max(0, due - alreadyPaid);
 
   const [cashBoxId, setCashBoxId] = useState(cashBoxes[0]?.id ?? "");

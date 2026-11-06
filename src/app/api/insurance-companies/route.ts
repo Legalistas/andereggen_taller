@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
+import { leerPreciosAcordados } from "@/lib/insurance-companies";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
@@ -35,15 +36,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { name, phone, email, contactName, notes, isActive } = body as Record<
-    string,
-    unknown
-  >;
+  const {
+    name,
+    phone,
+    email,
+    contactName,
+    notes,
+    isActive,
+    paintPanelPrice,
+    sheetDayPrice,
+  } = body as Record<string, unknown>;
   if (!name || typeof name !== "string") {
     return NextResponse.json(
       { error: "El nombre es obligatorio" },
       { status: 400 },
     );
+  }
+  const precios = leerPreciosAcordados({ paintPanelPrice, sheetDayPrice });
+  if ("error" in precios) {
+    return NextResponse.json({ error: precios.error }, { status: 400 });
   }
 
   const existing = await prisma.insuranceCompany.findUnique({
@@ -64,6 +75,7 @@ export async function POST(request: Request) {
       contactName: (contactName as string) || null,
       notes: (notes as string) || null,
       isActive: isActive === undefined ? true : Boolean(isActive),
+      ...precios.data,
     },
   });
 

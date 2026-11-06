@@ -15,7 +15,14 @@
  * Estilo: simple/funcional, igual que ficha-ingreso. NUNCA va al cliente.
  */
 
-import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import {
+  Document,
+  Image,
+  Page,
+  StyleSheet,
+  Text,
+  View,
+} from "@react-pdf/renderer";
 
 export type FichaOscarSection = {
   title: string;
@@ -180,10 +187,10 @@ const s = StyleSheet.create({
   quoteDash: { marginRight: 5 },
   quoteSupplier: { flex: 1, fontSize: 9 },
   quotePrice: { fontSize: 9, fontWeight: "bold", marginLeft: 6 },
-  quotePriceStrike: {
+  // Importe antes del descuento: se lee sin tachar (pedido del taller).
+  quotePriceBefore: {
     fontSize: 8,
     color: C.slate500,
-    textDecoration: "line-through",
     marginLeft: 6,
   },
   quoteDiscount: {
@@ -293,7 +300,9 @@ export function FichaOscarPdf({ data }: { data: FichaOscarData }) {
           <View style={s.dataRow}>
             <View style={s.dataCol}>
               <Text style={s.dataLabel}>Seguro:</Text>
-              <Text style={s.dataValue}>{data.highlights.insurance || "—"}</Text>
+              <Text style={s.dataValue}>
+                {data.highlights.insurance || "—"}
+              </Text>
             </View>
             <View style={s.dataCol}>
               <Text style={s.dataLabel}>Seg. Tec.:</Text>
@@ -341,9 +350,7 @@ export function FichaOscarPdf({ data }: { data: FichaOscarData }) {
                 wrap={false}
               >
                 <Text style={s.partDesc}>• {p.description}</Text>
-                {p.notes ? (
-                  <Text style={s.partNotes}>{p.notes}</Text>
-                ) : null}
+                {p.notes ? <Text style={s.partNotes}>{p.notes}</Text> : null}
                 {p.quotes.length > 0 ? (
                   p.quotes.map((q, qi) => {
                     const supplierLine = [
@@ -353,8 +360,7 @@ export function FichaOscarPdf({ data }: { data: FichaOscarData }) {
                     ]
                       .filter(Boolean)
                       .join(" · ");
-                    const hasDiscount =
-                      q.discount !== null && q.discount > 0;
+                    const hasDiscount = q.discount !== null && q.discount > 0;
                     const metaLine = [
                       q.notes ? `(${q.notes})` : null,
                       q.photos.length > 0
@@ -373,7 +379,7 @@ export function FichaOscarPdf({ data }: { data: FichaOscarData }) {
                           <Text style={s.quoteSupplier}>{supplierLine}</Text>
                           {hasDiscount && (
                             <>
-                              <Text style={s.quotePriceStrike}>{q.price}</Text>
+                              <Text style={s.quotePriceBefore}>{q.price}</Text>
                               <Text style={s.quoteDiscount}>
                                 -{q.discount}%
                               </Text>

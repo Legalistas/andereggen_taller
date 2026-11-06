@@ -15,13 +15,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -75,6 +69,15 @@ import {
   makeCustomSubdetailKey,
   SUBDETAILS,
 } from "@/lib/budget-catalog";
+import {
+  type InsuranceCompanyLite,
+  loadInsuranceCompanies,
+} from "@/lib/client-cache";
+import {
+  type ValorAcordado,
+  type ValoresAcordados,
+  valoresAcordados,
+} from "@/lib/valores-acordados";
 import type {
   ConceptCategory,
   ConceptType,
@@ -121,8 +124,13 @@ type LeadInfo = {
     model: string;
     year: string;
     domain: string;
+    secure?: string | null;
+    coverageType?: string | null;
   } | null;
 };
+
+/** Seguro y cobertura del vehículo, para los valores acordados de Chapa y Pintura. */
+type SeguroVehiculo = { seguro: string | null; cobertura: string | null };
 
 type Props = {
   leadId?: string;
@@ -158,6 +166,17 @@ const uid = () =>
 function num(s: string): number {
   const n = Number(s.replace(",", "."));
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Valor acordado con la aseguradora para un concepto de Chapa o Pintura por unidades. */
+function valorAcordadoDe(
+  acordados: ValoresAcordados | null,
+  c: Pick<ConceptDraft, "category" | "type" | "flatAmount">,
+): ValorAcordado | undefined {
+  if (!acordados || c.type !== "UNIDADES" || c.flatAmount) return undefined;
+  if (c.category === "PINTURA") return acordados.PINTURA;
+  if (c.category === "CHAPA") return acordados.CHAPA;
+  return undefined;
 }
 
 function emptyConcept(category: ConceptCategory): ConceptDraft {
@@ -204,7 +223,8 @@ export default function BudgetModal({
 }: Props) {
   const isEditing = !!budgetId;
   const isExtending = !!extendingFromBudgetId;
-  const [extensionPayer, setExtensionPayer] = useState<ExtensionPayer>("SEGURO");
+  const [extensionPayer, setExtensionPayer] =
+    useState<ExtensionPayer>("SEGURO");
   const [parentInfo, setParentInfo] = useState<{
     displayNumber: string;
     grandTotal: number;
@@ -250,6 +270,47 @@ export default function BudgetModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leadInfo, setLeadInfo] = useState<LeadInfo | null>(null);
+  // Seguro del presupuesto: el del vehículo del lead al crear, el guardado al
+  // editar y el del presupuesto original en una ampliación.
+  const [seguroBudget, setSeguroBudget] = useState<SeguroVehiculo | null>(null);
+  const [aseguradoras, setAseguradoras] = useState<InsuranceCompanyLite[]>([]);
+  const nombreSeguro = seguroBudget
+    ? seguroBudget.seguro
+    : (leadInfo?.vehicle?.secure ?? null);
+  const cobertura = seguroBudget
+    ? seguroBudget.cobertura
+    : (leadInfo?.vehicle?.coverageType ?? null);
+  const acordados = useMemo(
+    () =>
+      valoresAcordados(
+        aseguradoras,
+        { seguro: nombreSeguro, cobertura },
+        ivaRate,
+      ),
+    [aseguradoras, nombreSeguro, cobertura, ivaRate],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    loadInsuranceCompanies()
+      .then(setAseguradoras)
+      .catch(() => setAseguradoras([]));
+  }, [open]);
+
+  // Presupuesto nuevo con todo riesgo de una aseguradora con valores
+  // acordados: Chapa y Pintura arrancan con esos valores (sin IVA) y Alfredo
+  // solo carga las unidades. Nunca pisa un valor ya escrito.
+  useEffect(() => {
+    if (!acordados || isEditing) return;
+    setConcepts((prev) =>
+      prev.map((c) => {
+        const v = valorAcordadoDe(acordados, c);
+        return v && c.unitValue === ""
+          ? { ...c, unitValue: String(v.unitario) }
+          : c;
+      }),
+    );
+  }, [acordados, isEditing]);
 
   // Al abrir en modo crear, sugerir el próximo correlativo (max+1) para
   // pre-poblar el input. Si el admin lo cambia, respetamos lo que escribió.
@@ -303,6 +364,10 @@ export default function BudgetModal({
           customerName: b.customerName,
           vehicleDomain: b.vehicleDomain,
         });
+        setSeguroBudget({
+          seguro: b.vehicleInsurance ?? null,
+          cobertura: b.insuranceCoverageType ?? null,
+        });
       })
       .catch(() => {});
     return () => {
@@ -349,6 +414,8 @@ export default function BudgetModal({
           observations: string | null;
           partsNote: string | null;
           vehiclePerladoTricapa: boolean;
+          vehicleInsurance: string | null;
+          insuranceCoverageType: string | null;
           concepts: Array<{
             type: ConceptType;
             category: ConceptCategory;
@@ -368,6 +435,10 @@ export default function BudgetModal({
         };
         // IVA del budget — algunos importados están con 0; respetamos el guardado
         if (b.ivaRate !== null) setIvaRate(Number(b.ivaRate));
+        setSeguroBudget({
+          seguro: b.vehicleInsurance ?? null,
+          cobertura: b.insuranceCoverageType ?? null,
+        });
         setBudgetNumber(String(b.number));
         setValidityDays(String(b.validityDays ?? 10));
         setDeliveryDays(String(b.deliveryDays ?? 20));
@@ -430,8 +501,7 @@ export default function BudgetModal({
           type: c.type,
           units: c.type === "UNIDADES" && !flat ? num(c.units) : 0,
           unitValue: c.type === "UNIDADES" && !flat ? num(c.unitValue) : 0,
-          fixedAmount:
-            c.type === "FIJO" || flat ? num(c.fixedAmount) : 0,
+          fixedAmount: c.type === "FIJO" || flat ? num(c.fixedAmount) : 0,
         };
       }),
       parts: parts.map((p) => ({
@@ -444,11 +514,12 @@ export default function BudgetModal({
 
   const addConcept = useCallback(() => {
     if (!newCategory) return;
-    setConcepts((prev) =>
-      sortByCatalogOrder([...prev, emptyConcept(newCategory)]),
-    );
+    const nuevo = emptyConcept(newCategory);
+    const acordado = valorAcordadoDe(acordados, nuevo);
+    if (acordado) nuevo.unitValue = String(acordado.unitario);
+    setConcepts((prev) => sortByCatalogOrder([...prev, nuevo]));
     setNewCategory("");
-  }, [newCategory]);
+  }, [newCategory, acordados]);
 
   const updateConcept = (id: string, patch: Partial<ConceptDraft>) => {
     setConcepts((prev) =>
@@ -490,6 +561,7 @@ export default function BudgetModal({
     setSuggestedNumber(null);
     setError(null);
     setLeadInfo(null);
+    setSeguroBudget(null);
   }, []);
 
   const handleSubmit = async () => {
@@ -535,8 +607,7 @@ export default function BudgetModal({
             additionalDetail: c.additionalDetail || null,
             units: c.type === "UNIDADES" && !flat ? num(c.units) : null,
             unitValue: c.type === "UNIDADES" && !flat ? num(c.unitValue) : null,
-            fixedAmount:
-              c.type === "FIJO" || flat ? num(c.fixedAmount) : null,
+            fixedAmount: c.type === "FIJO" || flat ? num(c.fixedAmount) : null,
             fixedDescription:
               c.type === "FIJO" ? c.fixedDescription || null : null,
           };
@@ -605,587 +676,602 @@ export default function BudgetModal({
   // Si está abierto y NO minimized → renderizamos el Dialog normal.
   return (
     <>
-    {!minimized && (
-    <Dialog open={open} onOpenChange={setOpen} modal={false}>
-      {!hideTrigger && (
-        <DialogTrigger asChild>
-          <Button
-            variant="outline"
-            className="gap-2 bg-transparent hover:bg-[#003b73] hover:text-white transition-colors"
-            disabled={!leadId}
+      {!minimized && (
+        <Dialog open={open} onOpenChange={setOpen} modal={false}>
+          {!hideTrigger && (
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                className="gap-2 bg-transparent hover:bg-[#003b73] hover:text-white transition-colors"
+                disabled={!leadId}
+              >
+                <FileText className="h-4 w-4" />
+                Crear Presupuesto
+              </Button>
+            </DialogTrigger>
+          )}
+
+          <DialogContent
+            showCloseButton={false}
+            // Con modal=false en el Dialog, click afuera por defecto cierra.
+            // Lo prevenimos: cerrar es vía botón X o minimizar — así un click
+            // accidental en el margen no hace perder lo que se está editando.
+            onPointerDownOutside={(e) => e.preventDefault()}
+            onInteractOutside={(e) => e.preventDefault()}
+            className="max-w-[98vw] sm:max-w-[98vw] w-[98vw] h-[95vh] p-0 gap-0 flex flex-col sm:rounded-xl overflow-hidden"
           >
-            <FileText className="h-4 w-4" />
-            Crear Presupuesto
-          </Button>
-        </DialogTrigger>
-      )}
+            {/* DialogTitle + Description para a11y (el header visual está abajo). */}
+            <DialogTitle className="sr-only">
+              {isEditing
+                ? "Editar presupuesto"
+                : isExtending
+                  ? "Ampliar presupuesto"
+                  : "Nuevo presupuesto"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Editor de presupuesto con conceptos, repuestos y condiciones.
+            </DialogDescription>
 
-      <DialogContent
-        showCloseButton={false}
-        // Con modal=false en el Dialog, click afuera por defecto cierra.
-        // Lo prevenimos: cerrar es vía botón X o minimizar — así un click
-        // accidental en el margen no hace perder lo que se está editando.
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        className="max-w-[98vw] sm:max-w-[98vw] w-[98vw] h-[95vh] p-0 gap-0 flex flex-col sm:rounded-xl overflow-hidden"
-      >
-        {/* DialogTitle + Description para a11y (el header visual está abajo). */}
-        <DialogTitle className="sr-only">
-          {isEditing
-            ? "Editar presupuesto"
-            : isExtending
-              ? "Ampliar presupuesto"
-              : "Nuevo presupuesto"}
-        </DialogTitle>
-        <DialogDescription className="sr-only">
-          Editor de presupuesto con conceptos, repuestos y condiciones.
-        </DialogDescription>
-
-        {/* Header ancho */}
-        <header className="flex items-center justify-between px-6 py-4 border-b bg-card shrink-0">
-          <div className="flex items-center gap-3">
-            <div
-              className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                isExtending ? "bg-amber-500/10" : "bg-[#003b73]/10"
-              }`}
-            >
-              <FileText
-                className={`h-5 w-5 ${
-                  isExtending ? "text-amber-700" : "text-[#003b73]"
-                }`}
-              />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold leading-tight">
-                {isEditing
-                  ? "Editar presupuesto"
-                  : isExtending
-                    ? `Ampliación de #${parentInfo?.displayNumber ?? "…"}`
-                    : "Nuevo presupuesto"}
-              </h2>
-              {isExtending && parentInfo && (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Solo cargá los conceptos/repuestos EXTRA — el cliente, vehículo
-                  y datos del padre se heredan.
-                </p>
-              )}
-              {leadInfo && (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
-                  <span className="flex items-center gap-1">
-                    <User className="h-3 w-3" />
-                    {leadInfo.customer.name}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Mail className="h-3 w-3" />
-                    {leadInfo.customer.email}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Phone className="h-3 w-3" />
-                    {leadInfo.customer.phone}
-                  </span>
-                  {leadInfo.vehicle && (
-                    <span className="flex items-center gap-1">
-                      <Car className="h-3 w-3" />
-                      {leadInfo.vehicle.brand} {leadInfo.vehicle.model}{" "}
-                      {leadInfo.vehicle.year} · {leadInfo.vehicle.domain}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 w-9 p-0"
-              onClick={minimize}
-              aria-label="Minimizar"
-              title="Minimizar (libera la pantalla para usar otros modales)"
-            >
-              <Minus className="h-5 w-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 w-9 p-0"
-              onClick={() => setOpen(false)}
-              aria-label="Cerrar"
-            >
-              <X className="h-5 w-5" />
-            </Button>
-          </div>
-        </header>
-
-        {/* Body: 2 columnas (main + sidebar sticky) */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] flex-1 min-h-0">
-          {/* Main editor — scrolleable */}
-          <section className="overflow-y-auto p-6 space-y-4 bg-muted/20">
-            {/* Bloque "Agregar concepto" compacto inline */}
-            <Card className="p-4">
-              <div className="flex items-end gap-3">
-                <div className="flex-1 grid gap-1.5">
-                  <Label className="text-xs text-muted-foreground">
-                    Agregar concepto
-                  </Label>
-                  <Select
-                    value={newCategory}
-                    onValueChange={(v) => setNewCategory(v as ConceptCategory)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccioná una categoría..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroupDivider label="Descriptivas" />
-                      {CATEGORIES.filter((c) => c.type === "DESCRIPTIVO").map(
-                        (c) => (
-                          <SelectItem key={c.key} value={c.key}>
-                            {c.label}
-                          </SelectItem>
-                        ),
-                      )}
-                      <SelectGroupDivider label="Mano de obra por unidades" />
-                      {CATEGORIES.filter((c) => c.type === "UNIDADES").map(
-                        (c) => (
-                          <SelectItem key={c.key} value={c.key}>
-                            {c.label}
-                          </SelectItem>
-                        ),
-                      )}
-                      <SelectGroupDivider label="Importe fijo" />
-                      {CATEGORIES.filter((c) => c.type === "FIJO").map((c) => (
-                        <SelectItem key={c.key} value={c.key}>
-                          {c.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  onClick={addConcept}
-                  disabled={!newCategory}
-                  className="gap-2"
+            {/* Header ancho */}
+            <header className="flex items-center justify-between px-6 py-4 border-b bg-card shrink-0">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`h-10 w-10 rounded-lg flex items-center justify-center ${
+                    isExtending ? "bg-amber-500/10" : "bg-[#003b73]/10"
+                  }`}
                 >
-                  <Plus className="h-4 w-4" />
-                  Agregar
-                </Button>
-              </div>
-            </Card>
-
-            {/* Lista de conceptos */}
-            {concepts.length === 0 ? (
-              <Card className="p-10 text-center border-dashed">
-                <FileText className="h-10 w-10 mx-auto text-muted-foreground/40 mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  Todavía no agregaste conceptos. Usá el selector de arriba.
-                </p>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {concepts.map((c, idx) => (
-                  <ConceptBlock
-                    key={c.localId}
-                    concept={c}
-                    index={idx}
-                    onChange={(patch) => updateConcept(c.localId, patch)}
-                    onRemove={() => removeConcept(c.localId)}
+                  <FileText
+                    className={`h-5 w-5 ${
+                      isExtending ? "text-amber-700" : "text-[#003b73]"
+                    }`}
                   />
-                ))}
-              </div>
-            )}
-
-            {/* Repuestos */}
-            <Card className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold">Repuestos</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Piezas con cantidad, precio unitario y subtotal.
-                  </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={addPart}
-                  className="gap-2"
-                >
-                  <Plus className="h-4 w-4" />
-                  Agregar repuesto
-                </Button>
-              </div>
-              {parts.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic text-center py-4">
-                  Sin repuestos todavía.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-24">Cantidad</TableHead>
-                      <TableHead>Descripción</TableHead>
-                      <TableHead className="w-40">Precio unitario</TableHead>
-                      <TableHead className="w-40 text-right">
-                        Subtotal
-                      </TableHead>
-                      <TableHead className="w-10" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {parts.map((p) => {
-                      const st = computePartSubtotal({
-                        quantity: num(p.quantity),
-                        unitPrice: num(p.unitPrice),
-                      });
-                      return (
-                        <TableRow key={p.localId}>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={p.quantity}
-                              onChange={(e) =>
-                                updatePart(p.localId, {
-                                  quantity: e.target.value,
-                                })
-                              }
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <PartAutocomplete
-                              value={p.description}
-                              partId={p.partId}
-                              onChangeText={(text) =>
-                                updatePart(p.localId, {
-                                  description: text,
-                                  partId: null, // editar manual desvincula del catálogo
-                                })
-                              }
-                              onSelect={(part) =>
-                                updatePart(p.localId, {
-                                  partId: part.id,
-                                  description: part.sku
-                                    ? `${part.sku} — ${part.name}`
-                                    : part.name,
-                                  unitPrice: String(part.salePrice),
-                                })
-                              }
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={p.unitPrice}
-                              onChange={(e) =>
-                                updatePart(p.localId, {
-                                  unitPrice: e.target.value,
-                                })
-                              }
-                            />
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {ARS.format(st)}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-destructive"
-                              onClick={() => removePart(p.localId)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-              <div className="grid gap-1.5 pt-2 border-t">
-                <Label htmlFor="partsNote" className="text-xs">
-                  Aclaración sobre los repuestos a proveer
-                </Label>
-                <Textarea
-                  id="partsNote"
-                  rows={2}
-                  placeholder="Ej: Los repuestos serán provistos por el taller / por la aseguradora / por el cliente..."
-                  value={partsNote}
-                  onChange={(e) => setPartsNote(e.target.value)}
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  Este texto se incluye en el PDF que recibe el cliente.
-                </p>
-              </div>
-            </Card>
-          </section>
-
-          {/* Sidebar sticky */}
-          <aside className="border-l bg-background flex flex-col min-h-0">
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              {/* Totales */}
-              <div>
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-                  Resumen
-                </h3>
-                <dl className="space-y-1.5 text-sm">
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Subtotal MO</dt>
-                    <dd>{ARS.format(totals.laborSubtotal)}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">
-                      IVA {totals.ivaRate}%
-                    </dt>
-                    <dd>{ARS.format(totals.ivaAmount)}</dd>
-                  </div>
-                  <div className="flex justify-between font-medium">
-                    <dt>MO con IVA</dt>
-                    <dd>{ARS.format(totals.laborTotal)}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Repuestos</dt>
-                    <dd>{ARS.format(totals.partsSubtotal)}</dd>
-                  </div>
-                  <div className="border-t pt-2 mt-2 flex justify-between items-baseline">
-                    <dt className="font-bold">TOTAL</dt>
-                    <dd className="font-bold text-lg text-[#003b73]">
-                      {ARS.format(totals.grandTotal)}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-
-              {/* Observaciones */}
-              <div className="space-y-3 pt-4 border-t">
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Condiciones
-                </h3>
-                {isExtending ? (
-                  <div className="rounded-md border border-amber-200 bg-amber-50/40 px-3 py-3 space-y-2">
-                    <div className="flex items-center justify-between gap-3 text-xs">
-                      <span className="font-semibold uppercase tracking-wider text-amber-800">
-                        Ampliación de #{parentInfo?.displayNumber ?? "…"}
+                <div>
+                  <h2 className="text-xl font-bold leading-tight">
+                    {isEditing
+                      ? "Editar presupuesto"
+                      : isExtending
+                        ? `Ampliación de #${parentInfo?.displayNumber ?? "…"}`
+                        : "Nuevo presupuesto"}
+                  </h2>
+                  {isExtending && parentInfo && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Solo cargá los conceptos/repuestos EXTRA — el cliente,
+                      vehículo y datos del padre se heredan.
+                    </p>
+                  )}
+                  {leadInfo && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
+                      <span className="flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {leadInfo.customer.name}
                       </span>
-                      {parentInfo && (
-                        <span className="text-amber-700">
-                          {parentInfo.customerName} ·{" "}
-                          <span className="font-mono uppercase">
-                            {parentInfo.vehicleDomain}
-                          </span>
+                      <span className="flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        {leadInfo.customer.email}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Phone className="h-3 w-3" />
+                        {leadInfo.customer.phone}
+                      </span>
+                      {leadInfo.vehicle && (
+                        <span className="flex items-center gap-1">
+                          <Car className="h-3 w-3" />
+                          {leadInfo.vehicle.brand} {leadInfo.vehicle.model}{" "}
+                          {leadInfo.vehicle.year} · {leadInfo.vehicle.domain}
                         </span>
                       )}
                     </div>
-                    <div className="grid gap-1.5">
-                      <Label className="text-xs">¿Quién paga la ampliación?</Label>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 w-9 p-0"
+                  onClick={minimize}
+                  aria-label="Minimizar"
+                  title="Minimizar (libera la pantalla para usar otros modales)"
+                >
+                  <Minus className="h-5 w-5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 w-9 p-0"
+                  onClick={() => setOpen(false)}
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </header>
+
+            {/* Body: 2 columnas (main + sidebar sticky) */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] flex-1 min-h-0">
+              {/* Main editor — scrolleable */}
+              <section className="overflow-y-auto p-6 space-y-4 bg-muted/20">
+                {/* Bloque "Agregar concepto" compacto inline */}
+                <Card className="p-4">
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1 grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground">
+                        Agregar concepto
+                      </Label>
                       <Select
-                        value={extensionPayer}
+                        value={newCategory}
                         onValueChange={(v) =>
-                          setExtensionPayer(v as ExtensionPayer)
+                          setNewCategory(v as ConceptCategory)
                         }
                       >
                         <SelectTrigger>
-                          <SelectValue />
+                          <SelectValue placeholder="Seleccioná una categoría..." />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="SEGURO">Seguro</SelectItem>
-                          <SelectItem value="FRANQUICIA">Franquicia</SelectItem>
-                          <SelectItem value="PARTICULAR">Particular</SelectItem>
+                          <SelectGroupDivider label="Descriptivas" />
+                          {CATEGORIES.filter(
+                            (c) => c.type === "DESCRIPTIVO",
+                          ).map((c) => (
+                            <SelectItem key={c.key} value={c.key}>
+                              {c.label}
+                            </SelectItem>
+                          ))}
+                          <SelectGroupDivider label="Mano de obra por unidades" />
+                          {CATEGORIES.filter((c) => c.type === "UNIDADES").map(
+                            (c) => (
+                              <SelectItem key={c.key} value={c.key}>
+                                {c.label}
+                              </SelectItem>
+                            ),
+                          )}
+                          <SelectGroupDivider label="Importe fijo" />
+                          {CATEGORIES.filter((c) => c.type === "FIJO").map(
+                            (c) => (
+                              <SelectItem key={c.key} value={c.key}>
+                                {c.label}
+                              </SelectItem>
+                            ),
+                          )}
                         </SelectContent>
                       </Select>
-                      <p className="text-[10px] text-amber-700">
-                        Al aceptarse, el total se suma al bucket correspondiente
-                        de Importes Aprobados de la reparación.
-                      </p>
                     </div>
+                    <Button
+                      onClick={addConcept}
+                      disabled={!newCategory}
+                      className="gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Agregar
+                    </Button>
                   </div>
-                ) : (
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="budgetNumber" className="text-xs">
-                      Nº de presupuesto
-                    </Label>
-                    <Input
-                      id="budgetNumber"
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={budgetNumber}
-                      onChange={(e) => setBudgetNumber(e.target.value)}
-                      placeholder={
-                        !isEditing && suggestedNumber !== null
-                          ? String(suggestedNumber)
-                          : ""
-                      }
-                    />
-                    <p className="text-[10px] text-muted-foreground">
-                      {isEditing
-                        ? "Podés cambiar el número; debe ser único."
-                        : suggestedNumber !== null
-                          ? `Sugerido (max+1): #${suggestedNumber}. Podés sobrescribirlo.`
-                          : "Calculando próximo correlativo..."}
+                </Card>
+
+                {/* Lista de conceptos */}
+                {concepts.length === 0 ? (
+                  <Card className="p-10 text-center border-dashed">
+                    <FileText className="h-10 w-10 mx-auto text-muted-foreground/40 mb-2" />
+                    <p className="text-sm text-muted-foreground">
+                      Todavía no agregaste conceptos. Usá el selector de arriba.
                     </p>
+                  </Card>
+                ) : (
+                  <div className="space-y-3">
+                    {concepts.map((c, idx) => (
+                      <ConceptBlock
+                        key={c.localId}
+                        concept={c}
+                        index={idx}
+                        onChange={(patch) => updateConcept(c.localId, patch)}
+                        onRemove={() => removeConcept(c.localId)}
+                        acordado={valorAcordadoDe(acordados, c)}
+                        aseguradora={acordados?.aseguradora}
+                      />
+                    ))}
                   </div>
                 )}
-                {/* Perlado tricapa: flag por presupuesto. Se ve en el PDF
+
+                {/* Repuestos */}
+                <Card className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold">Repuestos</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Piezas con cantidad, precio unitario y subtotal.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={addPart}
+                      className="gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Agregar repuesto
+                    </Button>
+                  </div>
+                  {parts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic text-center py-4">
+                      Sin repuestos todavía.
+                    </p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-24">Cantidad</TableHead>
+                          <TableHead>Descripción</TableHead>
+                          <TableHead className="w-40">
+                            Precio unitario
+                          </TableHead>
+                          <TableHead className="w-40 text-right">
+                            Subtotal
+                          </TableHead>
+                          <TableHead className="w-10" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {parts.map((p) => {
+                          const st = computePartSubtotal({
+                            quantity: num(p.quantity),
+                            unitPrice: num(p.unitPrice),
+                          });
+                          return (
+                            <TableRow key={p.localId}>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={p.quantity}
+                                  onChange={(e) =>
+                                    updatePart(p.localId, {
+                                      quantity: e.target.value,
+                                    })
+                                  }
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <PartAutocomplete
+                                  value={p.description}
+                                  partId={p.partId}
+                                  onChangeText={(text) =>
+                                    updatePart(p.localId, {
+                                      description: text,
+                                      partId: null, // editar manual desvincula del catálogo
+                                    })
+                                  }
+                                  onSelect={(part) =>
+                                    updatePart(p.localId, {
+                                      partId: part.id,
+                                      description: part.sku
+                                        ? `${part.sku} — ${part.name}`
+                                        : part.name,
+                                      unitPrice: String(part.salePrice),
+                                    })
+                                  }
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={p.unitPrice}
+                                  onChange={(e) =>
+                                    updatePart(p.localId, {
+                                      unitPrice: e.target.value,
+                                    })
+                                  }
+                                />
+                              </TableCell>
+                              <TableCell className="text-right font-medium">
+                                {ARS.format(st)}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-destructive"
+                                  onClick={() => removePart(p.localId)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  )}
+                  <div className="grid gap-1.5 pt-2 border-t">
+                    <Label htmlFor="partsNote" className="text-xs">
+                      Aclaración sobre los repuestos a proveer
+                    </Label>
+                    <Textarea
+                      id="partsNote"
+                      rows={2}
+                      placeholder="Ej: Los repuestos serán provistos por el taller / por la aseguradora / por el cliente..."
+                      value={partsNote}
+                      onChange={(e) => setPartsNote(e.target.value)}
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Este texto se incluye en el PDF que recibe el cliente.
+                    </p>
+                  </div>
+                </Card>
+              </section>
+
+              {/* Sidebar sticky */}
+              <aside className="border-l bg-background flex flex-col min-h-0">
+                <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                  {/* Totales */}
+                  <div>
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+                      Resumen
+                    </h3>
+                    <dl className="space-y-1.5 text-sm">
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Subtotal MO</dt>
+                        <dd>{ARS.format(totals.laborSubtotal)}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">
+                          IVA {totals.ivaRate}%
+                        </dt>
+                        <dd>{ARS.format(totals.ivaAmount)}</dd>
+                      </div>
+                      <div className="flex justify-between font-medium">
+                        <dt>MO con IVA</dt>
+                        <dd>{ARS.format(totals.laborTotal)}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Repuestos</dt>
+                        <dd>{ARS.format(totals.partsSubtotal)}</dd>
+                      </div>
+                      <div className="border-t pt-2 mt-2 flex justify-between items-baseline">
+                        <dt className="font-bold">TOTAL</dt>
+                        <dd className="font-bold text-lg text-[#003b73]">
+                          {ARS.format(totals.grandTotal)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+
+                  {/* Observaciones */}
+                  <div className="space-y-3 pt-4 border-t">
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                      Condiciones
+                    </h3>
+                    {isExtending ? (
+                      <div className="rounded-md border border-amber-200 bg-amber-50/40 px-3 py-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span className="font-semibold uppercase tracking-wider text-amber-800">
+                            Ampliación de #{parentInfo?.displayNumber ?? "…"}
+                          </span>
+                          {parentInfo && (
+                            <span className="text-amber-700">
+                              {parentInfo.customerName} ·{" "}
+                              <span className="font-mono uppercase">
+                                {parentInfo.vehicleDomain}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid gap-1.5">
+                          <Label className="text-xs">
+                            ¿Quién paga la ampliación?
+                          </Label>
+                          <Select
+                            value={extensionPayer}
+                            onValueChange={(v) =>
+                              setExtensionPayer(v as ExtensionPayer)
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="SEGURO">Seguro</SelectItem>
+                              <SelectItem value="FRANQUICIA">
+                                Franquicia
+                              </SelectItem>
+                              <SelectItem value="PARTICULAR">
+                                Particular
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-amber-700">
+                            Al aceptarse, el total se suma al bucket
+                            correspondiente de Importes Aprobados de la
+                            reparación.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="budgetNumber" className="text-xs">
+                          Nº de presupuesto
+                        </Label>
+                        <Input
+                          id="budgetNumber"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={budgetNumber}
+                          onChange={(e) => setBudgetNumber(e.target.value)}
+                          placeholder={
+                            !isEditing && suggestedNumber !== null
+                              ? String(suggestedNumber)
+                              : ""
+                          }
+                        />
+                        <p className="text-[10px] text-muted-foreground">
+                          {isEditing
+                            ? "Podés cambiar el número; debe ser único."
+                            : suggestedNumber !== null
+                              ? `Sugerido (max+1): #${suggestedNumber}. Podés sobrescribirlo.`
+                              : "Calculando próximo correlativo..."}
+                        </p>
+                      </div>
+                    )}
+                    {/* Perlado tricapa: flag por presupuesto. Se ve en el PDF
                     del cliente como "PERLADO TRICAPA" en bold uppercase. */}
-                <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 px-3 py-2">
-                  <Checkbox
-                    id="perladoTricapa"
-                    checked={perladoTricapa}
-                    onCheckedChange={(c) => setPerladoTricapa(Boolean(c))}
-                  />
-                  <Label
-                    htmlFor="perladoTricapa"
-                    className="text-xs font-bold uppercase tracking-wider text-amber-800 cursor-pointer"
-                  >
-                    Perlado tricapa
-                  </Label>
-                </div>
-                {/* Sin IVA en mano de obra: para presupuestos a particulares
+                    <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 px-3 py-2">
+                      <Checkbox
+                        id="perladoTricapa"
+                        checked={perladoTricapa}
+                        onCheckedChange={(c) => setPerladoTricapa(Boolean(c))}
+                      />
+                      <Label
+                        htmlFor="perladoTricapa"
+                        className="text-xs font-bold uppercase tracking-wider text-amber-800 cursor-pointer"
+                      >
+                        Perlado tricapa
+                      </Label>
+                    </div>
+                    {/* Sin IVA en mano de obra: para presupuestos a particulares
                     sin facturación. Al tildarlo el subtotal de mano de obra
                     no lleva IVA y el "TOTAL" del presupuesto es directamente
                     laborSubtotal + repuestos. Internamente seteamos ivaRate=0
                     (no agregamos columna nueva — la calculadora ya lo soporta). */}
-                <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                  <Checkbox
-                    id="noIvaLabor"
-                    checked={ivaRate === 0}
-                    onCheckedChange={(c) =>
-                      setIvaRate(c ? 0 : DEFAULT_IVA_RATE)
-                    }
-                  />
-                  <Label
-                    htmlFor="noIvaLabor"
-                    className="text-xs font-bold uppercase tracking-wider text-slate-700 cursor-pointer"
+                    <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                      <Checkbox
+                        id="noIvaLabor"
+                        checked={ivaRate === 0}
+                        onCheckedChange={(c) =>
+                          setIvaRate(c ? 0 : DEFAULT_IVA_RATE)
+                        }
+                      />
+                      <Label
+                        htmlFor="noIvaLabor"
+                        className="text-xs font-bold uppercase tracking-wider text-slate-700 cursor-pointer"
+                      >
+                        Sin IVA en mano de obra
+                      </Label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="validityDays" className="text-xs">
+                          Validez (días)
+                        </Label>
+                        <Input
+                          id="validityDays"
+                          type="number"
+                          min="1"
+                          value={validityDays}
+                          onChange={(e) => setValidityDays(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="deliveryDays" className="text-xs">
+                          Entrega (días)
+                        </Label>
+                        <Input
+                          id="deliveryDays"
+                          type="number"
+                          min="1"
+                          value={deliveryDays}
+                          onChange={(e) => setDeliveryDays(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="paymentCondition" className="text-xs">
+                        Condición de pago
+                      </Label>
+                      <Input
+                        id="paymentCondition"
+                        value={paymentCondition}
+                        onChange={(e) => setPaymentCondition(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="observations" className="text-xs">
+                        Notas adicionales
+                      </Label>
+                      <Textarea
+                        id="observations"
+                        rows={3}
+                        placeholder="Observaciones libres..."
+                        value={observations}
+                        onChange={(e) => setObservations(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {error}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer de acciones (sticky al fondo del sidebar) */}
+                <div className="border-t p-4 bg-muted/30 flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setOpen(false)}
+                    disabled={saving}
+                    className="flex-1"
                   >
-                    Sin IVA en mano de obra
-                  </Label>
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={saving || (!leadId && !isExtending)}
+                    className="flex-1"
+                  >
+                    {saving ? "Guardando..." : "Guardar presupuesto"}
+                  </Button>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="validityDays" className="text-xs">
-                      Validez (días)
-                    </Label>
-                    <Input
-                      id="validityDays"
-                      type="number"
-                      min="1"
-                      value={validityDays}
-                      onChange={(e) => setValidityDays(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="deliveryDays" className="text-xs">
-                      Entrega (días)
-                    </Label>
-                    <Input
-                      id="deliveryDays"
-                      type="number"
-                      min="1"
-                      value={deliveryDays}
-                      onChange={(e) => setDeliveryDays(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="paymentCondition" className="text-xs">
-                    Condición de pago
-                  </Label>
-                  <Input
-                    id="paymentCondition"
-                    value={paymentCondition}
-                    onChange={(e) => setPaymentCondition(e.target.value)}
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="observations" className="text-xs">
-                    Notas adicionales
-                  </Label>
-                  <Textarea
-                    id="observations"
-                    rows={3}
-                    placeholder="Observaciones libres..."
-                    value={observations}
-                    onChange={(e) => setObservations(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {error && (
-                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {error}
-                </div>
-              )}
+              </aside>
             </div>
-
-            {/* Footer de acciones (sticky al fondo del sidebar) */}
-            <div className="border-t p-4 bg-muted/30 flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setOpen(false)}
-                disabled={saving}
-                className="flex-1"
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={saving || (!leadId && !isExtending)}
-                className="flex-1"
-              >
-                {saving ? "Guardando..." : "Guardar presupuesto"}
-              </Button>
-            </div>
-          </aside>
-        </div>
-      </DialogContent>
-    </Dialog>
-    )}
-    {/* Barra flotante cuando está minimizado — permite usar otros modales
+          </DialogContent>
+        </Dialog>
+      )}
+      {/* Barra flotante cuando está minimizado — permite usar otros modales
         encima (Administrativa, etc.) sin perder el form. Click → restaura. */}
-    {open && minimized && (
-      <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
-        <FileText className="h-4 w-4 text-[#003b73] shrink-0" />
-        <button
-          type="button"
-          onClick={restore}
-          className="text-sm font-medium text-slate-800 hover:text-[#003b73] transition-colors"
-          title="Restaurar"
-        >
-          {isEditing ? "Editando presupuesto" : "Nuevo presupuesto"}
-          {leadInfo?.customer?.name && (
-            <span className="text-xs text-slate-500 ml-1.5">
-              · {leadInfo.customer.name}
-            </span>
-          )}
-        </button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0"
-          onClick={restore}
-          aria-label="Restaurar"
-          title="Restaurar"
-        >
-          <Maximize2 className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0 text-destructive"
-          onClick={() => {
-            setMinimized(false);
-            setOpen(false);
-          }}
-          aria-label="Cerrar"
-          title="Cerrar"
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    )}
+      {open && minimized && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
+          <FileText className="h-4 w-4 text-[#003b73] shrink-0" />
+          <button
+            type="button"
+            onClick={restore}
+            className="text-sm font-medium text-slate-800 hover:text-[#003b73] transition-colors"
+            title="Restaurar"
+          >
+            {isEditing ? "Editando presupuesto" : "Nuevo presupuesto"}
+            {leadInfo?.customer?.name && (
+              <span className="text-xs text-slate-500 ml-1.5">
+                · {leadInfo.customer.name}
+              </span>
+            )}
+          </button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            onClick={restore}
+            aria-label="Restaurar"
+            title="Restaurar"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 text-destructive"
+            onClick={() => {
+              setMinimized(false);
+              setOpen(false);
+            }}
+            aria-label="Cerrar"
+            title="Cerrar"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
     </>
   );
 }
@@ -1207,11 +1293,16 @@ function ConceptBlock({
   index,
   onChange,
   onRemove,
+  acordado,
+  aseguradora,
 }: {
   concept: ConceptDraft;
   index: number;
   onChange: (patch: Partial<ConceptDraft>) => void;
   onRemove: () => void;
+  /** Valor acordado con la aseguradora (todo riesgo) para Chapa / Pintura. */
+  acordado?: ValorAcordado;
+  aseguradora?: string;
 }) {
   const def = CATEGORY_BY_KEY[concept.category];
   const flat = concept.type === "UNIDADES" && concept.flatAmount;
@@ -1219,8 +1310,7 @@ function ConceptBlock({
     type: concept.type,
     units: flat ? 0 : num(concept.units),
     unitValue: flat ? 0 : num(concept.unitValue),
-    fixedAmount:
-      concept.type === "FIJO" || flat ? num(concept.fixedAmount) : 0,
+    fixedAmount: concept.type === "FIJO" || flat ? num(concept.fixedAmount) : 0,
   });
 
   const typeBadgeClass =
@@ -1342,15 +1432,37 @@ function ConceptBlock({
                 <Input
                   type="number"
                   min="0"
-                  step="1"
+                  step="0.01"
                   onWheel={(e) => e.currentTarget.blur()}
                   value={concept.unitValue}
                   onChange={(e) =>
                     onChange({
-                      unitValue: e.target.value.replace(/[.,].*/, ""),
+                      // Hasta 2 decimales: los valores acordados sin IVA tienen centavos.
+                      unitValue: e.target.value.replace(
+                        /^(\d*)(?:[.,](\d{0,2}))?.*$/,
+                        (_, ent: string, dec?: string) =>
+                          dec === undefined ? ent : `${ent}.${dec}`,
+                      ),
                     })
                   }
                 />
+                {acordado && aseguradora && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Acordado con {aseguradora}: {ARS.format(acordado.final)}{" "}
+                    final.
+                    {num(concept.unitValue) !== acordado.unitario && (
+                      <button
+                        type="button"
+                        className="ml-1 text-[#003b73] hover:underline"
+                        onClick={() =>
+                          onChange({ unitValue: String(acordado.unitario) })
+                        }
+                      >
+                        Usar
+                      </button>
+                    )}
+                  </p>
+                )}
               </div>
               <div className="grid gap-1.5">
                 <Label className="text-xs text-muted-foreground">
@@ -1456,10 +1568,7 @@ function DescriptiveFields({
           un grupo quede partido entre dos columnas. */}
       <div className="columns-1 md:columns-2 xl:columns-3 gap-x-6 *:mb-4">
         {groups.map((group) => (
-          <div
-            key={group.title}
-            className="space-y-1.5 break-inside-avoid"
-          >
+          <div key={group.title} className="space-y-1.5 break-inside-avoid">
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               {group.title}
             </div>

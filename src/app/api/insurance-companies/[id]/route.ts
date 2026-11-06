@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
+import { leerPreciosAcordados } from "@/lib/insurance-companies";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -35,10 +36,20 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       { status: 404 },
     );
 
-  const { name, phone, email, contactName, notes, isActive } = body as Record<
-    string,
-    unknown
-  >;
+  const {
+    name,
+    phone,
+    email,
+    contactName,
+    notes,
+    isActive,
+    paintPanelPrice,
+    sheetDayPrice,
+  } = body as Record<string, unknown>;
+  const precios = leerPreciosAcordados({ paintPanelPrice, sheetDayPrice });
+  if ("error" in precios) {
+    return NextResponse.json({ error: precios.error }, { status: 400 });
+  }
 
   if (name && typeof name === "string" && name !== existing.name) {
     const dupe = await prisma.insuranceCompany.findUnique({ where: { name } });
@@ -61,6 +72,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       }),
       ...(notes !== undefined && { notes: (notes as string) || null }),
       ...(isActive !== undefined && { isActive: Boolean(isActive) }),
+      ...precios.data,
     },
   });
 

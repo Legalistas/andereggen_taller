@@ -62,6 +62,9 @@ export type InsuranceCompanyLite = {
   email?: string | null;
   phone?: string | null;
   contactName?: string | null;
+  /** Valores acordados para todo riesgo, finales (Decimal → string en el JSON). */
+  paintPanelPrice?: string | number | null;
+  sheetDayPrice?: string | number | null;
 };
 
 export const INSURANCE_COMPANIES_KEY = "insurance-companies:active";

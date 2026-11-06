@@ -34,11 +34,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  INSURANCE_COMPANIES_KEY,
-  invalidateCache,
-} from "@/lib/client-cache";
+import { INSURANCE_COMPANIES_KEY, invalidateCache } from "@/lib/client-cache";
 import { TabHeader } from "../settings-section";
+
+const ARS = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  maximumFractionDigits: 0,
+});
 
 type Company = {
   id: string;
@@ -48,6 +51,8 @@ type Company = {
   contactName: string | null;
   notes: string | null;
   isActive: boolean;
+  paintPanelPrice: string | number | null;
+  sheetDayPrice: string | number | null;
   createdAt: string;
 };
 
@@ -64,6 +69,8 @@ export default function InsurancesTab() {
     contactName: "",
     notes: "",
     isActive: true,
+    paintPanelPrice: "",
+    sheetDayPrice: "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +102,8 @@ export default function InsurancesTab() {
       contactName: "",
       notes: "",
       isActive: true,
+      paintPanelPrice: "",
+      sheetDayPrice: "",
     });
     setError(null);
     setFormOpen(true);
@@ -109,6 +118,10 @@ export default function InsurancesTab() {
       contactName: c.contactName ?? "",
       notes: c.notes ?? "",
       isActive: c.isActive,
+      paintPanelPrice:
+        c.paintPanelPrice === null ? "" : String(Number(c.paintPanelPrice)),
+      sheetDayPrice:
+        c.sheetDayPrice === null ? "" : String(Number(c.sheetDayPrice)),
     });
     setError(null);
     setFormOpen(true);
@@ -135,6 +148,8 @@ export default function InsurancesTab() {
           contactName: form.contactName || null,
           notes: form.notes || null,
           isActive: form.isActive,
+          paintPanelPrice: form.paintPanelPrice || null,
+          sheetDayPrice: form.sheetDayPrice || null,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -217,6 +232,19 @@ export default function InsurancesTab() {
                 {c.contactName && (
                   <div className="text-xs text-muted-foreground">
                     {c.contactName}
+                  </div>
+                )}
+                {(c.paintPanelPrice || c.sheetDayPrice) && (
+                  <div className="text-xs text-muted-foreground tabular-nums">
+                    {[
+                      c.paintPanelPrice &&
+                        `Paño ${ARS.format(Number(c.paintPanelPrice))}`,
+                      c.sheetDayPrice &&
+                        `Día de chapa ${ARS.format(Number(c.sheetDayPrice))}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}{" "}
+                    (final)
                   </div>
                 )}
               </TableCell>
@@ -344,6 +372,57 @@ export default function InsurancesTab() {
                 }
                 placeholder="Mesa de siniestros"
               />
+            </div>
+            <div className="grid gap-1.5 rounded-md border border-slate-200 bg-slate-50/60 p-3">
+              <p className="text-sm font-medium text-slate-800">
+                Valores acordados (todo riesgo)
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Finales, con IVA. Si el cliente tiene todo riesgo con esta
+                aseguradora, el presupuesto los propone en Pintura y Chapa (se
+                pueden cambiar en cada presupuesto). Vacío: no se propone nada.
+              </p>
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="insPaint" className="text-xs">
+                    Paño de pintura
+                  </Label>
+                  <Input
+                    id="insPaint"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={form.paintPanelPrice}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        paintPanelPrice: e.target.value,
+                      }))
+                    }
+                    placeholder="Ej: 250000"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="insSheet" className="text-xs">
+                    Día de chapa
+                  </Label>
+                  <Input
+                    id="insSheet"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={form.sheetDayPrice}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, sheetDayPrice: e.target.value }))
+                    }
+                    placeholder="Ej: 280000"
+                  />
+                </div>
+              </div>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="insNotes">Notas</Label>
