@@ -126,11 +126,24 @@ type LeadInfo = {
     domain: string;
     secure?: string | null;
     coverageType?: string | null;
+    thirdPartySecure?: string | null;
   } | null;
+  insuranceResponsibility?: string | null;
 };
 
-/** Seguro y cobertura del vehículo, para los valores acordados de Chapa y Pintura. */
-type SeguroVehiculo = { seguro: string | null; cobertura: string | null };
+/** Seguros del vehículo, para los valores acordados de Chapa y Pintura. */
+type SeguroVehiculo = {
+  seguro: string | null;
+  cobertura: string | null;
+  seguroTercero: string | null;
+  responsable: string | null;
+};
+
+/** El lead del presupuesto, tal como lo trae GET /api/budgets/[id]. */
+type LeadDelBudget = {
+  insuranceResponsibility: string | null;
+  vehicle: { thirdPartySecure: string | null } | null;
+} | null;
 
 type Props = {
   leadId?: string;
@@ -280,14 +293,20 @@ export default function BudgetModal({
   const cobertura = seguroBudget
     ? seguroBudget.cobertura
     : (leadInfo?.vehicle?.coverageType ?? null);
+  const seguroTercero = seguroBudget
+    ? seguroBudget.seguroTercero
+    : (leadInfo?.vehicle?.thirdPartySecure ?? null);
+  const responsable = seguroBudget
+    ? seguroBudget.responsable
+    : (leadInfo?.insuranceResponsibility ?? null);
   const acordados = useMemo(
     () =>
       valoresAcordados(
         aseguradoras,
-        { seguro: nombreSeguro, cobertura },
+        { seguro: nombreSeguro, cobertura, seguroTercero, responsable },
         ivaRate,
       ),
-    [aseguradoras, nombreSeguro, cobertura, ivaRate],
+    [aseguradoras, nombreSeguro, cobertura, seguroTercero, responsable, ivaRate],
   );
 
   useEffect(() => {
@@ -297,8 +316,8 @@ export default function BudgetModal({
       .catch(() => setAseguradoras([]));
   }, [open]);
 
-  // Presupuesto nuevo con todo riesgo de una aseguradora con valores
-  // acordados: Chapa y Pintura arrancan con esos valores (sin IVA) y Alfredo
+  // Presupuesto nuevo que paga una aseguradora con valores acordados (la del
+  // cliente con todo riesgo o la del tercero): Chapa y Pintura arrancan con esos valores (sin IVA) y Alfredo
   // solo carga las unidades. Nunca pisa un valor ya escrito.
   useEffect(() => {
     if (!acordados || isEditing) return;
@@ -364,9 +383,12 @@ export default function BudgetModal({
           customerName: b.customerName,
           vehicleDomain: b.vehicleDomain,
         });
+        const lead = b.lead as LeadDelBudget;
         setSeguroBudget({
           seguro: b.vehicleInsurance ?? null,
           cobertura: b.insuranceCoverageType ?? null,
+          seguroTercero: lead?.vehicle?.thirdPartySecure ?? null,
+          responsable: lead?.insuranceResponsibility ?? null,
         });
       })
       .catch(() => {});
@@ -386,6 +408,7 @@ export default function BudgetModal({
           setLeadInfo({
             customer: data.lead.customer,
             vehicle: data.lead.vehicle,
+            insuranceResponsibility: data.lead.insuranceResponsibility,
           });
         }
       })
@@ -416,6 +439,7 @@ export default function BudgetModal({
           vehiclePerladoTricapa: boolean;
           vehicleInsurance: string | null;
           insuranceCoverageType: string | null;
+          lead: LeadDelBudget;
           concepts: Array<{
             type: ConceptType;
             category: ConceptCategory;
@@ -438,6 +462,8 @@ export default function BudgetModal({
         setSeguroBudget({
           seguro: b.vehicleInsurance ?? null,
           cobertura: b.insuranceCoverageType ?? null,
+          seguroTercero: b.lead?.vehicle?.thirdPartySecure ?? null,
+          responsable: b.lead?.insuranceResponsibility ?? null,
         });
         setBudgetNumber(String(b.number));
         setValidityDays(String(b.validityDays ?? 10));
@@ -1300,7 +1326,7 @@ function ConceptBlock({
   index: number;
   onChange: (patch: Partial<ConceptDraft>) => void;
   onRemove: () => void;
-  /** Valor acordado con la aseguradora (todo riesgo) para Chapa / Pintura. */
+  /** Valor acordado con la aseguradora que paga, para Chapa / Pintura. */
   acordado?: ValorAcordado;
   aseguradora?: string;
 }) {

@@ -1,8 +1,9 @@
 /**
- * Valores acordados con las aseguradoras (Configuración → Seguros) para
- * clientes con todo riesgo: el presupuesto propone el valor unitario de
- * Pintura (por paño) y de Chapa (por día). En la aseguradora se cargan
- * finales, con IVA; el valor unitario del presupuesto va sin IVA.
+ * Valores acordados con las aseguradoras (Configuración → Seguros): el
+ * presupuesto propone el valor unitario de Pintura (por paño) y de Chapa (por
+ * día) cuando paga una de esas compañías, sea la del cliente (con todo
+ * riesgo) o la del tercero. En la aseguradora se cargan finales, con IVA; el
+ * valor unitario del presupuesto va sin IVA.
  */
 
 export type AseguradoraConValores = {
@@ -55,12 +56,12 @@ export function valoresAcordados(
   vehiculo: {
     seguro: string | null | undefined;
     cobertura: string | null | undefined;
+    seguroTercero?: string | null;
+    /** Seguro Responsable del lead: "propio" | "tercero" | "particular". */
+    responsable?: string | null;
   },
   ivaRate: number,
 ): ValoresAcordados | null {
-  if (vehiculo.cobertura !== "todo_riesgo") return null;
-  const a = buscarAseguradora(lista, vehiculo.seguro);
-  if (!a) return null;
   const valor = (
     x: number | string | null | undefined,
   ): ValorAcordado | undefined => {
@@ -71,10 +72,22 @@ export function valoresAcordados(
       unitario: Math.round((final / (1 + ivaRate / 100)) * 100) / 100,
     };
   };
-  const r = {
-    aseguradora: a.name,
-    PINTURA: valor(a.paintPanelPrice),
-    CHAPA: valor(a.sheetDayPrice),
+  const de = (seguro: string | null | undefined): ValoresAcordados | null => {
+    const a = buscarAseguradora(lista, seguro);
+    if (!a) return null;
+    const r = {
+      aseguradora: a.name,
+      PINTURA: valor(a.paintPanelPrice),
+      CHAPA: valor(a.sheetDayPrice),
+    };
+    return r.PINTURA || r.CHAPA ? r : null;
   };
-  return r.PINTURA || r.CHAPA ? r : null;
+  // El seguro del cliente paga solo con todo riesgo; el del tercero, siempre.
+  const propio =
+    vehiculo.cobertura === "todo_riesgo" ? de(vehiculo.seguro) : null;
+  const tercero = de(vehiculo.seguroTercero);
+  // Si los dos tienen valores acordados, manda el Seguro Responsable.
+  return vehiculo.responsable === "tercero"
+    ? (tercero ?? propio)
+    : (propio ?? tercero);
 }

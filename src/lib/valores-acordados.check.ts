@@ -43,6 +43,30 @@ assert.equal(
 assert.equal(todoRiesgo("La Caja"), null);
 assert.equal(todoRiesgo("Mercantil Andina"), null);
 
+// Seguro del tercero con valores acordados: vale aunque el cliente no tenga todo riesgo.
+const conTercero = (v: Partial<Parameters<typeof valoresAcordados>[1]>) =>
+  valoresAcordados(
+    lista,
+    { seguro: "Mercantil Andina", cobertura: "terceros", ...v },
+    21,
+  )?.aseguradora ?? null;
+assert.equal(conTercero({ seguroTercero: "Sancor" }), "Sancor Seguros");
+assert.equal(conTercero({ seguroTercero: "El Norte" }), "El Norte");
+assert.equal(conTercero({ seguroTercero: "La Caja" }), null);
+assert.equal(conTercero({ seguroTercero: "" }), null);
+// Si las dos tienen valores, manda el Seguro Responsable (sin definir → el del cliente).
+const ambos = {
+  seguro: "El Norte",
+  cobertura: "todo_riesgo",
+  seguroTercero: "Sancor",
+};
+assert.equal(conTercero(ambos), "El Norte");
+assert.equal(conTercero({ ...ambos, responsable: "propio" }), "El Norte");
+assert.equal(
+  conTercero({ ...ambos, responsable: "tercero" }),
+  "Sancor Seguros",
+);
+
 // El texto del vehículo es libre: tildes, mayúsculas y nombres incompletos.
 assert.equal(buscarAseguradora(lista, "  el norte ")?.name, "El Norte");
 assert.equal(buscarAseguradora(lista, "Seguros El Norte")?.name, "El Norte");

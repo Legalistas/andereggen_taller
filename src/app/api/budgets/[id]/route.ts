@@ -31,6 +31,8 @@ export async function GET(request: Request, ctx: RouteContext) {
               model: true,
               year: true,
               domain: true,
+              // Valores acordados de Chapa/Pintura si paga el seguro del tercero.
+              thirdPartySecure: true,
             },
           },
         },
