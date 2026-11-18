@@ -1235,7 +1235,8 @@ model VehicleModel {
  * Estados del Kanban de Producción. Orden visual exacto (definido en
  * src/components/production/production-kanban.tsx COLUMNS):
  * 1. turno_asignado, 2. pendientes_repuestos, 3. chapa, 4. pintura,
- * 5. calidad, 6. pendientes_cobro, 7. experiencia_cliente, 8. archivado
+ * 5. pulido_armado, 6. calidad, 7. pendientes_cobro, 8. experiencia_cliente,
+ * 9. archivado
  * Cuando se carga la fecha de ingreso del vehículo (desde el form de la
  * card), el status pasa automáticamente de turno_asignado a chapa y se
  * dispara la notificación "vehicle_entered" al cliente.
@@ -1259,6 +1260,7 @@ enum RepairStatus {
   pendientes_repuestos
   chapa
   pintura
+  pulido_armado // agregado con ADD VALUE ... BEFORE 'calidad'
   calidad
   experiencia_cliente
   pendientes_cobro

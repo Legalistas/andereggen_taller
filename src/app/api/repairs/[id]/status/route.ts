@@ -15,6 +15,7 @@ const ALL_STATUSES: RepairStatus[] = [
   "pendientes_repuestos",
   "chapa",
   "pintura",
+  "pulido_armado",
   "calidad",
   "experiencia_cliente",
   "pendientes_cobro",

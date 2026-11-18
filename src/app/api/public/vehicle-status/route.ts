@@ -68,6 +68,12 @@ const STAGE_INFO: Record<
     label: "En pintura",
     message: "Estamos pintando tu vehículo.",
   },
+  // Comparte la etapa 4 con pintura: mantiene "de 8" para la web pública.
+  pulido_armado: {
+    stage: 4,
+    label: "En pulido y armado",
+    message: "Estamos puliendo y armando tu vehículo.",
+  },
   calidad: {
     stage: 5,
     label: "Control de calidad",

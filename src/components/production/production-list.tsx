@@ -57,6 +57,7 @@ const STATUS_LABEL: Record<RepairStatus, string> = {
   pendientes_repuestos: "Pendientes de Repuestos",
   chapa: "Chapa",
   pintura: "Pintura",
+  pulido_armado: "Pulido / armado",
   calidad: "Calidad",
   pendientes_cobro: "Pendientes de Cobro",
   experiencia_cliente: "Experiencia Cliente",
@@ -70,6 +71,7 @@ const STATUS_STYLE: Record<RepairStatus, string> = {
   pendientes_repuestos: "bg-amber-100 text-amber-700 border-amber-200",
   chapa: "bg-orange-100 text-orange-700 border-orange-200",
   pintura: "bg-purple-100 text-purple-700 border-purple-200",
+  pulido_armado: "bg-pink-100 text-pink-700 border-pink-200",
   calidad: "bg-cyan-100 text-cyan-700 border-cyan-200",
   pendientes_cobro: "bg-amber-100 text-amber-800 border-amber-200",
   experiencia_cliente: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -98,6 +100,7 @@ const ALL_STATUSES: RepairStatus[] = [
   "pendientes_repuestos",
   "chapa",
   "pintura",
+  "pulido_armado",
   "calidad",
   "experiencia_cliente",
   "pendientes_cobro",
@@ -403,7 +406,7 @@ export default function ProductionList() {
               )
             }
             className="bg-white data-[variant=default]:bg-[#003b73]"
-            title="Pendientes de repuestos + Chapa + Pintura + Calidad"
+            title="Pendientes de repuestos + Chapa + Pintura + Pulido / armado + Calidad"
           >
             En taller
           </Button>

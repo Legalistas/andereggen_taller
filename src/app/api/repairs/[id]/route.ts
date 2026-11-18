@@ -28,6 +28,7 @@ const PRE_DELIVERY_STATUSES = new Set([
   "pendientes_repuestos",
   "chapa",
   "pintura",
+  "pulido_armado",
   "calidad",
 ]);
 

@@ -80,6 +80,7 @@ const STATUS_LABEL: Record<string, string> = {
   pendientes_repuestos: "Pendientes de Repuestos",
   chapa: "Chapa",
   pintura: "Pintura",
+  pulido_armado: "Pulido / armado",
   calidad: "Calidad",
   pendientes_cobro: "Pendientes de Cobro",
   experiencia_cliente: "Experiencia del Cliente",

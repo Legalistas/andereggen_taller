@@ -20,7 +20,7 @@ import type { RepairStatus } from "../../../generated/prisma/client";
 // ─────────────────────────────────────────────────────────────
 
 const NOT_STARTED: RepairStatus[] = ["turno_asignado", "pendientes_repuestos"];
-const IN_PROGRESS: RepairStatus[] = ["chapa", "pintura", "calidad"];
+const IN_PROGRESS: RepairStatus[] = ["chapa", "pintura", "pulido_armado", "calidad"];
 const READY: RepairStatus[] = ["pendientes_cobro", "experiencia_cliente"];
 const IN_SHOP_STATUSES: RepairStatus[] = [...NOT_STARTED, ...IN_PROGRESS];
 
@@ -253,6 +253,7 @@ const STATUS_GROUP: Record<
   pendientes_repuestos: "pending",
   chapa: "in-progress",
   pintura: "in-progress",
+  pulido_armado: "in-progress",
   calidad: "in-progress",
   pendientes_cobro: "completed",
   experiencia_cliente: "completed",
@@ -266,6 +267,7 @@ const STATUS_LABEL: Record<RepairStatus, string> = {
   pendientes_repuestos: "Pend. repuestos",
   chapa: "Chapa",
   pintura: "Pintura",
+  pulido_armado: "Pulido / armado",
   calidad: "Calidad",
   pendientes_cobro: "Pend. cobro",
   experiencia_cliente: "Experiencia cliente",

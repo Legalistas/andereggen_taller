@@ -13,6 +13,7 @@ import {
   Paintbrush,
   Shield,
   Smile,
+  Sparkles,
   Star,
   Wrench,
   Zap,
@@ -35,6 +36,7 @@ export type RepairStatus =
   | "pendientes_repuestos"
   | "chapa"
   | "pintura"
+  | "pulido_armado"
   | "calidad"
   | "pendientes_cobro"
   | "experiencia_cliente"
@@ -128,6 +130,7 @@ export const IN_WORKSHOP_STATUSES: RepairStatus[] = [
   "pendientes_repuestos",
   "chapa",
   "pintura",
+  "pulido_armado",
   "calidad",
 ];
 
@@ -176,6 +179,13 @@ export const COLUMNS: Array<{
     icon: Paintbrush,
     headerClass: "bg-purple-50 text-purple-700 border-purple-200",
     ringClass: "ring-purple-400",
+  },
+  {
+    id: "pulido_armado",
+    label: "Pulido / armado",
+    icon: Sparkles,
+    headerClass: "bg-pink-50 text-pink-700 border-pink-200",
+    ringClass: "ring-pink-400",
   },
   {
     id: "calidad",

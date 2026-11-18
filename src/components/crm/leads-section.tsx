@@ -93,6 +93,7 @@ type RepairStatusLite =
   | "pendientes_repuestos"
   | "chapa"
   | "pintura"
+  | "pulido_armado"
   | "calidad"
   | "pendientes_cobro"
   | "experiencia_cliente"

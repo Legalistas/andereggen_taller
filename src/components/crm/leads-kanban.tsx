@@ -55,6 +55,7 @@ export type RepairStatusLite =
   | "pendientes_repuestos"
   | "chapa"
   | "pintura"
+  | "pulido_armado"
   | "calidad"
   | "pendientes_cobro"
   | "experiencia_cliente"
@@ -160,6 +161,7 @@ const REPAIR_KANBAN_LABEL: Record<RepairStatusLite, string> = {
   pendientes_repuestos: "Pendientes Repuestos",
   chapa: "Chapa",
   pintura: "Pintura",
+  pulido_armado: "Pulido / armado",
   calidad: "Calidad",
   pendientes_cobro: "Pend. Cobro",
   experiencia_cliente: "Listo / encuesta",
@@ -173,6 +175,7 @@ const REPAIR_KANBAN_COLOR: Record<RepairStatusLite, string> = {
   pendientes_repuestos: "bg-amber-100 text-amber-700",
   chapa: "bg-orange-100 text-orange-700",
   pintura: "bg-purple-100 text-purple-700",
+  pulido_armado: "bg-pink-100 text-pink-700",
   calidad: "bg-cyan-100 text-cyan-700",
   pendientes_cobro: "bg-amber-100 text-amber-800",
   experiencia_cliente: "bg-emerald-100 text-emerald-700",

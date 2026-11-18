@@ -271,7 +271,7 @@ export default function ProductionSection() {
           variant={inWorkshopOnly ? "default" : "outline"}
           onClick={() => setInWorkshopOnly((v) => !v)}
           className="gap-1.5"
-          title="Solo las etapas con el auto adentro: Pendientes de repuestos, Chapa, Pintura y Calidad"
+          title="Solo las etapas con el auto adentro: Pendientes de repuestos, Chapa, Pintura, Pulido / armado y Calidad"
         >
           <Wrench className="h-4 w-4" />
           En taller
