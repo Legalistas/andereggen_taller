@@ -1,8 +1,11 @@
 import EstadisticasSection from "@/components/estadisticas/estadisticas-section";
+import { getServerSession } from "@/lib/auth-utils";
+import { FINANCE_ROLES } from "@/lib/roles";
 
 export const metadata = { title: "Estadísticas" };
 
-export default function EstadisticasPage() {
+export default async function EstadisticasPage() {
+  const role = (await getServerSession())?.user?.domainRole?.name ?? "";
   return (
     <div className="space-y-4">
       <div>
@@ -11,7 +14,9 @@ export default function EstadisticasPage() {
           Tablero mensual de KPIs y reportes complementarios.
         </p>
       </div>
-      <EstadisticasSection />
+      <EstadisticasSection
+        showIncome={(FINANCE_ROLES as readonly string[]).includes(role)}
+      />
     </div>
   );
 }

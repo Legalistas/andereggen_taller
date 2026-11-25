@@ -80,7 +80,8 @@ export function Sidebar({ user, collapsed, onToggle, onNavigate }: Props) {
             (item) =>
               !item.roles ||
               (user.roleName && item.roles.includes(user.roleName)) ||
-              (item.href === "/caja" && user.canCaja),
+              (item.href === "/caja" && user.canCaja) ||
+              (item.href === "/estadisticas" && user.canStats),
           ).map((item) => {
             const Icon = item.icon;
             const isActive = item.href === activeHref;

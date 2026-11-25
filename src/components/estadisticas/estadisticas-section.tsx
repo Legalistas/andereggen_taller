@@ -37,21 +37,28 @@ const CustomersReportSection = dynamic(
   { loading: () => tabFallback },
 );
 
-export default function EstadisticasSection() {
+/** `showIncome`: la pestaña Ingresos (plata) es solo de los roles de finanzas. */
+export default function EstadisticasSection({
+  showIncome,
+}: {
+  showIncome: boolean;
+}) {
   return (
     <Tabs defaultValue="kpis" className="w-full">
       <TabsList>
         <TabsTrigger value="kpis">KPIs</TabsTrigger>
-        <TabsTrigger value="ingresos">Ingresos</TabsTrigger>
+        {showIncome && <TabsTrigger value="ingresos">Ingresos</TabsTrigger>}
         <TabsTrigger value="servicios">Servicios</TabsTrigger>
         <TabsTrigger value="clientes">Clientes</TabsTrigger>
       </TabsList>
       <TabsContent value="kpis" className="mt-4">
         <KpiTab />
       </TabsContent>
-      <TabsContent value="ingresos" className="mt-4">
-        <IncomeSection />
-      </TabsContent>
+      {showIncome && (
+        <TabsContent value="ingresos" className="mt-4">
+          <IncomeSection />
+        </TabsContent>
+      )}
       <TabsContent value="servicios" className="mt-4">
         <ServicesSection />
       </TabsContent>

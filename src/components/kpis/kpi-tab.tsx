@@ -225,14 +225,15 @@ export default function KpiTab() {
           groups={visibleGroups}
           series={data.series}
           currentMonthIndex={currentMonthIndex}
-          onEditManual={handleEditManual}
+          // Cargar manuales (reclamos) es de finanzas: el PUT lo exige.
+          onEditManual={data.canSeeRestricted ? handleEditManual : undefined}
         />
       )}
 
       {data && !data.canSeeRestricted && (
         <p className="text-[11px] text-slate-500 italic">
-          El grupo Caja / Finanzas está oculto — solo lo ven roles Contable y
-          Administrador.
+          El grupo Caja / Finanzas está oculto — solo lo ven los roles Contable
+          y Super Admin.
         </p>
       )}
     </div>

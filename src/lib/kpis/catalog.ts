@@ -42,7 +42,7 @@ export type KpiGroup = {
   key: KpiGroupKey;
   title: string;
   responsible: string;
-  /** Si `true`, solo lo ven roles de la lista `KPI_RESTRICTED_ROLES`. */
+  /** Si `true`, solo lo ven los roles de finanzas (`FINANCE_ROLES`). */
   restricted?: boolean;
   subGroups: KpiSubGroup[];
 };
@@ -64,14 +64,6 @@ export type InsuranceKey =
   | (typeof KPI_INSURANCE_COMPANIES)[number]["key"]
   | "otras"
   | "particulares";
-
-/** Roles que pueden ver las métricas de Caja/Finanzas (restringidas).
- *  Se cruza con `session.user.domainRole?.name`. */
-export const KPI_RESTRICTED_ROLES = new Set([
-  "contable",
-  "admin_taller",
-  "super_admin",
-]);
 
 // ─────────────────────────────────────────────────────────────
 // KPI Groups

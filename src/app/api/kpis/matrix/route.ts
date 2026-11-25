@@ -13,24 +13,25 @@
  *     resuelven en 1 round-trip por serie.
  *
  * Roles:
+ *   - Entra un rol de finanzas o un usuario con `User.canViewStats`.
  *   - Los grupos "restringidos" (Caja/Finanzas) sólo se devuelven si el
- *     rol del user está en `KPI_RESTRICTED_ROLES`. El frontend igual gate
- *     visualmente, pero acá reforzamos por seguridad.
+ *     rol del user está en `FINANCE_ROLES`: quien entra por canViewStats no
+ *     ve los totales de plata (mismo criterio que en Caja).
  */
 
 import { NextResponse } from "next/server";
-import { FINANCE_ROLES, getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { FINANCE_ROLES, getServerSession } from "@/lib/auth-utils";
 import {
   type InsuranceKey,
   KPI_GROUPS,
   KPI_INSURANCE_COMPANIES,
-  KPI_RESTRICTED_ROLES,
   type KpiGroupKey,
   type KpiLeadSource,
   LEAD_SOURCE_NONE,
   leadSourceMetricKey,
 } from "@/lib/kpis/catalog";
 import { prisma } from "@/lib/prisma";
+import { verifyStatsAccess } from "@/lib/stats-access";
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -69,7 +70,7 @@ function bucketByCompany(name: string | null): InsuranceKey | null {
 // ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
-  const authError = await verifyAuth(request, FINANCE_ROLES);
+  const authError = await verifyStatsAccess(request);
   if (authError) return authError;
   const session = await getServerSession();
 
@@ -85,7 +86,8 @@ export async function GET(request: Request) {
 
   const roleName = session?.user?.domainRole?.name ?? null;
   const canSeeRestricted =
-    roleName !== null && KPI_RESTRICTED_ROLES.has(roleName);
+    roleName !== null &&
+    (FINANCE_ROLES as readonly string[]).includes(roleName);
 
   // ─── COTIZACIONES ─────────────────────────────────────────
   // Todo por Lead ID: creadas por Lead.createdAt, ganadas por

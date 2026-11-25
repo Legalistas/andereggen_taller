@@ -46,6 +46,10 @@ model User {
    * ve todas. Con keys, entra aunque no sea de finanzas, pero solo a esas.
    */
   cashBoxKeys      String[]  @default([])
+  /**
+   * Entra a Estadísticas (KPIs + reportes) aunque su rol no sea de finanzas.
+   */
+  canViewStats     Boolean   @default(false)
 
   sessions  Session[]
   accounts  Account[]

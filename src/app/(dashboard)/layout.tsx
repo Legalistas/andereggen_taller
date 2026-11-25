@@ -16,13 +16,16 @@ export default async function DashboardLayout({
 }) {
   const session = await protectRoute();
   const roleName = session.user.domainRole?.name ?? null;
-  // Caja en el menú: rol de finanzas, o cajas habilitadas en el usuario.
-  const canCaja =
-    (roleName !== null && (FINANCE_ROLES as readonly string[]).includes(roleName)) ||
-    ((await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { cashBoxKeys: true },
-    }))?.cashBoxKeys.length ?? 0) > 0;
+  // Caja y Estadísticas en el menú: rol de finanzas, o acceso habilitado en
+  // el usuario (cajas en cashBoxKeys / canViewStats).
+  const isFinance =
+    roleName !== null && (FINANCE_ROLES as readonly string[]).includes(roleName);
+  const access = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { cashBoxKeys: true, canViewStats: true },
+  });
+  const canCaja = isFinance || (access?.cashBoxKeys.length ?? 0) > 0;
+  const canStats = isFinance || (access?.canViewStats ?? false);
 
   return (
     <DashboardShell
@@ -35,6 +38,7 @@ export default async function DashboardLayout({
           null,
         roleName,
         canCaja,
+        canStats,
       }}
     >
       {children}

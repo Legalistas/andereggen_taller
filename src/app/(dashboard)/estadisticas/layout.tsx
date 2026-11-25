@@ -1,14 +1,22 @@
+import { redirect } from "next/navigation";
 import type React from "react";
-import { FINANCE_ROLES, protectRoute } from "@/lib/auth-utils";
+import { protectRoute } from "@/lib/auth-utils";
+import { canViewStats } from "@/lib/stats-access";
 
 export const metadata = { title: "Estadísticas" };
 
-/** spec 9.1 · Solo dirección y contable. El resto cae en AccessDenied. */
+/**
+ * spec 9.1 · Solo dirección y contable. Excepción: usuarios con
+ * `User.canViewStats`. El resto cae en AccessDenied.
+ */
 export default async function Layout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  await protectRoute(FINANCE_ROLES);
+  const session = await protectRoute();
+  if (!(await canViewStats(session.user.id, session.user.domainRole?.name))) {
+    redirect("/auth/error?error=AccessDenied");
+  }
   return children;
 }

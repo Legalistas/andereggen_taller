@@ -22,6 +22,8 @@ export type SidebarUser = {
   roleName?: string | null;
   /** Tiene cajas habilitadas aunque su rol no sea de finanzas. */
   canCaja?: boolean;
+  /** Tiene Estadísticas habilitada aunque su rol no sea de finanzas. */
+  canStats?: boolean;
 };
 
 function initials(name: string | null, email: string | null): string {
