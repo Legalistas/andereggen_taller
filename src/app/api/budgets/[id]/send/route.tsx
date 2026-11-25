@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
 import { sendEmail } from "@/lib/email/send";
 import { BudgetSentEmail } from "@/lib/email/templates/budget-sent";
+import { notifyBudgetSentWhatsapp } from "@/lib/notifications";
 import { BudgetPdf, type BudgetPdfData } from "@/lib/pdf/budget-pdf";
 import { resolvePdfLogo } from "@/lib/pdf/logo";
 import { prisma } from "@/lib/prisma";
@@ -243,6 +244,24 @@ export async function POST(request: Request, ctx: RouteContext) {
       messageId: results.find((r) => r.ok)?.messageId ?? null,
     },
   });
+
+  // Línea de tiempo de avisos de la oportunidad (mails y WhatsApp juntos).
+  await prisma.notificationLog.createMany({
+    data: results.map((r) => ({
+      event: "budget_sent",
+      channel: "email",
+      recipient: r.email,
+      role: r.role,
+      ok: r.ok,
+      error: r.error ?? null,
+      leadId: budget.leadId,
+    })),
+  });
+
+  // C2 · El WhatsApp solo avisa que el presupuesto está en el correo.
+  if (results.some((r) => r.ok && r.role === "customer")) {
+    notifyBudgetSentWhatsapp(budget.id);
+  }
 
   if (anySuccess) {
     await prisma.budget.update({

@@ -194,9 +194,10 @@ export const COLUMNS: Array<{
     headerClass: "bg-cyan-50 text-cyan-700 border-cyan-200",
     ringClass: "ring-cyan-400",
   },
-  // Experiencia del Cliente va ANTES de Pendientes de Cobro: la encuesta se
-  // dispara al retirarse el vehículo (deliveredAt) — esperar al cobro del
-  // seguro (30/40 días) demora demasiado el envío del rating.
+  // Experiencia del Cliente va ANTES de Pendientes de Cobro: la encuesta sale
+  // al pasar la tarjeta acá a mano después de la entrega (automatizaciones
+  // v1.3 · sección 6) — esperar al cobro del seguro (30/40 días) demora
+  // demasiado el envío del rating. Con conflicto, se pasa directo a Archivado.
   {
     id: "experiencia_cliente",
     label: "Experiencia del Cliente",

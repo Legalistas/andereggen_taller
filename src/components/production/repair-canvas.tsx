@@ -56,7 +56,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  NotificationLogList,
+  type NotificationLogRow,
+} from "@/components/notifications/notification-log-list";
 import { Textarea } from "@/components/ui/textarea";
+import { arDateTimeInputToIso, isoToArDateTimeInput } from "@/lib/ar-datetime";
 import { loadCashBoxes, loadInsuranceCompanies } from "@/lib/client-cache";
 import { BudgetAdminDialog } from "../crm/budget-admin-dialog";
 import BudgetModal from "../crm/budget-modal";
@@ -174,6 +179,7 @@ type RepairDetail = {
   enteredAt: string | null;
   partsReceivedAt: string | null;
   estimatedDeliveryAt: string | null;
+  deliveryAppointmentAt: string | null;
   deliveredAt: string | null;
   archivedAt: string | null;
   needsTransport: boolean;
@@ -228,6 +234,8 @@ type RepairDetail = {
     respondedAt: string | null;
     token: string;
   } | null;
+  /** Avisos enviados al cliente / actores, más reciente primero. */
+  notificationLogs: NotificationLogRow[];
 };
 
 const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
@@ -365,7 +373,7 @@ export function RepairCanvas({
 
   const patchRepair = useCallback(
     async (patch: Record<string, unknown>) => {
-      if (!repairId) return;
+      if (!repairId) return false;
       markSaving();
       try {
         const res = await fetch(`/api/repairs/${repairId}`, {
@@ -396,9 +404,11 @@ export function RepairCanvas({
         }
         markSaved();
         onChanged?.();
+        return true;
       } catch (e) {
         alert(e instanceof Error ? e.message : "Error al guardar");
         setSavingIndicator("idle");
+        return false;
       }
     },
     [repairId, markSaving, markSaved, onChanged],
@@ -749,6 +759,15 @@ Se mueven también ${other.invoiceCount} factura(s) con sus cobros.`
                 <RatingSection rating={repair.serviceRating} />
               )}
 
+              <SectionCard
+                icon={Mail}
+                title="Línea de tiempo de avisos"
+                iconTint="text-sky-600"
+                iconBg="bg-sky-50"
+              >
+                <NotificationLogList logs={repair.notificationLogs} />
+              </SectionCard>
+
               <NotesSection
                 value={repair.notes ?? ""}
                 onSave={(notes) => patchRepair({ notes: notes || null })}
@@ -861,7 +880,7 @@ function InternalNumberSection({
   value: number | null;
   /** Otra tarjeta usa el mismo N°: se avisa, no se bloquea. */
   warning: string | null;
-  onSave: (n: number | null) => Promise<void>;
+  onSave: (n: number | null) => Promise<unknown>;
 }) {
   const [draft, setDraft] = useState(value === null ? "" : String(value));
   const [saving, setSaving] = useState(false);
@@ -951,7 +970,8 @@ function DatesSection({
   onPatch,
 }: {
   repair: RepairDetail;
-  onPatch: (patch: Record<string, unknown>) => Promise<void>;
+  /** Devuelve false si no se guardó (ej. bloque de entregas lleno). */
+  onPatch: (patch: Record<string, unknown>) => Promise<boolean>;
 }) {
   return (
     <SectionCard
@@ -989,11 +1009,32 @@ function DatesSection({
           value={repair.estimatedDeliveryAt}
           onSave={(v) => onPatch({ estimatedDeliveryAt: v })}
         />
-        <DateField
-          label="Entregado"
-          value={repair.deliveredAt}
-          onSave={(v) => onPatch({ deliveredAt: v })}
-        />
+        {/* Automatizaciones v1.3 · 5.1: lo carga Administración; reemplaza a
+            "Coordinar retiro" (el taller le indica al cliente desde qué hora
+            puede retirar). */}
+        <div className="grid gap-1">
+          <DateField
+            label="Turno de entrega"
+            value={repair.deliveryAppointmentAt}
+            onSave={(v) => onPatch({ deliveryAppointmentAt: v })}
+            withTime
+          />
+          <p className="text-[10px] text-slate-500 italic">
+            Al cargarlo o cambiarlo, el cliente recibe desde qué hora puede
+            retirar.
+          </p>
+        </div>
+        <div className="grid gap-1">
+          <DateField
+            label="Entregado"
+            value={repair.deliveredAt}
+            onSave={(v) => onPatch({ deliveredAt: v })}
+          />
+          <p className="text-[10px] text-slate-500 italic">
+            No manda la encuesta: para eso pasá la tarjeta a Experiencia del
+            Cliente (o a Archivado si hubo conflicto).
+          </p>
+        </div>
         <DateField
           label="Archivado"
           value={repair.archivedAt}
@@ -1037,18 +1078,6 @@ function toLocalDateInput(iso: string | null): string {
   return `${y}-${m}-${day}`;
 }
 
-/** Contraparte para `datetime-local` (`YYYY-MM-DDTHH:mm` en local). */
-function toLocalDateTimeInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${day}T${h}:${min}`;
-}
-
 /**
  * Parsea el value de un `input[type=date]` (`YYYY-MM-DD`) como mediodía
  * LOCAL. Al mediodía evita ambigüedades de DST y garantiza que la fecha
@@ -1060,15 +1089,6 @@ function parseLocalDateInput(v: string): string | null {
   return new Date(y, m - 1, d, 12, 0, 0).toISOString();
 }
 
-/** Parsea `datetime-local` (`YYYY-MM-DDTHH:mm`) como fecha local. */
-function parseLocalDateTimeInput(v: string): string | null {
-  if (!v) return null;
-  const [datePart, timePart] = v.split("T");
-  const [y, m, d] = datePart.split("-").map(Number);
-  const [h, min] = timePart.split(":").map(Number);
-  return new Date(y, m - 1, d, h, min, 0).toISOString();
-}
-
 function DateField({
   label,
   value,
@@ -1078,15 +1098,34 @@ function DateField({
 }: {
   label: string;
   value: string | null;
-  onSave: (value: string | null) => void;
+  /** false = no se guardó: el campo vuelve al valor guardado. */
+  onSave: (value: string | null) => unknown;
   readonly?: boolean;
-  /** Si true, incluye hora (input datetime-local). */
+  /** Si true, incluye hora (input datetime-local, en hora argentina). */
   withTime?: boolean;
 }) {
-  const inputValue = withTime
-    ? toLocalDateTimeInput(value)
-    : toLocalDateInput(value);
-  const parse = withTime ? parseLocalDateTimeInput : parseLocalDateInput;
+  const saved = withTime ? isoToArDateTimeInput(value) : toLocalDateInput(value);
+  const [draft, setDraft] = useState(saved);
+  useEffect(() => setDraft(saved), [saved]);
+
+  // Guarda al salir del campo, no en cada tecla: con onChange cada valor
+  // intermedio se guardaba y el mail del turno salía con el primero que
+  // quedaba completo, no con la hora final (bug B2).
+  const commit = async (input: HTMLInputElement) => {
+    if (input.validity.badInput) {
+      setDraft(saved); // fecha a medio tipear: no borrar la guardada
+      return;
+    }
+    if (draft === saved) return;
+    const ok = await onSave(
+      !draft
+        ? null
+        : withTime
+          ? arDateTimeInputToIso(draft)
+          : parseLocalDateInput(draft),
+    );
+    if (ok === false) setDraft(saved);
+  };
 
   return (
     <div className="grid gap-1">
@@ -1095,11 +1134,13 @@ function DateField({
       </Label>
       <Input
         type={withTime ? "datetime-local" : "date"}
-        value={inputValue}
+        value={draft}
         readOnly={readonly}
         disabled={readonly}
-        onChange={(e) => {
-          onSave(parse(e.target.value));
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={(e) => commit(e.currentTarget)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
         }}
         className={readonly ? "opacity-60 cursor-not-allowed" : ""}
       />
@@ -1750,7 +1791,7 @@ function NotesSection({
   onSave,
 }: {
   value: string;
-  onSave: (value: string) => Promise<void>;
+  onSave: (value: string) => Promise<unknown>;
 }) {
   const [draft, setDraft] = useState(value);
   const lastSavedRef = useRef(value);
@@ -1888,7 +1929,7 @@ function InsuranceSection({
   onSave,
 }: {
   value: string | null;
-  onSave: (v: string | null) => Promise<void>;
+  onSave: (v: string | null) => Promise<unknown>;
 }) {
   const [draft, setDraft] = useState(value ?? "");
   useEffect(() => setDraft(value ?? ""), [value]);
@@ -1949,7 +1990,7 @@ function ApprovalSection({
   onAddClaim,
 }: {
   repair: RepairDetail;
-  onPatch: (patch: Record<string, unknown>) => Promise<void>;
+  onPatch: (patch: Record<string, unknown>) => Promise<unknown>;
   onPatchClaim: (
     claimId: string,
     patch: Record<string, unknown>,
@@ -2217,7 +2258,7 @@ function AmountField({
 }: {
   label: string;
   value: string | number | null;
-  onSave: (v: number | null) => Promise<void>;
+  onSave: (v: number | null) => Promise<unknown>;
 }) {
   const initial = value === null ? "" : String(value);
   const [draft, setDraft] = useState(initial);

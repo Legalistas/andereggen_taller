@@ -148,17 +148,9 @@ export default function FollowupsSection() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
-      const parts = [`Presupuesto #${budgetNumber}: lead pasado a refuerzo.`];
-      if (body.notifyEnabled === false) {
-        parts.push(
-          "Las notificaciones automáticas están desactivadas — no se envió email.",
-        );
-      } else if (body.emailSent) {
-        parts.push("Email de recordatorio enviado.");
-      } else {
-        parts.push("No se pudo enviar el email (ver consola).");
-      }
-      alert(parts.join(" "));
+      alert(
+        `Presupuesto #${budgetNumber}: oportunidad pasada a Refuerzo. El Refuerzo 1 le llega al cliente en unos segundos y queda registrado en la ficha.`,
+      );
       await fetchData();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Error");

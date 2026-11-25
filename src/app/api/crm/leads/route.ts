@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { notifyLeadEvent } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import type { LeadStatus } from "../../../../../generated/prisma/client";
 
@@ -430,6 +431,9 @@ export async function POST(request: Request) {
       },
     });
   });
+
+  // C1 · "Recibimos tu solicitud de cotización".
+  if (lead.status === "solicitud") notifyLeadEvent("lead_created", lead.id);
 
   return NextResponse.json({ lead }, { status: 201 });
 }

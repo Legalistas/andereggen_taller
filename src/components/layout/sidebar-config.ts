@@ -4,6 +4,7 @@ import {
   Car,
   FileText,
   type LucideIcon,
+  MessageCircle,
   Package,
   Receipt,
   Settings,
@@ -31,6 +32,8 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   { label: "Producción", icon: Car, href: "/produccion" },
   // spec 2.3 v2 · Módulo Calendario — reemplaza el Excel de gestión de turnos
   { label: "Calendario", icon: Calendar, href: "/calendario" },
+  // Bandeja, listas de difusión y campañas del número del taller (Twilio).
+  { label: "WhatsApp", icon: MessageCircle, href: "/whatsapp" },
   // spec sección 4 v2 · Módulo Caja — cobros, egresos, transferencias entre
   // las 5 cajas del taller. Administrado por el rol Contable (Ayelén).
   { label: "Caja", icon: Wallet, href: "/caja", roles: FINANCE_ROLES },

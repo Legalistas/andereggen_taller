@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
 import {
-  buildLeadContext,
-  sendRepairEventNotification,
+  notificationTimeline,
+  notifyLeadStatusChange,
 } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { autoCreatePurchasesForItems } from "@/lib/purchases/auto-create";
@@ -103,7 +103,8 @@ export async function GET(request: Request, ctx: RouteContext) {
   if (!lead) {
     return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
-  return NextResponse.json({ lead });
+  const notificationLogs = await notificationTimeline(id);
+  return NextResponse.json({ lead: { ...lead, notificationLogs } });
 }
 
 export async function PATCH(request: Request, ctx: RouteContext) {
@@ -435,18 +436,9 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     );
   }
 
-  // spec 1.3 v2 · Mail de refuerzo comercial cuando el lead entra en
-  // "refuerzo". Solo si es una transición efectiva (existing.status !==
-  // "refuerzo") — así reasignar dentro de la misma columna no reenvía.
-  if (status === "refuerzo" && existing.status !== "refuerzo") {
-    buildLeadContext(id)
-      .then((ctx) => {
-        if (ctx) return sendRepairEventNotification("lead_reinforcement", ctx);
-      })
-      .catch((e) =>
-        console.error("[notif:lead_reinforcement] error en envío:", e),
-      );
-  }
+  // Refuerzo 1 / ganada / perdida (C3, C5, C6). Solo en transición efectiva:
+  // reasignar dentro de la misma columna no reenvía.
+  if (status) notifyLeadStatusChange(id, existing.status, status);
 
   return NextResponse.json({ lead });
 }

@@ -34,12 +34,16 @@ const ACTIVE_STATUSES: RepairStatus[] = ALL_STATUSES.filter(
   (s) => s !== "archivado",
 );
 
+/** Archivados recientes que el Tablero muestra en su columna (bug B4). */
+const BOARD_ARCHIVED_DAYS = 30;
+
 export async function GET(request: Request) {
   const authError = await verifyAuth(request);
   if (authError) return authError;
 
   const url = new URL(request.url);
-  const tab = url.searchParams.get("tab"); // "activas" | "archivadas" | null
+  // "activas" | "archivadas" | "tablero" (activas + archivadas recientes) | null
+  const tab = url.searchParams.get("tab");
   const search = url.searchParams.get("search")?.trim() ?? "";
   const statusParam = url.searchParams.get("status") as RepairStatus | null;
   const mechanicId = url.searchParams.get("mechanicId") ?? undefined;
@@ -53,9 +57,24 @@ export async function GET(request: Request) {
           ? ACTIVE_STATUSES
           : ALL_STATUSES;
 
+  const statusWhere: Prisma.RepairWhereInput =
+    tab === "tablero" && !statusParam
+      ? {
+          OR: [
+            { status: { in: ACTIVE_STATUSES } },
+            {
+              status: "archivado",
+              archivedAt: {
+                gte: new Date(Date.now() - BOARD_ARCHIVED_DAYS * 86_400_000),
+              },
+            },
+          ],
+        }
+      : { status: { in: statusFilter } };
+
   const repairs = await prisma.repair.findMany({
     where: {
-      status: { in: statusFilter },
+      AND: [statusWhere],
       ...(mechanicId && { assignedMechanicId: mechanicId }),
       ...(search && {
         OR: [

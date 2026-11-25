@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { arDateTimeInputToIso, isoToArDateTimeInput } from "@/lib/ar-datetime";
 
 /**
  * spec 2.3 v2 · Modal de detalle de un evento del calendario. Muestra el
@@ -93,17 +94,6 @@ const MONEY = new Intl.NumberFormat("es-AR", {
   maximumFractionDigits: 0,
 });
 
-/** ISO → `YYYY-MM-DDTHH:mm` local para `datetime-local`. */
-function toLocalDateTime(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${day}T${h}:${min}`;
-}
-
 /** ISO → `YYYY-MM-DD` local para `date`. */
 function toLocalDate(iso: string): string {
   const d = new Date(iso);
@@ -111,13 +101,6 @@ function toLocalDate(iso: string): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-function parseLocalDateTime(v: string): string {
-  const [datePart, timePart] = v.split("T");
-  const [y, m, d] = datePart.split("-").map(Number);
-  const [h, min] = timePart.split(":").map(Number);
-  return new Date(y, m - 1, d, h, min, 0).toISOString();
 }
 
 function parseLocalDate(v: string): string {
@@ -132,7 +115,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
   const title = isTurno ? "Detalle del turno" : "Detalle de la entrega";
 
   const [dateValue, setDateValue] = useState(
-    isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date),
+    isTurno ? isoToArDateTimeInput(event.date) : toLocalDate(event.date),
   );
   const [needsTransport, setNeedsTransport] = useState(event.needsTransport);
   const [isUrgent, setIsUrgent] = useState(event.isUrgent);
@@ -145,7 +128,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
   // Si cambia el evento (mismo dialog reutilizado), reseteamos el form
   useEffect(() => {
     setDateValue(
-      isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date),
+      isTurno ? isoToArDateTimeInput(event.date) : toLocalDate(event.date),
     );
     setNeedsTransport(event.needsTransport);
     setIsUrgent(event.isUrgent);
@@ -158,7 +141,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
   const originalNotes = event.notes ?? "";
   const isDirty =
     dateValue !==
-      (isTurno ? toLocalDateTime(event.date) : toLocalDate(event.date)) ||
+      (isTurno ? isoToArDateTimeInput(event.date) : toLocalDate(event.date)) ||
     needsTransport !== event.needsTransport ||
     isUrgent !== event.isUrgent ||
     isPriority !== event.isPriority ||
@@ -177,7 +160,7 @@ export default function EventDetailDialog({ event, onClose, onSaved }: Props) {
         notes: notes.trim() || null,
       };
       if (isTurno) {
-        body.scheduledAt = parseLocalDateTime(dateValue);
+        body.scheduledAt = arDateTimeInputToIso(dateValue);
       } else {
         body.estimatedDeliveryAt = parseLocalDate(dateValue);
       }

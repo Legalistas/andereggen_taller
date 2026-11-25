@@ -33,6 +33,10 @@ import {
   InsuranceCompanyRow,
   type UserLite,
 } from "@/components/crm/actor-pickers";
+import {
+  NotificationLogList,
+  type NotificationLogRow,
+} from "@/components/notifications/notification-log-list";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -187,6 +191,8 @@ type LeadDetail = {
   partsPurchaser: "TALLER" | "SEGURO" | null;
   budgets: BudgetLite[];
   repairs: RepairLite[];
+  /** Avisos enviados al cliente (incluye los refuerzos), más reciente primero. */
+  notificationLogs: NotificationLogRow[];
 };
 
 type Insurance = { id: string; name: string };
@@ -532,6 +538,12 @@ export function LeadCanvas({
                 }}
               />
 
+              <ReinforcementsSection
+                leadId={lead.id}
+                logs={lead.notificationLogs}
+                onSent={() => setInternalReload((n) => n + 1)}
+              />
+
               {lead.vehicle ? (
                 <VehicleSection
                   vehicle={lead.vehicle}
@@ -750,6 +762,86 @@ function SectionCard({
       </div>
       <div className="p-4">{children}</div>
     </section>
+  );
+}
+
+/**
+ * C4 · Refuerzos manuales + registro de avisos al cliente. El Refuerzo 1 sale
+ * solo al pasar la oportunidad a Refuerzo; acá se mandan el 2 y el 3 (o se
+ * repite el 1) y cada envío queda registrado.
+ */
+function ReinforcementsSection({
+  leadId,
+  logs,
+  onSent,
+}: {
+  leadId: string;
+  logs: NotificationLogRow[];
+  onSent: () => void;
+}) {
+  const [n, setN] = useState("2");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const send = async () => {
+    setSending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/crm/leads/${leadId}/reinforcements`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ n: Number(n) }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      onSent();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al enviar");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      icon={Send}
+      title="Refuerzos y avisos"
+      iconTint="text-purple-600"
+      iconBg="bg-purple-50"
+    >
+      <div className="flex items-end gap-2">
+        <div className="grid gap-1 flex-1">
+          <Label className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+            Refuerzo
+          </Label>
+          <Select value={n} onValueChange={setN}>
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">Refuerzo 1</SelectItem>
+              <SelectItem value="2">Refuerzo 2</SelectItem>
+              <SelectItem value="3">Refuerzo 3</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button size="sm" onClick={send} disabled={sending} className="gap-1.5">
+          {sending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Send className="h-3.5 w-3.5" />
+          )}
+          Enviar
+        </Button>
+      </div>
+      <p className="text-[11px] text-slate-500 mt-1.5">
+        El Refuerzo 1 sale solo al pasar la oportunidad a Refuerzo.
+      </p>
+      {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
+      <div className="mt-4 pt-3 border-t border-slate-100">
+        <NotificationLogList logs={logs} />
+      </div>
+    </SectionCard>
   );
 }
 

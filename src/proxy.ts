@@ -42,6 +42,7 @@ export function proxy(request: NextRequest) {
     "/produccion",
     "/reportes",
     "/estadisticas",
+    "/whatsapp",
   ];
   const isProtectedRoute = protectedRoutes.some((route) =>
     pathname.startsWith(route),

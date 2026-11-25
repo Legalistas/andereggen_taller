@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
 import {
-  buildRepairContext,
-  sendRepairEventNotification,
+  arDayTime,
+  notificationTimeline,
+  notifyRepairEvent,
 } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { CLAIM_INCLUDE, CLAIM_ORDER_BY } from "@/lib/repair-claims";
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+/** Vehículos por bloque de 1 hora de turnos de entrega (requerimientos v1.3, 5.1). */
+const DELIVERY_BLOCK_CAPACITY = 3;
 
 /**
  * Estados desde los que el sistema puede auto-avanzar a "chapa" cuando se
@@ -16,21 +20,9 @@ type RouteContext = { params: Promise<{ id: string }> };
  */
 const AUTO_ADVANCE_FROM = new Set(["turno_a_asignar", "turno_asignado"]);
 
-/**
- * Estados "el auto está en taller" (antes de retirarse). Cuando se carga
- * `deliveredAt` desde alguno de estos, la reparación pasa automáticamente a
- * `experiencia_cliente` para disparar la encuesta de inmediato. El cobro
- * (pendientes_cobro) llega después porque los seguros pagan a 30/40 días —
- * no queremos esperar todo ese tiempo para mandar la encuesta.
- */
-const PRE_DELIVERY_STATUSES = new Set([
-  "turno_asignado",
-  "pendientes_repuestos",
-  "chapa",
-  "pintura",
-  "pulido_armado",
-  "calidad",
-]);
+// Automatizaciones v1.3 · sección 6: cargar "Entregado" ya NO pasa la tarjeta
+// a Experiencia del Cliente. El pase es manual (arrastrar la tarjeta), y eso
+// manda la encuesta; los casos con conflicto se pasan directo a Archivado.
 
 export async function GET(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
@@ -105,7 +97,8 @@ export async function GET(request: Request, ctx: RouteContext) {
     );
   }
 
-  return NextResponse.json({ repair });
+  const notificationLogs = await notificationTimeline(repair.leadId, id);
+  return NextResponse.json({ repair: { ...repair, notificationLogs } });
 }
 
 export async function PATCH(request: Request, ctx: RouteContext) {
@@ -132,6 +125,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     enteredAt,
     partsReceivedAt,
     estimatedDeliveryAt,
+    deliveryAppointmentAt,
     deliveredAt,
     notes,
     reason,
@@ -267,20 +261,43 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     !existing.scheduledAt &&
     existing.status === "turno_a_asignar";
 
-  // Auto-transición a "pendientes_cobro" cuando se setea deliveredAt y el
-  // repair está en alguna etapa pre-entrega. Si la card ya está después de
-  // entrega (pendientes_cobro / experiencia_cliente / archivado) la dejamos.
-  const newDeliveredAt =
-    deliveredAt !== undefined
-      ? deliveredAt
-        ? new Date(deliveredAt as string)
+  // P7 · Cada vez que se carga o se corrige el Turno de entrega, el cliente
+  // recibe el día y la hora desde la que puede retirar.
+  const newDeliveryAppointmentAt =
+    deliveryAppointmentAt !== undefined
+      ? deliveryAppointmentAt
+        ? new Date(deliveryAppointmentAt as string)
         : null
       : undefined;
-  const willTriggerDelivery =
-    newDeliveredAt !== undefined &&
-    newDeliveredAt !== null &&
-    !existing.deliveredAt &&
-    PRE_DELIVERY_STATUSES.has(existing.status);
+  const willTriggerDeliveryAppointment =
+    newDeliveryAppointmentAt != null &&
+    newDeliveryAppointmentAt.getTime() !==
+      existing.deliveryAppointmentAt?.getTime();
+
+  // 5.1 · Las entregas se dan en bloques de 1 hora, con 3 vehículos por
+  // bloque. Argentina es UTC-3 fijo: la hora entera UTC es la hora entera AR.
+  if (willTriggerDeliveryAppointment) {
+    const blockStart = new Date(newDeliveryAppointmentAt);
+    blockStart.setUTCMinutes(0, 0, 0);
+    const taken = await prisma.repair.count({
+      where: {
+        id: { not: id },
+        deliveryAppointmentAt: {
+          gte: blockStart,
+          lt: new Date(blockStart.getTime() + 3_600_000),
+        },
+      },
+    });
+    if (taken >= DELIVERY_BLOCK_CAPACITY) {
+      const { day, time } = arDayTime(blockStart);
+      return NextResponse.json(
+        {
+          error: `El bloque del ${day} de las ${time} ya tiene ${DELIVERY_BLOCK_CAPACITY} entregas. Elegí otro horario.`,
+        },
+        { status: 409 },
+      );
+    }
+  }
 
   // Si el usuario seteó franquicia/particular y no mandó approvedAt
   // explícito, lo dejamos en "hoy" para registrar el momento. (Lo aprobado
@@ -322,8 +339,11 @@ export async function PATCH(request: Request, ctx: RouteContext) {
           ? new Date(estimatedDeliveryAt as string)
           : null,
       }),
+      ...(deliveryAppointmentAt !== undefined && {
+        deliveryAppointmentAt: newDeliveryAppointmentAt,
+      }),
       ...(deliveredAt !== undefined && {
-        deliveredAt: newDeliveredAt,
+        deliveredAt: deliveredAt ? new Date(deliveredAt as string) : null,
       }),
       ...(notes !== undefined && { notes: (notes as string | null) || null }),
       ...(reason !== undefined && {
@@ -354,7 +374,6 @@ export async function PATCH(request: Request, ctx: RouteContext) {
       }),
       ...(willTriggerTurnAssigned && { status: "turno_asignado" as const }),
       ...(willTriggerEntry && { status: "chapa" as const }),
-      ...(willTriggerDelivery && { status: "experiencia_cliente" as const }),
     },
     include: {
       assignedMechanic: {
@@ -375,57 +394,13 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     },
   });
 
-  // Si recién cargamos la fecha de ingreso, disparamos el email "vehículo en
-  // taller" al cliente (y otros actores definidos en EVENT_RECIPIENTS). Lo
-  // hacemos en background para no bloquear la respuesta.
-  if (willTriggerEntry) {
-    buildRepairContext(updated.id)
-      .then((ctx) => {
-        if (ctx) return sendRepairEventNotification("vehicle_entered", ctx);
-      })
-      .catch((e) =>
-        console.error("[notif:vehicle_entered] error en envío:", e),
-      );
-  }
-
-  // spec 2.1 v2 · Mail de confirmación de turno al cliente cuando la card
-  // pasa de "Turno a Asignar" a "Turno Asignado" (se coordinó fecha con el
-  // cliente). Background para no bloquear la respuesta.
-  if (willTriggerTurnAssigned) {
-    buildRepairContext(updated.id)
-      .then((ctx) => {
-        if (ctx) return sendRepairEventNotification("turn_assigned", ctx);
-      })
-      .catch((e) => console.error("[notif:turn_assigned] error en envío:", e));
-  }
-
-  // Side-effects de la auto-transición a "experiencia_cliente" al setear
-  // deliveredAt: crear el ServiceRating con token (si todavía no existe) y
-  // disparar el email de encuesta. Mismo flujo que PATCH /status para
-  // este estado — replicado acá porque la auto-transición no pasa por allá.
-  if (willTriggerDelivery) {
-    try {
-      const existingRating = await prisma.serviceRating.findUnique({
-        where: { repairId: updated.id },
-      });
-      if (!existingRating) {
-        await prisma.serviceRating.create({
-          data: {
-            repairId: updated.id,
-            token: generateRatingToken(),
-          },
-        });
-      }
-    } catch (e) {
-      console.error("[rating:create] error:", e);
-    }
-    buildRepairContext(updated.id)
-      .then((ctx) => {
-        if (ctx) return sendRepairEventNotification("customer_experience", ctx);
-      })
-      .catch((e) =>
-        console.error("[notif:customer_experience] error en envío:", e),
-      );
+  // P3 · Se cargó la fecha de ingreso: "vehículo en taller".
+  if (willTriggerEntry) notifyRepairEvent("vehicle_entered", id);
+  // P1 · La card pasa de "Turno a Asignar" a "Turno Asignado".
+  if (willTriggerTurnAssigned) notifyRepairEvent("turn_assigned", id);
+  // P7 · Turno de entrega cargado o corregido.
+  if (willTriggerDeliveryAppointment) {
+    notifyRepairEvent("delivery_appointment", id);
   }
 
   return NextResponse.json({
@@ -433,13 +408,6 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     // Vacío salvo que el N° interno guardado ya lo use otra tarjeta.
     internalNumberDuplicates,
   });
-}
-
-function generateRatingToken(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID().replace(/-/g, "");
-  }
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export async function DELETE(request: Request, ctx: RouteContext) {

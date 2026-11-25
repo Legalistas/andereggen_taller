@@ -66,7 +66,7 @@ export default function ProductionSection() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/repairs?tab=activas", { signal });
+      const res = await fetch("/api/repairs?tab=tablero", { signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as { repairs: KanbanRepair[] };
       setRepairs(body.repairs);
@@ -86,6 +86,33 @@ export default function ProductionSection() {
     fetchRepairs(ac.signal);
     return () => ac.abort();
   }, [fetchRepairs]);
+
+  // B4 · El tablero trae los archivados de los últimos 30 días; los más
+  // viejos se suman a la columna Archivado cuando se los busca.
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (term.length < 3) return;
+    const ac = new AbortController();
+    const t = setTimeout(() => {
+      fetch(`/api/repairs?tab=archivadas&search=${encodeURIComponent(term)}`, {
+        signal: ac.signal,
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((body: { repairs: KanbanRepair[] } | null) => {
+          if (!body) return;
+          setRepairs((prev) => {
+            const known = new Set(prev.map((r) => r.id));
+            const extra = body.repairs.filter((r) => !known.has(r.id));
+            return extra.length > 0 ? [...prev, ...extra] : prev;
+          });
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(t);
+      ac.abort();
+    };
+  }, [searchTerm]);
 
   // Cargar mecánicos para filtro y selector
   useEffect(() => {
@@ -170,10 +197,6 @@ export default function ProductionSection() {
         prev.map((r) => (r.id === repairId ? { ...r, ...body.repair } : r)),
       );
 
-      // Si pasó a archivado, sacarlo del tablero (tab=activas)
-      if (next === "archivado") {
-        setRepairs((prev) => prev.filter((r) => r.id !== repairId));
-      }
     } catch {
       await fetchRepairs();
     }

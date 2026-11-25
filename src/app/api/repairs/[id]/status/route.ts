@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
-import {
-  buildRepairContext,
-  sendRepairEventNotification,
-} from "@/lib/notifications";
+import type { RepairEventType } from "@/lib/email/templates/repair-event";
+import { notifyRepairEvent } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import type { RepairStatus } from "../../../../../../generated/prisma/client";
 
@@ -22,13 +20,25 @@ const ALL_STATUSES: RepairStatus[] = [
   "archivado",
 ];
 
+const EVENT_BY_STATUS: Partial<Record<RepairStatus, RepairEventType>> = {
+  pendientes_repuestos: "parts_pending", // P2
+  // Drag&drop directo a "chapa" sin pasar por el form: equivale a "el
+  // vehículo entró al taller", así que dispara la misma notificación.
+  chapa: "vehicle_entered", // P3
+  pintura: "paint_started", // P4
+  pulido_armado: "polish_started", // P5
+  calidad: "quality_check", // P6 · todavía NO está listo para retirar
+  experiencia_cliente: "customer_experience", // pase manual (sección 6)
+};
+
 /**
  * PATCH /api/repairs/[id]/status
  * Mueve la reparación a una nueva columna del kanban y aplica side-effects:
- *  - chapa                → setea enteredAt si era null + dispara vehicle_entered
+ *  - chapa                → setea enteredAt si era null
  *  - pendientes_repuestos → setea partsReceivedAt si era null
  *  - archivado            → setea archivedAt si era null
- *  - experiencia_cliente  → crea ServiceRating + dispara email
+ *  - experiencia_cliente  → crea ServiceRating
+ *  y manda el aviso de la etapa (EVENT_BY_STATUS).
  *
  * NOTA: La columna "Ingresado" fue removida del flujo. Cuando el vehículo
  * llega al taller, se setea la fecha de ingreso desde el form de la card y
@@ -103,35 +113,11 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     }
   }
 
-  // Notificaciones automáticas spec sección 6 — disparan según la columna
-  // a la que se movió. Solo si hubo cambio efectivo de status.
-  if (existing.status !== status) {
-    const eventByStatus: Partial<
-      Record<
-        RepairStatus,
-        | "vehicle_entered"
-        | "parts_received"
-        | "repair_completed"
-        | "customer_experience"
-      >
-    > = {
-      // Drag&drop directo a "chapa" sin pasar por el form: equivale a "el
-      // vehículo entró al taller", así que dispara la misma notificación.
-      chapa: "vehicle_entered",
-      pendientes_repuestos: "parts_received",
-      calidad: "repair_completed", // listo para retirar (pasó QC)
-      experiencia_cliente: "customer_experience",
-    };
-
-    const event = eventByStatus[status];
-    if (event) {
-      buildRepairContext(updated.id)
-        .then((ctx) => {
-          if (ctx) return sendRepairEventNotification(event, ctx);
-        })
-        .catch((e) => console.error(`[notif:${event}] error en envío:`, e));
-    }
-  }
+  // Avisos al cliente por etapa (automatizaciones v1.3 · sección 5). Solo si
+  // hubo cambio efectivo de status. Archivado no avisa: es el camino manual
+  // para los casos con conflicto (sección 6).
+  const event = EVENT_BY_STATUS[status];
+  if (event && existing.status !== status) notifyRepairEvent(event, id);
 
   return NextResponse.json({ repair: updated });
 }

@@ -1,54 +1,120 @@
 /**
- * Email de notificación automática para los eventos de la spec sección 6.
- * Variantes (event):
- *   - "budget_created"        → Presupuesto generado
- *   - "vehicle_entered"       → Vehículo ingresado al taller
- *   - "parts_received"        → Repuestos recibidos
- *   - "repair_completed"      → Reparación completada / listo para retirar
- *   - "customer_experience"   → Solicitud de experiencia del cliente (encuesta)
+ * Email de los avisos automáticos al cliente (y a perito / productor en los
+ * eventos que los incluyen). Textos de "Requerimientos de automatizaciones
+ * v1.3" (secciones 4 y 5); los definitivos los redacta Marketing.
  *
- * Recipient role: "customer" | "inspector" | "insurance" — adapta el saludo + CTA.
+ * Recipient role: "customer" | "inspector" | "insurance" — los eventos que
+ * solo van al cliente no tienen copy para los otros roles.
  */
 
 import { Button, Heading, Section, Text } from "@react-email/components";
 import { EmailLayout } from "./layout";
 
 export type RepairEventType =
+  // CRM (sección 4)
+  | "lead_created" // C1 · se crea la oportunidad
+  | "lead_reinforcement" // C3 · Refuerzo 1, al pasar a Refuerzo
+  | "lead_reinforcement_2" // C4 · manual desde la oportunidad
+  | "lead_reinforcement_3" // C4 · manual desde la oportunidad
+  | "lead_won" // C5
+  | "lead_lost" // C6
   | "budget_created"
-  | "vehicle_entered"
-  | "parts_received"
-  | "repair_completed"
-  | "customer_experience"
-  | "turn_assigned" // spec 2.1 v2 · Turno coordinado con el cliente
-  | "lead_reinforcement"; // spec 1.3 v2 · Lead movido a "Refuerzo"
+  // Producción (sección 5)
+  | "turn_assigned" // P1
+  | "parts_pending" // P2
+  | "vehicle_entered" // P3
+  | "paint_started" // P4
+  | "polish_started" // P5
+  | "quality_check" // P6 · entró a Calidad, todavía NO está listo (bug B3)
+  | "delivery_appointment" // P7 · se cargó el Turno de entrega
+  | "customer_experience";
 
-type Role = "customer" | "inspector" | "insurance";
+/** Eventos del registro de avisos: los del mail más C2, que sale solo por WhatsApp. */
+export type NotifyEvent = RepairEventType | "budget_sent";
+
+export type Role = "customer" | "inspector" | "insurance";
+
+/** Día y hora ya formateados en hora argentina. */
+export type DayTime = { day: string; time: string };
 
 type Props = {
   event: RepairEventType;
   role: Role;
   recipientName?: string | null;
   customerName: string;
+  /** "Marca Modelo Año · PATENTE"; vacío si la oportunidad no tiene vehículo. */
   vehicleSummary: string;
   /** Para evento budget_created: número y total */
   budgetNumber?: number;
   budgetTotal?: string;
   /** URL de encuesta para customer_experience */
   surveyUrl?: string;
-  /** Para turn_assigned: fecha/hora del turno formateada en es-AR */
-  turnDateFormatted?: string;
+  /** P1 · turno asignado */
+  turnAt?: DayTime;
+  /** P7 · turno de entrega */
+  deliveryAt?: DayTime;
   taller: { name: string; phone: string; email: string };
 };
 
+type Copy = { heading: string; intro: (p: Props) => string };
+
+const vehicle = (p: Props) =>
+  p.vehicleSummary ? `tu vehículo ${p.vehicleSummary}` : "tu vehículo";
+
 const COPY: Record<
   RepairEventType,
-  Record<Role, { heading: string; intro: (p: Props) => string; cta?: string }>
+  { customer: Copy; inspector?: Copy; insurance?: Copy }
 > = {
+  lead_created: {
+    customer: {
+      heading: "Recibimos tu solicitud de cotización",
+      intro: () =>
+        "Recibimos tu solicitud de cotización. Ya estamos trabajando y en breve te enviamos el presupuesto a tu correo.",
+    },
+  },
+  // Refuerzos 1 y 2: mismo texto que las plantillas taller_refuerzo1/2 de
+  // WhatsApp (los mensajes que mandaba Lu a mano).
+  lead_reinforcement: {
+    customer: {
+      heading: "¿Pudo revisar el presupuesto?",
+      intro: (p) =>
+        `Le escribimos de ${p.taller.name} por el presupuesto que le enviamos para su auto. ¿Pudo revisarlo? Si quiere avanzar con la reparación, con gusto le reservamos un turno. Cualquier duda que tenga, estamos para ayudarle. ¡Muchas gracias!`,
+    },
+  },
+  lead_reinforcement_2: {
+    customer: {
+      heading: "¿Sigue interesado/a en la reparación?",
+      intro: () =>
+        "Le volvemos a escribir para consultarle si sigue interesado/a en la reparación de su auto. Si ya no necesita el servicio, no hay ningún problema: nos ayuda mucho saberlo para mantener nuestra agenda al día. Y si quiere avanzar, avísenos y coordinamos un turno. ¡Gracias por tenernos en cuenta!",
+    },
+  },
+  // Texto provisorio: todavía no hay plantilla taller_refuerzo3.
+  lead_reinforcement_3: {
+    customer: {
+      heading: "¿Seguís interesado en la reparación?",
+      intro: (p) =>
+        `Queríamos saber si seguís interesado en reparar ${vehicle(p)} con nosotros. Si querés avanzar, respondé este correo y coordinamos el turno.`,
+    },
+  },
+  lead_won: {
+    customer: {
+      heading: "¡Gracias por elegirnos!",
+      intro: (p) =>
+        `Gracias por elegir ${p.taller.name} para la reparación de ${vehicle(p)}. En breve te contactamos para coordinar el turno.`,
+    },
+  },
+  lead_lost: {
+    customer: {
+      heading: "Seguimos a disposición",
+      intro: (p) =>
+        `Lamentamos que no hayas decidido avanzar. Seguimos a disposición para cualquier consulta sobre tu vehículo en ${p.taller.name}.`,
+    },
+  },
   budget_created: {
     customer: {
       heading: "Tu presupuesto está listo",
       intro: (p) =>
-        `Generamos el presupuesto #${p.budgetNumber ?? "—"} para tu vehículo ${p.vehicleSummary}. En las próximas horas te llega el detalle por mail con el PDF adjunto.`,
+        `Generamos el presupuesto #${p.budgetNumber ?? "—"} para ${vehicle(p)}. En las próximas horas te llega el detalle por mail con el PDF adjunto.`,
     },
     inspector: {
       heading: "Nuevo presupuesto generado",
@@ -61,16 +127,37 @@ const COPY: Record<
         `Se generó el presupuesto #${p.budgetNumber ?? "—"} del cliente ${p.customerName} (${p.vehicleSummary}) que está en tu cartera.`,
     },
   },
+  turn_assigned: {
+    customer: {
+      heading: "Turno agendado",
+      intro: (p) =>
+        p.turnAt
+          ? `Agendamos tu turno para el ${p.turnAt.day} a las ${p.turnAt.time}. Te esperamos con ${vehicle(p)}.`
+          : `Agendamos el turno para ${vehicle(p)}. Te esperamos en la fecha acordada.`,
+    },
+    inspector: {
+      heading: "Turno confirmado",
+      intro: (p) =>
+        `Se coordinó turno con ${p.customerName} para el vehículo ${p.vehicleSummary}${p.turnAt ? ` (${p.turnAt.day} a las ${p.turnAt.time})` : ""}.`,
+    },
+    insurance: {
+      heading: "Turno confirmado",
+      intro: (p) =>
+        `Se coordinó turno con ${p.customerName} para el vehículo ${p.vehicleSummary}${p.turnAt ? ` (${p.turnAt.day} a las ${p.turnAt.time})` : ""}.`,
+    },
+  },
+  parts_pending: {
+    customer: {
+      heading: "Estamos esperando tus repuestos",
+      intro: (p) =>
+        `Estamos esperando que nos envíen los repuestos de ${vehicle(p)}. Lo seguimos de cerca, pero esta demora no depende del taller.`,
+    },
+  },
   vehicle_entered: {
     customer: {
       heading: "Tu vehículo ingresó al taller",
       intro: (p) =>
-        `Confirmamos que tu vehículo ${p.vehicleSummary} ingresó al taller. Te vamos a ir notificando los avances de la reparación.`,
-    },
-    inspector: {
-      heading: "Vehículo ingresado al taller",
-      intro: (p) =>
-        `El vehículo ${p.vehicleSummary} del cliente ${p.customerName} ingresó al taller y está en proceso.`,
+        `Gracias por dejar ${vehicle(p)} en ${p.taller.name}. Quedate tranquilo: tu auto está en manos de expertos y ya ingresó a chapa.`,
     },
     insurance: {
       heading: "Vehículo ingresado al taller",
@@ -78,39 +165,42 @@ const COPY: Record<
         `El vehículo ${p.vehicleSummary} del cliente ${p.customerName} ingresó al taller. Inicio formal del proceso de reparación.`,
     },
   },
-  parts_received: {
+  paint_started: {
     customer: {
-      heading: "Repuestos recibidos",
-      intro: (p) =>
-        `Llegaron todos los repuestos para tu vehículo ${p.vehicleSummary}. La reparación arranca a la brevedad.`,
-    },
-    inspector: {
-      heading: "Repuestos recibidos",
-      intro: (p) =>
-        `El taller confirmó la recepción completa de repuestos para ${p.customerName} — ${p.vehicleSummary}. Listo para iniciar producción.`,
-    },
-    insurance: {
-      heading: "Repuestos recibidos",
-      intro: (p) =>
-        `Confirmamos la recepción de todos los repuestos para el siniestro de ${p.customerName} (${p.vehicleSummary}). Inicia producción.`,
+      heading: "Tu auto pasó a pintura",
+      intro: (p) => `${capitalize(vehicle(p))} ya pasó a pintura.`,
     },
   },
-  repair_completed: {
+  polish_started: {
     customer: {
-      heading: "Tu vehículo está listo para retirar",
+      heading: "Tu auto pasó a pulido y armado",
+      intro: (p) => `${capitalize(vehicle(p))} ya pasó a pulido y armado.`,
+    },
+  },
+  quality_check: {
+    customer: {
+      heading: "Tu auto entró a calidad",
       intro: (p) =>
-        `Terminamos la reparación de tu vehículo ${p.vehicleSummary}. Pasó el control de calidad y ya podés coordinar el retiro.`,
-      cta: "Coordinar retiro",
+        `${capitalize(vehicle(p))} entró a calidad, la última etapa del proceso. Cuando esté listo para retirar te vamos a avisar para que lo vengas a buscar.`,
     },
     inspector: {
-      heading: "Reparación completada",
+      heading: "Vehículo en control de calidad",
       intro: (p) =>
-        `La reparación del vehículo ${p.vehicleSummary} (cliente: ${p.customerName}) está terminada y aprobada por calidad.`,
+        `El vehículo ${p.vehicleSummary} (cliente: ${p.customerName}) entró a control de calidad, la última etapa de la reparación.`,
     },
     insurance: {
-      heading: "Reparación completada",
+      heading: "Vehículo en control de calidad",
       intro: (p) =>
-        `La reparación del cliente ${p.customerName} — ${p.vehicleSummary} está finalizada. El vehículo queda a disposición para retiro.`,
+        `El vehículo ${p.vehicleSummary} del cliente ${p.customerName} entró a control de calidad, la última etapa de la reparación.`,
+    },
+  },
+  delivery_appointment: {
+    customer: {
+      heading: "Turno para retirar tu auto",
+      intro: (p) =>
+        p.deliveryAt
+          ? `${capitalize(vehicle(p))} va a estar listo para retirar el ${p.deliveryAt.day} a partir de las ${p.deliveryAt.time}. Te esperamos después de ese horario.`
+          : `${capitalize(vehicle(p))} ya tiene turno para retirar.`,
     },
   },
   customer_experience: {
@@ -118,74 +208,33 @@ const COPY: Record<
       heading: "¿Cómo fue tu experiencia?",
       intro: () =>
         "Nos gustaría conocer tu experiencia con la reparación. Te llevamos solo 1 minuto: respondé esta breve encuesta para ayudarnos a mejorar.",
-      cta: "Danos tu opinión en Google",
-    },
-    // Inspector y productor no reciben este evento — incluido para satisfacer el tipo
-    inspector: {
-      heading: "Encuesta enviada al cliente",
-      intro: (p) =>
-        `Se envió la encuesta de satisfacción al cliente ${p.customerName} por el vehículo ${p.vehicleSummary}.`,
-    },
-    insurance: {
-      heading: "Encuesta enviada al cliente",
-      intro: (p) =>
-        `Se envió la encuesta de satisfacción al cliente ${p.customerName} (${p.vehicleSummary}).`,
-    },
-  },
-  turn_assigned: {
-    customer: {
-      heading: "Turno confirmado",
-      intro: (p) =>
-        p.turnDateFormatted
-          ? `Coordinamos tu turno para el ${p.turnDateFormatted}. Te esperamos con tu vehículo ${p.vehicleSummary}.`
-          : `Coordinamos el turno para tu vehículo ${p.vehicleSummary}. Te esperamos en la fecha acordada.`,
-    },
-    inspector: {
-      heading: "Turno confirmado",
-      intro: (p) =>
-        `Se coordinó turno con ${p.customerName} para el vehículo ${p.vehicleSummary}${p.turnDateFormatted ? ` (${p.turnDateFormatted})` : ""}.`,
-    },
-    insurance: {
-      heading: "Turno confirmado",
-      intro: (p) =>
-        `Se coordinó turno con ${p.customerName} para el vehículo ${p.vehicleSummary}${p.turnDateFormatted ? ` (${p.turnDateFormatted})` : ""}.`,
-    },
-  },
-  lead_reinforcement: {
-    customer: {
-      heading: "¿Coordinamos tu reparación?",
-      intro: (p) =>
-        `¿Pudiste ver el presupuesto que te enviamos para tu vehículo ${p.vehicleSummary}? Nos gustaría coordinar un turno para avanzar. Cualquier duda respondé este correo y te ayudamos.`,
-    },
-    inspector: {
-      heading: "Lead en seguimiento",
-      intro: (p) =>
-        `El lead de ${p.customerName} (${p.vehicleSummary}) pasó a "Refuerzo": mail de seguimiento enviado al cliente.`,
-    },
-    insurance: {
-      heading: "Lead en seguimiento",
-      intro: (p) =>
-        `El lead de ${p.customerName} (${p.vehicleSummary}) pasó a "Refuerzo".`,
     },
   },
 };
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Copy del rol; los eventos solo-cliente caen al del cliente. */
+function copyFor(event: RepairEventType, role: Role): Copy {
+  return COPY[event][role] ?? COPY[event].customer;
+}
+
+/** Asunto del mail = título del aviso para ese destinatario. */
+export function eventSubject(event: RepairEventType, role: Role): string {
+  return copyFor(event, role).heading;
+}
 
 /** Ficha de reseñas del taller en Google — destino del mail de experiencia. */
 const GOOGLE_REVIEW_URL = "https://g.page/r/CTFP06m9KOcsEAE/review";
 
 export function RepairEventEmail(props: Props) {
-  const copy = COPY[props.event][props.role];
+  const copy = copyFor(props.event, props.role);
   const greeting = props.recipientName
     ? `Hola ${props.recipientName},`
     : "Hola,";
   const preview = `${copy.heading} — ${props.taller.name}`;
-
-  const showSurveyButton = props.event === "customer_experience";
-  const showCtaButton =
-    !showSurveyButton &&
-    copy.cta &&
-    props.event === "repair_completed" &&
-    props.role === "customer";
 
   return (
     <EmailLayout preview={preview}>
@@ -209,24 +258,13 @@ export function RepairEventEmail(props: Props) {
         </Section>
       ) : null}
 
-      {showSurveyButton ? (
+      {props.event === "customer_experience" ? (
         <Section className="mt-5">
           <Button
             href={GOOGLE_REVIEW_URL}
             className="bg-[#003b73] text-white text-xs font-semibold px-5 py-3 rounded no-underline"
           >
-            {copy.cta}
-          </Button>
-        </Section>
-      ) : null}
-
-      {showCtaButton ? (
-        <Section className="mt-5">
-          <Button
-            href={`tel:${props.taller.phone}`}
-            className="bg-[#003b73] text-white text-xs font-semibold px-5 py-3 rounded no-underline"
-          >
-            {copy.cta ?? "Contactar"}
+            Danos tu opinión en Google
           </Button>
         </Section>
       ) : null}

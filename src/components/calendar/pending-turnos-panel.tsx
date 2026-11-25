@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { arDateTimeInputToIso, isoToArDateTimeInput } from "@/lib/ar-datetime";
 
 /**
  * spec 2.3 v2 · Turnos pendientes por asignar. Lista los repairs con
@@ -64,24 +65,6 @@ function waitingLabel(iso: string): string {
   if (days <= 0) return "Hoy";
   if (days === 1) return "Hace 1 día";
   return `Hace ${days} días`;
-}
-
-/** Fecha/hora local formateados para `<input type="datetime-local">`. */
-function nowLocalDateTime(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${day}T${h}:${min}`;
-}
-
-function parseLocalDateTime(v: string): string {
-  const [datePart, timePart] = v.split("T");
-  const [y, m, d] = datePart.split("-").map(Number);
-  const [h, min] = timePart.split(":").map(Number);
-  return new Date(y, m - 1, d, h, min, 0).toISOString();
 }
 
 type Props = {
@@ -273,7 +256,9 @@ function AssignTurnoDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [scheduledAt, setScheduledAt] = useState(defaultDate ?? nowLocalDateTime());
+  const [scheduledAt, setScheduledAt] = useState(
+    defaultDate ?? isoToArDateTimeInput(new Date().toISOString()),
+  );
   const [needsTransport, setNeedsTransport] = useState(row.needsTransport);
   const [isUrgent, setIsUrgent] = useState(row.isUrgent);
   const [isPriority, setIsPriority] = useState(row.isPriority);
@@ -287,7 +272,7 @@ function AssignTurnoDialog({
     setError(null);
     try {
       const body: Record<string, unknown> = {
-        scheduledAt: parseLocalDateTime(scheduledAt),
+        scheduledAt: arDateTimeInputToIso(scheduledAt),
         needsTransport,
         isUrgent,
         isPriority,

@@ -64,7 +64,7 @@ export default function IntegrationsTab({ settings, onSave }: Props) {
         <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm mb-4">
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
           <span className="text-xs">
-            Estas integraciones están listas para configurar pero los conectores
+            MercadoPago y AFIP están listas para configurar pero los conectores
             aún no ejecutan llamadas reales. Cuando activemos cada una, las
             credenciales de acá se van a usar automáticamente.
           </span>
@@ -78,30 +78,30 @@ export default function IntegrationsTab({ settings, onSave }: Props) {
             setForm((f) => ({ ...f, whatsappEnabled: v }))
           }
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
-              <Label htmlFor="waNumber">Número de WhatsApp</Label>
-              <Input
-                id="waNumber"
-                value={form.whatsappNumber}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, whatsappNumber: e.target.value }))
-                }
-                placeholder="+54 9 3492 155-9075"
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="waKey">API key / Token</Label>
-              <Input
-                id="waKey"
-                type="password"
-                value={form.whatsappApiKey}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, whatsappApiKey: e.target.value }))
-                }
-              />
-            </div>
+          <div className="grid gap-1.5 md:max-w-sm">
+            <Label htmlFor="waNumber">Número de WhatsApp del taller</Label>
+            <Input
+              id="waNumber"
+              value={form.whatsappNumber}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, whatsappNumber: e.target.value }))
+              }
+              placeholder="+54 9 3492 70-2000"
+            />
+            <p className="text-xs text-muted-foreground">
+              Si el taller pasa a usar otro número, editalo acá. Tiene que
+              estar dado de alta como remitente en Twilio, con el webhook de
+              mensajes entrantes apuntando a este sistema. Vacío = +54 9 3492
+              70-2000.
+            </p>
           </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            Activado, cada aviso automático al cliente (los mismos del mail)
+            sale también por WhatsApp desde este número, con las plantillas
+            taller_… aprobadas en Twilio. Las credenciales de Twilio van en las
+            variables de entorno del servidor, no acá. La bandeja y las
+            campañas están en el menú WhatsApp.
+          </p>
         </IntegrationCard>
 
         {/* MercadoPago */}

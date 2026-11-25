@@ -15,6 +15,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { notifyLeadEvent } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
 const CORS_HEADERS = {
@@ -142,6 +143,9 @@ export async function POST(request: Request) {
         },
       });
     });
+
+    // C1 · "Recibimos tu solicitud de cotización".
+    notifyLeadEvent("lead_created", lead.id);
 
     return NextResponse.json(
       { ok: true, lead },

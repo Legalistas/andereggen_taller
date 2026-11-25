@@ -117,14 +117,14 @@ export default function NotificationsTab({ settings, onSave }: Props) {
             onChange={toggle("notifyOnBudgetSent")}
           />
           <ToggleRow
-            label="Recordatorio de presupuesto sin respuesta"
-            desc="Si no respondió después de X días, se le vuelve a escribir."
+            label="Refuerzo 1 automático"
+            desc="Al cliente cuando la oportunidad pasa a Refuerzo (también desde Recordar en Seguimiento)."
             checked={form.notifyOnBudgetReminder}
             onChange={toggle("notifyOnBudgetReminder")}
           />
           <ToggleRow
-            label="Cambios de estado en producción"
-            desc="Avisa al cliente cuando el vehículo pasa de etapa."
+            label="Avisos de etapa"
+            desc="Al cliente: oportunidad ganada o perdida, pasó a pintura, a pulido / armado y turno de entrega."
             checked={form.notifyOnStageChange}
             onChange={toggle("notifyOnStageChange")}
           />
@@ -150,20 +150,20 @@ export default function NotificationsTab({ settings, onSave }: Props) {
                 onChange={toggle("notifyVehicleEntered")}
               />
               <ToggleRow
-                label="Repuestos recibidos"
-                desc="A: Perito · Productor"
+                label="Pendiente de repuestos"
+                desc="A: Cliente (cuando pasa a Pendientes de Repuestos)"
                 checked={form.notifyPartsReceived}
                 onChange={toggle("notifyPartsReceived")}
               />
               <ToggleRow
-                label="Reparación completada / listo para retirar"
-                desc="A: Cliente · Perito · Productor (cuando entra a Calidad)"
+                label="Entró a calidad"
+                desc="A: Cliente · Perito · Productor. Avisa que es la última etapa, todavía no que está listo."
                 checked={form.notifyRepairCompleted}
                 onChange={toggle("notifyRepairCompleted")}
               />
               <ToggleRow
                 label="Solicitud de experiencia del cliente"
-                desc="Encuesta de satisfacción al cliente (cuando entra a Experiencia del Cliente)"
+                desc="Encuesta al cliente cuando la tarjeta se pasa a mano a Experiencia del Cliente"
                 checked={form.notifyCustomerExperience}
                 onChange={toggle("notifyCustomerExperience")}
               />

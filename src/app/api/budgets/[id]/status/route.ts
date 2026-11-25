@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { notifyLeadStatusChange } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { syncApprovedInsurance } from "@/lib/repair-claims";
 import type {
@@ -45,7 +46,10 @@ export async function POST(request: Request, ctx: RouteContext) {
   if (!status)
     return NextResponse.json({ error: "status required" }, { status: 400 });
 
-  const existing = await prisma.budget.findUnique({ where: { id } });
+  const existing = await prisma.budget.findUnique({
+    where: { id },
+    include: { lead: { select: { status: true } } },
+  });
   if (!existing)
     return NextResponse.json({ error: "Budget not found" }, { status: 404 });
 
@@ -283,6 +287,19 @@ export async function POST(request: Request, ctx: RouteContext) {
     timeout: 20_000,
     maxWait: 10_000,
   });
+
+  // C5 / C6 · Aceptar o rechazar el presupuesto original gana o pierde la
+  // oportunidad (ver arriba): mismo aviso que al moverla en el tablero.
+  if (
+    existing.extensionSuffix === 0 &&
+    (status === "accepted" || status === "rejected")
+  ) {
+    notifyLeadStatusChange(
+      existing.leadId,
+      existing.lead.status,
+      status === "accepted" ? "ganado" : "perdido",
+    );
+  }
 
   return NextResponse.json({ budget, stockWarnings });
 }
