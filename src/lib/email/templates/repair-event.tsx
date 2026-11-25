@@ -118,7 +118,7 @@ const COPY: Record<
       heading: "¿Cómo fue tu experiencia?",
       intro: () =>
         "Nos gustaría conocer tu experiencia con la reparación. Te llevamos solo 1 minuto: respondé esta breve encuesta para ayudarnos a mejorar.",
-      cta: "Responder encuesta",
+      cta: "Danos tu opinión en Google",
     },
     // Inspector y productor no reciben este evento — incluido para satisfacer el tipo
     inspector: {
@@ -170,6 +170,9 @@ const COPY: Record<
   },
 };
 
+/** Ficha de reseñas del taller en Google — destino del mail de experiencia. */
+const GOOGLE_REVIEW_URL = "https://g.page/r/CTFP06m9KOcsEAE/review";
+
 export function RepairEventEmail(props: Props) {
   const copy = COPY[props.event][props.role];
   const greeting = props.recipientName
@@ -177,8 +180,7 @@ export function RepairEventEmail(props: Props) {
     : "Hola,";
   const preview = `${copy.heading} — ${props.taller.name}`;
 
-  const showSurveyButton =
-    props.event === "customer_experience" && props.surveyUrl;
+  const showSurveyButton = props.event === "customer_experience";
   const showCtaButton =
     !showSurveyButton &&
     copy.cta &&
@@ -210,10 +212,10 @@ export function RepairEventEmail(props: Props) {
       {showSurveyButton ? (
         <Section className="mt-5">
           <Button
-            href={props.surveyUrl}
+            href={GOOGLE_REVIEW_URL}
             className="bg-[#003b73] text-white text-xs font-semibold px-5 py-3 rounded no-underline"
           >
-            {copy.cta ?? "Responder encuesta"}
+            {copy.cta}
           </Button>
         </Section>
       ) : null}
