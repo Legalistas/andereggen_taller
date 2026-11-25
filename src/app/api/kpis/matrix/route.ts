@@ -26,6 +26,9 @@ import {
   KPI_INSURANCE_COMPANIES,
   KPI_RESTRICTED_ROLES,
   type KpiGroupKey,
+  type KpiLeadSource,
+  LEAD_SOURCE_NONE,
+  leadSourceMetricKey,
 } from "@/lib/kpis/catalog";
 import { prisma } from "@/lib/prisma";
 
@@ -91,11 +94,13 @@ export async function GET(request: Request) {
     leadsCreated,
     leadsWon,
     manualEntries,
+    leadSourceCatalog,
   ] = await Promise.all([
     prisma.lead.findMany({
       where: { createdAt: { gte: startOfYear, lt: startOfNextYear } },
       select: {
         createdAt: true,
+        source: true,
         insuranceResponsibility: true,
         insuranceCompany: { select: { name: true } },
         vehicle: { select: { secure: true } },
@@ -108,6 +113,7 @@ export async function GET(request: Request) {
       },
       select: {
         orderReceivedAt: true,
+        source: true,
         insuranceResponsibility: true,
         insuranceCompany: { select: { name: true } },
         vehicle: { select: { secure: true } },
@@ -115,6 +121,10 @@ export async function GET(request: Request) {
     }),
     prisma.monthlyKpiEntry.findMany({
       where: { year },
+    }),
+    prisma.leadSource.findMany({
+      orderBy: { order: "asc" },
+      select: { key: true, label: true, isActive: true },
     }),
   ]);
 
@@ -145,11 +155,24 @@ export async function GET(request: Request) {
     return bucketByCompany(name) ?? "otras";
   };
 
+  // Por fuente: claves del catálogo LeadSource; el resto (null, "imported",
+  // fuentes borradas) va a LEAD_SOURCE_NONE.
+  const catalogKeys = new Set(leadSourceCatalog.map((s) => s.key));
+  const sourceBucket = (source: string | null) =>
+    source && catalogKeys.has(source) ? source : LEAD_SOURCE_NONE;
+  const cotCreadasBySource: Record<string, NumberSeries> = {};
+  const cotGanadasBySource: Record<string, NumberSeries> = {};
+  const bump = (rec: Record<string, NumberSeries>, key: string, m: number) => {
+    rec[key] ??= zeros12();
+    rec[key][m] += 1;
+  };
+
   for (const l of leadsCreated) {
     const m = monthIndexOf(l.createdAt);
     cotCreadas[m] = (cotCreadas[m] ?? 0) + 1;
     const bucket = routeLeadToBucket(l);
     cotCreadasBy[bucket][m] = (cotCreadasBy[bucket][m] ?? 0) + 1;
+    bump(cotCreadasBySource, sourceBucket(l.source), m);
   }
   for (const l of leadsWon) {
     if (!l.orderReceivedAt) continue;
@@ -157,6 +180,18 @@ export async function GET(request: Request) {
     cotGanadas[m] = (cotGanadas[m] ?? 0) + 1;
     const bucket = routeLeadToBucket(l);
     cotGanadasBy[bucket][m] = (cotGanadasBy[bucket][m] ?? 0) + 1;
+    bump(cotGanadasBySource, sourceBucket(l.source), m);
+  }
+
+  // Filas: fuentes activas + inactivas que tuvieron leads en el año, y
+  // "Sin fuente" sólo si hay algo.
+  const hasData = (key: string) =>
+    key in cotCreadasBySource || key in cotGanadasBySource;
+  const leadSources: KpiLeadSource[] = leadSourceCatalog
+    .filter((s) => s.isActive || hasData(s.key))
+    .map(({ key, label }) => ({ key, label }));
+  if (hasData(LEAD_SOURCE_NONE)) {
+    leadSources.push({ key: LEAD_SOURCE_NONE, label: "Sin fuente / importados" });
   }
 
   // Tasa de conversión mensual
@@ -417,6 +452,13 @@ export async function GET(request: Request) {
     "compras.insumos": comprasInsumos,
   };
 
+  for (const s of leadSources) {
+    seriesByKey[leadSourceMetricKey("creadas", s.key)] =
+      cotCreadasBySource[s.key] ?? zeros12();
+    seriesByKey[leadSourceMetricKey("ganadas", s.key)] =
+      cotGanadasBySource[s.key] ?? zeros12();
+  }
+
   if (cajaSeries) {
     seriesByKey["caja.facturacion"] = cajaSeries.facturacion;
     seriesByKey["caja.ingresos"] = cajaSeries.ingresos;
@@ -440,6 +482,7 @@ export async function GET(request: Request) {
     year,
     canSeeRestricted,
     visibleGroups,
+    leadSources,
     series: seriesByKey,
   });
 }

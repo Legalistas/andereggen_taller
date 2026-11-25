@@ -200,6 +200,34 @@ const COTIZACIONES_GANADAS_BY_INSURANCE: KpiMetric[] = [
   },
 ];
 
+/**
+ * Fuentes de lead: se administran desde Configuración → Fuentes, así que no
+ * van fijas en el catálogo. El API manda la lista (`leadSources`) y el
+ * tablero agrega estas sub-agrupaciones al grupo Cotizaciones.
+ * Leads sin fuente o con una que no está en el catálogo (ej: "imported")
+ * caen en `LEAD_SOURCE_NONE`.
+ */
+export type KpiLeadSource = { key: string; label: string };
+
+export const LEAD_SOURCE_NONE = "_sin_fuente";
+
+export const leadSourceMetricKey = (
+  kind: "creadas" | "ganadas",
+  sourceKey: string,
+) => `cotizaciones.${kind}_fuente_${sourceKey}`;
+
+export function leadSourceSubGroups(sources: KpiLeadSource[]): KpiSubGroup[] {
+  return (["creadas", "ganadas"] as const).map((kind) => ({
+    title: `${kind === "creadas" ? "Creadas" : "Ganadas"} por fuente`,
+    metrics: sources.map<KpiMetric>((s) => ({
+      key: leadSourceMetricKey(kind, s.key),
+      label: s.label,
+      type: "number",
+      source: "auto",
+    })),
+  }));
+}
+
 const PRODUCCION_METRICS: KpiMetric[] = [
   {
     key: "produccion.ingresados",

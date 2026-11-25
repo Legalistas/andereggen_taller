@@ -18,7 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { KPI_GROUPS, type KpiGroupKey } from "@/lib/kpis/catalog";
+import {
+  KPI_GROUPS,
+  type KpiGroupKey,
+  type KpiLeadSource,
+  leadSourceSubGroups,
+} from "@/lib/kpis/catalog";
 import KpiMatrix from "./kpi-matrix";
 
 // Perf audit: `./export` importa @react-pdf/renderer + xlsx (~500 KB gz).
@@ -29,6 +34,7 @@ type MatrixPayload = {
   year: number;
   canSeeRestricted: boolean;
   visibleGroups: KpiGroupKey[];
+  leadSources: KpiLeadSource[];
   series: Record<string, Array<number | null>>;
 };
 
@@ -76,7 +82,14 @@ export default function KpiTab() {
   const visibleGroups = useMemo(() => {
     if (!data) return [];
     const allowed = new Set(data.visibleGroups);
-    return KPI_GROUPS.filter((g) => allowed.has(g.key));
+    return KPI_GROUPS.filter((g) => allowed.has(g.key)).map((g) =>
+      g.key === "cotizaciones"
+        ? {
+            ...g,
+            subGroups: [...g.subGroups, ...leadSourceSubGroups(data.leadSources)],
+          }
+        : g,
+    );
   }, [data]);
 
   // Mes actual dentro del año visible: si es el año en curso, es el mes real;
