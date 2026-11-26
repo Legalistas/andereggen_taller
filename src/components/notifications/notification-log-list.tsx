@@ -1,6 +1,6 @@
 import { Mail, MessageCircle } from "lucide-react";
 import type { NotifyEvent } from "@/lib/email/templates/repair-event";
-import { formatWaId } from "@/lib/whatsapp/parse";
+import { FALTA_PLANTILLA, formatWaId } from "@/lib/whatsapp/parse";
 
 /** Fila de NotificationLog tal como la devuelven los GET de lead y repair. */
 export type NotificationLogRow = {
@@ -84,7 +84,9 @@ export function NotificationLogList({ logs }: { logs: NotificationLogRow[] }) {
         const delivery = l.whatsappMessage?.status
           ? WA_STATUS[l.whatsappMessage.status]
           : undefined;
-        const failed = !l.ok || delivery?.bad;
+        // Sin plantilla aprobada todavía: no es una falla, sale solo el mail.
+        const pending = !l.ok && !!l.error?.startsWith(FALTA_PLANTILLA);
+        const failed = (!l.ok && !pending) || delivery?.bad;
         const recipient =
           wa && /^\d+$/.test(l.recipient)
             ? formatWaId(l.recipient)
@@ -97,9 +99,11 @@ export function NotificationLogList({ logs }: { logs: NotificationLogRow[] }) {
               className={`absolute -left-[9px] top-0 flex h-4 w-4 items-center justify-center rounded-full ring-2 ring-white ${
                 failed
                   ? "bg-red-100 text-red-600"
-                  : wa
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-sky-100 text-sky-700"
+                  : pending
+                    ? "bg-slate-100 text-slate-400"
+                    : wa
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-sky-100 text-sky-700"
               }`}
             >
               <Icon className="h-2.5 w-2.5" aria-hidden />
@@ -112,12 +116,22 @@ export function NotificationLogList({ logs }: { logs: NotificationLogRow[] }) {
               <span className="text-slate-500">
                 {" "}
                 · {wa ? "WhatsApp" : "Mail"}{" "}
-                {!l.ok ? "no enviado" : delivery ? delivery.label : "enviado"}
+                {pending
+                  ? "pendiente de plantilla"
+                  : !l.ok
+                    ? "no enviado"
+                    : delivery
+                      ? delivery.label
+                      : "enviado"}
               </span>
             </p>
             {to && <p className="text-slate-500 break-all">{to}</p>}
             {!l.ok && l.error && (
-              <p className="text-red-600 break-words">{l.error}</p>
+              <p
+                className={`break-words ${pending ? "text-slate-400" : "text-red-600"}`}
+              >
+                {l.error}
+              </p>
             )}
             {l.ok && delivery?.bad && (
               <p className="text-red-600">

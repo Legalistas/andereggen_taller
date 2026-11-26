@@ -14,6 +14,7 @@ import { getAppSettings } from "@/lib/settings";
 import {
   aPlantilla,
   type ContentItem,
+  FALTA_PLANTILLA,
   type Plantilla,
   rellenar,
   waIdArgentina,
@@ -130,7 +131,7 @@ export async function templateByName(
   if (!plantilla) {
     throw new WhatsappError(
       400,
-      `Falta la plantilla ${nombre} aprobada en Twilio.`,
+      `${FALTA_PLANTILLA} ${nombre} aprobada en Twilio.`,
     );
   }
   return completar(plantilla, valores);

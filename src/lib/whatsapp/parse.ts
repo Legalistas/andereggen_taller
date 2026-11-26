@@ -123,6 +123,9 @@ export function formatWaId(waId: string): string {
  */
 export const TALLER_PREFIX = "taller_";
 
+/** Inicio del error de un aviso cuya plantilla todavía no está aprobada. */
+export const FALTA_PLANTILLA = "Falta la plantilla";
+
 export type Plantilla = {
   /** Content SID (HX…). */
   sid: string;

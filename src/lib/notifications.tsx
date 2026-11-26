@@ -272,7 +272,10 @@ export async function sendRepairEventNotification(
     }
   }
 
-  if (EVENT_RECIPIENTS[event].includes("customer") && settings.whatsappEnabled) {
+  if (
+    EVENT_RECIPIENTS[event].includes("customer") &&
+    settings.whatsappEnabled
+  ) {
     sent.push(await sendCustomerWhatsapp(event, ctx));
   }
 
@@ -283,29 +286,36 @@ export async function sendRepairEventNotification(
 // WhatsApp al cliente
 // ─────────────────────────────────────────────────────────────
 
+type WaVar = "vehiculo" | "dia" | "hora";
+
 /**
  * Plantilla de Twilio de cada aviso (se crean en el Content Template Builder
- * con estos nombres). Variables: {{1}} nombre del cliente, {{2}} vehículo,
- * {{3}} día y {{4}} hora del turno (o del turno de entrega); cada plantilla
- * usa solo las que necesita. El presupuesto nunca va por WhatsApp: C2 avisa
- * que salió por mail.
+ * con estos nombres). Meta exige variables seguidas desde {{1}}: `vars` dice
+ * qué va en {{1}}, {{2}}… de cada una. Mientras una plantilla no está
+ * aprobada, ese aviso sale solo por mail. El presupuesto nunca va por
+ * WhatsApp: C2 avisa que salió por mail.
  */
-const WA_TEMPLATE: Partial<Record<NotifyEvent, string>> = {
-  lead_created: "taller_solicitud_recibida",
-  lead_reinforcement: "taller_refuerzo1",
-  lead_reinforcement_2: "taller_refuerzo2",
-  lead_reinforcement_3: "taller_refuerzo3",
-  lead_won: "taller_ganado",
-  lead_lost: "taller_perdido",
-  budget_sent: "taller_presupuesto_enviado",
-  turn_assigned: "taller_turno_asignado",
-  parts_pending: "taller_esperando_repuestos",
-  vehicle_entered: "taller_ingreso",
-  paint_started: "taller_pintura",
-  polish_started: "taller_pulido_armado",
-  quality_check: "taller_calidad",
-  delivery_appointment: "taller_turno_entrega",
-  customer_experience: "taller_experiencia",
+const WA_TEMPLATE: Partial<
+  Record<NotifyEvent, { name: string; vars?: WaVar[] }>
+> = {
+  lead_created: { name: "taller_solicitud_recibida" },
+  lead_reinforcement: { name: "taller_refuerzo1" },
+  lead_reinforcement_2: { name: "taller_refuerzo2" },
+  lead_reinforcement_3: { name: "taller_refuerzo3" },
+  lead_won: { name: "taller_ganado" },
+  lead_lost: { name: "taller_perdido" },
+  budget_sent: { name: "taller_presupuesto_enviado" },
+  turn_assigned: {
+    name: "taller_turno_asignado",
+    vars: ["vehiculo", "dia", "hora"],
+  },
+  parts_pending: { name: "taller_esperando_repuestos" },
+  vehicle_entered: { name: "taller_ingreso" },
+  paint_started: { name: "taller_pintura" },
+  polish_started: { name: "taller_pulido_armado" },
+  quality_check: { name: "taller_calidad" },
+  delivery_appointment: { name: "taller_turno_entrega", vars: ["dia", "hora"] },
+  customer_experience: { name: "taller_experiencia" },
 };
 
 /** Manda el WhatsApp del aviso al cliente y lo registra. No tira excepciones. */
@@ -332,8 +342,8 @@ async function sendCustomerWhatsapp(
     };
   };
 
-  const templateName = WA_TEMPLATE[event];
-  if (!templateName) return result(false, "Este aviso no tiene WhatsApp");
+  const wa = WA_TEMPLATE[event];
+  if (!wa) return result(false, "Este aviso no tiene WhatsApp");
   if (!waId) {
     return result(
       false,
@@ -347,14 +357,18 @@ async function sendCustomerWhatsapp(
     if (contact.optOutAt) {
       return result(false, "El cliente pidió la baja de WhatsApp");
     }
-    const when =
-      event === "delivery_appointment" ? ctx.deliveryAt : ctx.turnAt;
-    const template = await templateByName(templateName, {
-      "1": ctx.customerName,
-      "2": ctx.vehicleSummary || "tu vehículo",
-      "3": when?.day ?? "",
-      "4": when?.time ?? "",
-    });
+    const when = event === "delivery_appointment" ? ctx.deliveryAt : ctx.turnAt;
+    const value: Record<WaVar, string> = {
+      vehiculo: ctx.vehicleSummary || "vehículo",
+      dia: when?.day ?? "",
+      hora: when?.time ?? "",
+    };
+    const template = await templateByName(
+      wa.name,
+      Object.fromEntries(
+        (wa.vars ?? []).map((v, i) => [String(i + 1), value[v]]),
+      ),
+    );
     const message = await sendWhatsapp({
       contactId: contact.id,
       waId,
