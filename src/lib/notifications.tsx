@@ -12,6 +12,7 @@
  */
 
 import { after } from "next/server";
+import { arTomorrowRange } from "@/lib/ar-datetime";
 import { sendEmail } from "@/lib/email/send";
 import {
   type DayTime,
@@ -286,7 +287,7 @@ export async function sendRepairEventNotification(
 // WhatsApp al cliente
 // ─────────────────────────────────────────────────────────────
 
-type WaVar = "vehiculo" | "dia" | "hora";
+type WaVar = "nombre" | "vehiculo" | "dia" | "hora";
 
 /**
  * Plantilla de Twilio de cada aviso (se crean en el Content Template Builder
@@ -298,24 +299,34 @@ type WaVar = "vehiculo" | "dia" | "hora";
 const WA_TEMPLATE: Partial<
   Record<NotifyEvent, { name: string; vars?: WaVar[] }>
 > = {
-  lead_created: { name: "taller_solicitud_recibida" },
-  lead_reinforcement: { name: "taller_refuerzo1" },
-  lead_reinforcement_2: { name: "taller_refuerzo2" },
-  lead_reinforcement_3: { name: "taller_refuerzo3" },
-  lead_won: { name: "taller_ganado" },
-  lead_lost: { name: "taller_perdido" },
+  lead_created: { name: "taller_solicitud_recibida", vars: ["nombre"] },
+  // Refuerzo 1 sale solo al pasar a Refuerzo; el 2 y el 3 los manda
+  // administración (~7 y ~10 días). Las plantillas arrancan sin número.
+  lead_reinforcement: { name: "taller_refuerzo", vars: ["nombre"] },
+  lead_reinforcement_2: { name: "taller_refuerzo1" },
+  lead_reinforcement_3: { name: "taller_refuerzo2" },
+  lead_won: { name: "taller_asignar_turno", vars: ["nombre"] },
+  lead_lost: { name: "taller_rechazo", vars: ["nombre"] },
   budget_sent: { name: "taller_presupuesto_enviado" },
   turn_assigned: {
     name: "taller_turno_asignado",
-    vars: ["vehiculo", "dia", "hora"],
+    vars: ["nombre", "vehiculo", "dia", "hora"],
   },
-  parts_pending: { name: "taller_esperando_repuestos" },
-  vehicle_entered: { name: "taller_ingreso" },
-  paint_started: { name: "taller_pintura" },
+  turn_reminder: {
+    name: "taller_turno_recordatorio_24hs",
+    vars: ["nombre", "dia", "hora"],
+  },
+  parts_pending: { name: "taller_pendiente_repuestos", vars: ["nombre"] },
+  vehicle_entered: { name: "taller_ingreso_chapa" },
+  paint_started: { name: "taller_ingreso_pintura" },
   polish_started: { name: "taller_pulido_armado" },
-  quality_check: { name: "taller_calidad" },
-  delivery_appointment: { name: "taller_turno_entrega", vars: ["dia", "hora"] },
-  customer_experience: { name: "taller_experiencia" },
+  quality_check: { name: "taller_control_calidad" },
+  delivery_appointment: {
+    name: "taller_turno_retiro",
+    vars: ["nombre", "dia", "hora"],
+  },
+  customer_experience: { name: "taller_experiencia_cliente", vars: ["nombre"] },
+  // taller_pendiente_cobro es manual: se manda desde la bandeja de WhatsApp.
 };
 
 /** Manda el WhatsApp del aviso al cliente y lo registra. No tira excepciones. */
@@ -359,6 +370,7 @@ async function sendCustomerWhatsapp(
     }
     const when = event === "delivery_appointment" ? ctx.deliveryAt : ctx.turnAt;
     const value: Record<WaVar, string> = {
+      nombre: ctx.customerName,
       vehiculo: ctx.vehicleSummary || "vehículo",
       dia: when?.day ?? "",
       hora: when?.time ?? "",
@@ -396,6 +408,42 @@ export function notifyBudgetSentWhatsapp(budgetId: string) {
       console.error("[notif:budget_sent] error en envío:", e);
     }
   });
+}
+
+/**
+ * Recordatorio por WhatsApp de los turnos de ingreso de mañana (hora
+ * argentina) que siguen en Turno Asignado. Lo dispara el cron diario
+ * (/api/cron/turn-reminders). Saltea las reparaciones con un recordatorio en
+ * las últimas 12 h, por si el cron corre dos veces.
+ */
+export async function sendTurnReminders(now = new Date()) {
+  const settings = await getAppSettings();
+  if (!settings.whatsappEnabled) return { enabled: false, sent: 0, failed: 0 };
+
+  const { from, to } = arTomorrowRange(now);
+  const repairs = await prisma.repair.findMany({
+    where: {
+      status: "turno_asignado",
+      scheduledAt: { gte: from, lt: to },
+      notificationLogs: {
+        none: {
+          event: "turn_reminder",
+          createdAt: { gte: new Date(now.getTime() - 12 * 3_600_000) },
+        },
+      },
+    },
+    select: { id: true },
+  });
+
+  let sent = 0;
+  let failed = 0;
+  for (const r of repairs) {
+    const ctx = await buildRepairContext(r.id);
+    if (!ctx) continue;
+    if ((await sendCustomerWhatsapp("turn_reminder", ctx)).ok) sent++;
+    else failed++;
+  }
+  return { enabled: true, sent, failed };
 }
 
 /**

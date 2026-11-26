@@ -29,8 +29,11 @@ export type RepairEventType =
   | "delivery_appointment" // P7 · se cargó el Turno de entrega
   | "customer_experience";
 
-/** Eventos del registro de avisos: los del mail más C2, que sale solo por WhatsApp. */
-export type NotifyEvent = RepairEventType | "budget_sent";
+/**
+ * Eventos del registro de avisos: los del mail más los que salen solo por
+ * WhatsApp (C2 y el recordatorio 24 hs antes del turno de ingreso).
+ */
+export type NotifyEvent = RepairEventType | "budget_sent" | "turn_reminder";
 
 export type Role = "customer" | "inspector" | "insurance";
 
@@ -58,6 +61,9 @@ type Props = {
 
 type Copy = { heading: string; intro: (p: Props) => string };
 
+/** Dirección del taller, como en las plantillas de turno de WhatsApp. */
+const ADDRESS = "Aconcagua 663, Rafaela";
+
 const vehicle = (p: Props) =>
   p.vehicleSummary ? `tu vehículo ${p.vehicleSummary}` : "tu vehículo";
 
@@ -65,49 +71,48 @@ const COPY: Record<
   RepairEventType,
   { customer: Copy; inspector?: Copy; insurance?: Copy }
 > = {
+  // Los textos al cliente son los de las plantillas de WhatsApp (taller_…),
+  // sin emojis: el saludo con el nombre ({{1}}) ya lo pone el mail.
   lead_created: {
     customer: {
-      heading: "Recibimos tu solicitud de cotización",
-      intro: () =>
-        "Recibimos tu solicitud de cotización. Ya estamos trabajando y en breve te enviamos el presupuesto a tu correo.",
+      heading: "Recibimos su solicitud de presupuesto",
+      intro: (p) =>
+        `Gracias por comunicarse con ${p.taller.name}. Recibimos su solicitud de presupuesto y ya estamos trabajando en ella. En breve se lo enviamos por correo electrónico. Ante cualquier consulta, estamos a disposición.`,
     },
   },
-  // Refuerzos 1 y 2: mismo texto que las plantillas taller_refuerzo1/2 de
-  // WhatsApp (los mensajes que mandaba Lu a mano).
   lead_reinforcement: {
+    customer: {
+      heading: "¿Pudo ver el presupuesto?",
+      intro: (p) =>
+        `Queríamos saber si pudo ver el presupuesto que le enviamos por correo para la reparación de su vehículo. Si tiene alguna consulta sobre los trabajos, los plazos o la forma de pago, escríbanos y lo ayudamos. ¡Saludos del equipo de ${p.taller.name}!`,
+    },
+  },
+  lead_reinforcement_2: {
     customer: {
       heading: "¿Pudo revisar el presupuesto?",
       intro: (p) =>
         `Le escribimos de ${p.taller.name} por el presupuesto que le enviamos para su auto. ¿Pudo revisarlo? Si quiere avanzar con la reparación, con gusto le reservamos un turno. Cualquier duda que tenga, estamos para ayudarle. ¡Muchas gracias!`,
     },
   },
-  lead_reinforcement_2: {
+  lead_reinforcement_3: {
     customer: {
       heading: "¿Sigue interesado/a en la reparación?",
       intro: () =>
         "Le volvemos a escribir para consultarle si sigue interesado/a en la reparación de su auto. Si ya no necesita el servicio, no hay ningún problema: nos ayuda mucho saberlo para mantener nuestra agenda al día. Y si quiere avanzar, avísenos y coordinamos un turno. ¡Gracias por tenernos en cuenta!",
     },
   },
-  // Texto provisorio: todavía no hay plantilla taller_refuerzo3.
-  lead_reinforcement_3: {
-    customer: {
-      heading: "¿Seguís interesado en la reparación?",
-      intro: (p) =>
-        `Queríamos saber si seguís interesado en reparar ${vehicle(p)} con nosotros. Si querés avanzar, respondé este correo y coordinamos el turno.`,
-    },
-  },
   lead_won: {
     customer: {
-      heading: "¡Gracias por elegirnos!",
+      heading: "Su presupuesto quedó aprobado",
       intro: (p) =>
-        `Gracias por elegir ${p.taller.name} para la reparación de ${vehicle(p)}. En breve te contactamos para coordinar el turno.`,
+        `Gracias por confiar en ${p.taller.name}. Su presupuesto quedó aprobado: en breve nos comunicamos con usted para coordinar el turno de ingreso de su vehículo. Ante cualquier consulta, estamos a disposición.`,
     },
   },
   lead_lost: {
     customer: {
-      heading: "Seguimos a disposición",
+      heading: "Gracias por avisarnos",
       intro: (p) =>
-        `Lamentamos que no hayas decidido avanzar. Seguimos a disposición para cualquier consulta sobre tu vehículo en ${p.taller.name}.`,
+        `Gracias por avisarnos y por haber considerado a ${p.taller.name} para la reparación de su vehículo. Registramos su decisión. Si más adelante necesita un nuevo presupuesto o tiene cualquier consulta, estamos a disposición. ¡Que tenga un excelente día!`,
     },
   },
   budget_created: {
@@ -131,9 +136,7 @@ const COPY: Record<
     customer: {
       heading: "Turno agendado",
       intro: (p) =>
-        p.turnAt
-          ? `Agendamos tu turno para el ${p.turnAt.day} a las ${p.turnAt.time}. Te esperamos con ${vehicle(p)}.`
-          : `Agendamos el turno para ${vehicle(p)}. Te esperamos en la fecha acordada.`,
+        `Agendamos un turno para ${vehicle(p)}${p.turnAt ? ` el ${p.turnAt.day} a las ${p.turnAt.time} hs` : ""}, en ${ADDRESS}. Le recomendamos retirar del vehículo todos los objetos de valor que puedan dañarse o extraviarse durante la reparación. Si al dejar el auto necesita que lo alcancemos a su domicilio o a otro lugar dentro de Rafaela, avísenos y lo organizamos sin costo. Si tiene algún viaje o imprevisto, escríbanos con anticipación y reprogramamos el turno. ¡Lo esperamos!`,
     },
     inspector: {
       heading: "Turno confirmado",
@@ -148,16 +151,16 @@ const COPY: Record<
   },
   parts_pending: {
     customer: {
-      heading: "Estamos esperando tus repuestos",
-      intro: (p) =>
-        `Estamos esperando que nos envíen los repuestos de ${vehicle(p)}. Lo seguimos de cerca, pero esta demora no depende del taller.`,
+      heading: "Estamos esperando los repuestos",
+      intro: () =>
+        "Le contamos que estamos esperando la llegada de los repuestos para la reparación de su vehículo. Esta demora no depende del taller: apenas los recibamos, nos comunicamos con usted para coordinar el turno. ¡Gracias por su paciencia y comprensión!",
     },
   },
   vehicle_entered: {
     customer: {
-      heading: "Tu vehículo ingresó al taller",
-      intro: (p) =>
-        `Gracias por dejar ${vehicle(p)} en ${p.taller.name}. Quedate tranquilo: tu auto está en manos de expertos y ya ingresó a chapa.`,
+      heading: "Su vehículo ingresó al taller",
+      intro: () =>
+        "Su vehículo ya ingresó a nuestro taller y comenzamos con los trabajos de chapa. Puede seguir el avance de la reparación en todo momento desde Mi reparación: tallerandereggen.ar/estado. Le vamos a ir avisando en cada etapa. ¡Gracias por confiar en nosotros!",
     },
     insurance: {
       heading: "Vehículo ingresado al taller",
@@ -167,21 +170,24 @@ const COPY: Record<
   },
   paint_started: {
     customer: {
-      heading: "Tu auto pasó a pintura",
-      intro: (p) => `${capitalize(vehicle(p))} ya pasó a pintura.`,
+      heading: "Su vehículo pasó a pintura",
+      intro: () =>
+        "Buenas noticias: su vehículo terminó la etapa de chapa y ya pasó a pintura. Trabajamos con pinturas originales Glasurit en nuestra cabina de pintura, para que el color quede idéntico al de fábrica. ¡Seguimos avanzando! Le avisamos cuando pase a la siguiente etapa.",
     },
   },
   polish_started: {
     customer: {
-      heading: "Tu auto pasó a pulido y armado",
-      intro: (p) => `${capitalize(vehicle(p))} ya pasó a pulido y armado.`,
+      heading: "Su vehículo pasó a pulido y armado",
+      intro: () =>
+        "Su vehículo salió de pintura y ya está en pulido y armado. Estamos en la recta final de la reparación: le avisamos apenas pase a control de calidad. ¡Gracias por su paciencia!",
     },
   },
   quality_check: {
     customer: {
-      heading: "Tu auto entró a calidad",
-      intro: (p) =>
-        `${capitalize(vehicle(p))} entró a calidad, la última etapa del proceso. Cuando esté listo para retirar te vamos a avisar para que lo vengas a buscar.`,
+      // B3: todavía NO está listo para retirar.
+      heading: "Su vehículo entró a control de calidad",
+      intro: () =>
+        "Su vehículo entró en la última etapa del proceso: el control de calidad. Revisamos cada detalle para entregárselo en perfectas condiciones. Cuando esté listo, le asignaremos un turno de retiro. ¡Ya falta muy poco!",
     },
     inspector: {
       heading: "Vehículo en control de calidad",
@@ -196,25 +202,19 @@ const COPY: Record<
   },
   delivery_appointment: {
     customer: {
-      heading: "Turno para retirar tu auto",
+      heading: "¡Su vehículo está listo!",
       intro: (p) =>
-        p.deliveryAt
-          ? `${capitalize(vehicle(p))} va a estar listo para retirar el ${p.deliveryAt.day} a partir de las ${p.deliveryAt.time}. Te esperamos después de ese horario.`
-          : `${capitalize(vehicle(p))} ya tiene turno para retirar.`,
+        `Le asignamos el siguiente turno de retiro${p.deliveryAt ? `: ${p.deliveryAt.day} a las ${p.deliveryAt.time} hs` : ""}, en ${ADDRESS}. Si la reparación fue a través de su seguro, recuerde abonar el importe de la franquicia al momento del retiro. Si no puede venir en ese horario, avísenos y lo reprogramamos. ¡Lo esperamos!`,
     },
   },
   customer_experience: {
     customer: {
-      heading: "¿Cómo fue tu experiencia?",
-      intro: () =>
-        "Nos gustaría conocer tu experiencia con la reparación. Te llevamos solo 1 minuto: respondé esta breve encuesta para ayudarnos a mejorar.",
+      heading: "¿Cómo fue su experiencia?",
+      intro: (p) =>
+        `Queremos agradecerle por confiar en ${p.taller.name} para la reparación de su vehículo. Nos ayudaría muchísimo que nos deje una breve reseña en Google contando cómo fue su experiencia. Puede ser algo simple, por ejemplo: cómo lo atendimos, cómo quedó su vehículo o si nos recomendaría a otra persona. ¡Muchas gracias!`,
     },
   },
 };
-
-function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 /** Copy del rol; los eventos solo-cliente caen al del cliente. */
 function copyFor(event: RepairEventType, role: Role): Copy {

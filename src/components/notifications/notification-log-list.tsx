@@ -25,6 +25,7 @@ const EVENT_LABELS: Record<NotifyEvent, string> = {
   budget_created: "Presupuesto generado",
   budget_sent: "Presupuesto enviado",
   turn_assigned: "Turno asignado",
+  turn_reminder: "Recordatorio de turno",
   parts_pending: "Pendiente de repuestos",
   vehicle_entered: "Ingreso al taller",
   paint_started: "Pasó a pintura",
