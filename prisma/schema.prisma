@@ -2081,3 +2081,177 @@ model MonthlyKpiEntry {
   @@index([metricKey])
   @@index([year, month])
 }
+
+// =====================================================
+// Flota del taller — vehículos propios (grúa, utilitarios, etc.)
+// Mismo esquema que el gestor de inmuebles de Brixar: cada gestión
+// (seguro, patente, VTV…) guarda su configuración y aparte sus pagos,
+// cada uno con sus comprobantes.
+// =====================================================
+
+enum FleetObligationType {
+  SEGURO
+  PATENTE
+  VTV
+  OTRO
+}
+
+enum FleetMaintenanceKind {
+  SERVICE
+  REPARACION
+  REPUESTO
+}
+
+model FleetVehicle {
+  id                String  @id @default(uuid())
+  /**
+   * Patente normalizada: mayúsculas, sin espacios ni guiones.
+   */
+  plate             String  @unique
+  brand             String?
+  model             String?
+  year              Int?
+  color             String?
+  chassisNumber     String?
+  engineNumber      String?
+  /**
+   * Titular registral: a nombre de quién está el vehículo.
+   */
+  ownerName         String?
+  /**
+   * false = la transferencia al titular que corresponde todavía no se hizo.
+   */
+  transferred       Boolean @default(false)
+  /**
+   * Dónde está la documentación física (título, cédula, etc.).
+   */
+  documentsLocation String?
+  notes             String? @db.Text
+  isActive          Boolean @default(true)
+
+  obligations FleetObligation[]
+  maintenance FleetMaintenance[]
+  files       FleetFile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model FleetObligation {
+  id           String              @id @default(uuid())
+  vehicleId    String
+  vehicle      FleetVehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type         FleetObligationType
+  /**
+   * Compañía de seguro, municipio, planta de VTV…
+   */
+  provider     String?
+  /**
+   * Nº de póliza, partida, etc.
+   */
+  reference    String?
+  /**
+   * A nombre de quién está la póliza / la patente / el débito.
+   */
+  holderName   String?
+  autoDebit    Boolean             @default(false)
+  /**
+   * Cuenta o tarjeta donde se debita (si autoDebit).
+   */
+  debitAccount String?
+  /**
+   * Cada cuántos meses vence (1 mensual, 2 bimestral, 12 anual). Sirve para
+   * proponer la fecha de la cuota siguiente.
+   */
+  periodMonths Int?
+  /**
+   * Fin de vigencia: vencimiento de la póliza o de la VTV.
+   */
+  validUntil   DateTime?
+  notes        String?             @db.Text
+
+  payments FleetPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vehicleId])
+  @@index([validUntil])
+}
+
+model FleetPayment {
+  id           String          @id @default(uuid())
+  obligationId String
+  obligation   FleetObligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  dueDate      DateTime
+  amount       Decimal?        @db.Decimal(14, 2)
+  /**
+   * null = pendiente de pago.
+   */
+  paidAt       DateTime?
+  notes        String?
+
+  files FleetFile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([obligationId])
+  @@index([paidAt, dueDate])
+}
+
+model FleetMaintenance {
+  id          String               @id @default(uuid())
+  vehicleId   String
+  vehicle     FleetVehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  kind        FleetMaintenanceKind
+  date        DateTime
+  mileage     Int?
+  description String               @db.Text
+  /**
+   * Taller o proveedor.
+   */
+  provider    String?
+  cost        Decimal?             @db.Decimal(14, 2)
+  /**
+   * Solo service: cuándo toca el próximo.
+   */
+  nextDate    DateTime?
+  nextMileage Int?
+
+  files FleetFile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vehicleId, date])
+}
+
+/**
+ * Archivo en MinIO. Sin paymentId ni maintenanceId = papeles del vehículo;
+ * con alguno = comprobante de ese pago / factura de ese trabajo.
+ */
+model FleetFile {
+  id            String            @id @default(uuid())
+  vehicleId     String
+  vehicle       FleetVehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  paymentId     String?
+  payment       FleetPayment?     @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  maintenanceId String?
+  maintenance   FleetMaintenance? @relation(fields: [maintenanceId], references: [id], onDelete: Cascade)
+  /**
+   * "Título", "Cédula verde", o el nombre del archivo.
+   */
+  name          String
+  storageKey    String            @unique
+  contentType   String
+  size          Int
+
+  createdAt DateTime @default(now())
+
+  @@index([vehicleId])
+  @@index([paymentId])
+  @@index([maintenanceId])
+}

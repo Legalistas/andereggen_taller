@@ -9,6 +9,7 @@ import {
   Receipt,
   Settings,
   ShoppingCart,
+  Truck,
   UserCog,
   Users,
   Wallet,
@@ -48,6 +49,8 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
     roles: FINANCE_ROLES,
   },
   { label: "Inventario", icon: Package, href: "/inventario" },
+  // Vehículos propios del taller: papeles, seguro, patente, VTV, service.
+  { label: "Flota", icon: Truck, href: "/flota" },
   { label: "Clientes", icon: Users, href: "/customers" },
   { label: "Usuarios", icon: UserCog, href: "/users" },
   { label: "Configuración", icon: Settings, href: "/configuracion" },
