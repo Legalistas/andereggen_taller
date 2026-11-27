@@ -63,6 +63,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { arDateTimeInputToIso, isoToArDateTimeInput } from "@/lib/ar-datetime";
 import { loadCashBoxes, loadInsuranceCompanies } from "@/lib/client-cache";
+import { INVOICE_LINES, netOfIva } from "@/lib/invoice-line";
+import type { InvoiceLine } from "../../../generated/prisma/client";
 import { BudgetAdminDialog } from "../crm/budget-admin-dialog";
 import BudgetModal from "../crm/budget-modal";
 import { FichasDialog } from "../crm/fichas-dialog";
@@ -101,6 +103,7 @@ type RepairInvoice = {
   number: string;
   issuedAt: string;
   recipient: InvoiceRecipient;
+  line: InvoiceLine;
   recipientName: string | null;
   amount: string | number;
   notes: string | null;
@@ -2327,6 +2330,7 @@ function InvoicesSection({
     number: "",
     issuedAt: new Date().toISOString().slice(0, 10),
     recipient: "CLIENTE" as InvoiceRecipient,
+    line: "LINEA_1" as InvoiceLine,
     recipientName: "",
     amount: "",
   });
@@ -2368,7 +2372,10 @@ function InvoicesSection({
 
   const submitNew = async () => {
     setError(null);
-    if (!newInvoice.number.trim()) {
+    // Línea 2 (efectivo / monotributo) puede no tener número de comprobante.
+    const number =
+      newInvoice.number.trim() || (newInvoice.line === "LINEA_2" ? "S/N" : "");
+    if (!number) {
       setError("Ingresá el Nº de factura.");
       return;
     }
@@ -2383,9 +2390,10 @@ function InvoicesSection({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          number: newInvoice.number.trim(),
+          number,
           issuedAt: new Date(newInvoice.issuedAt).toISOString(),
           recipient: newInvoice.recipient,
+          line: newInvoice.line,
           recipientName: newInvoice.recipientName.trim() || null,
           amount: amt,
         }),
@@ -2398,6 +2406,7 @@ function InvoicesSection({
         number: "",
         issuedAt: new Date().toISOString().slice(0, 10),
         recipient: "CLIENTE",
+        line: newInvoice.line,
         recipientName: "",
         amount: "",
       });
@@ -2418,6 +2427,10 @@ function InvoicesSection({
   };
 
   const billed = invoices.reduce((a, i) => a + Number(i.amount), 0);
+  const billedNet = invoices.reduce(
+    (a, i) => a + netOfIva(Number(i.amount), i.line),
+    0,
+  );
   const paid = invoices.reduce(
     (a, i) => a + i.payments.reduce((b, p) => b + Number(p.amount), 0),
     0,
@@ -2441,6 +2454,14 @@ function InvoicesSection({
           tone={pending > 0 ? "rose" : "slate"}
         />
       </div>
+      {billed > 0 && (
+        <p className="text-[10px] text-slate-500 -mt-2 mb-3">
+          Facturado sin IVA (para estadísticas):{" "}
+          <span className="font-semibold tabular-nums">
+            {ARS.format(billedNet)}
+          </span>
+        </p>
+      )}
       {approvedTotal > 0 && billed > 0 && billed !== approvedTotal && (
         <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-3">
           Facturado {ARS.format(billed)} vs aprobado {ARS.format(approvedTotal)}{" "}
@@ -2472,9 +2493,37 @@ function InvoicesSection({
         <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
           Nueva factura
         </p>
+        <fieldset className="grid grid-cols-2 gap-2">
+          <legend className="sr-only">Línea de facturación</legend>
+          {INVOICE_LINES.map((l) => {
+            const active = newInvoice.line === l.value;
+            return (
+              <button
+                key={l.value}
+                type="button"
+                aria-pressed={active}
+                onClick={() =>
+                  setNewInvoice((p) => ({ ...p, line: l.value }))
+                }
+                className={`rounded-md border px-2 py-1.5 text-left transition-colors ${
+                  active
+                    ? "border-amber-500 bg-amber-50 text-amber-900"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <span className="block text-xs font-semibold">{l.label}</span>
+                <span className="block text-[10px]">{l.hint}</span>
+              </button>
+            );
+          })}
+        </fieldset>
         <div className="grid grid-cols-2 gap-2">
           <Input
-            placeholder="Nº (ej: FACT 5187)"
+            placeholder={
+              newInvoice.line === "LINEA_2"
+                ? "Nº / referencia (opcional)"
+                : "Nº (ej: FACT 5187)"
+            }
             value={newInvoice.number}
             onChange={(e) =>
               setNewInvoice((p) => ({ ...p, number: e.target.value }))
@@ -2621,6 +2670,8 @@ function InvoiceCard({
   const amount = Number(invoice.amount);
   const paid = invoice.payments.reduce((a, p) => a + Number(p.amount), 0);
   const pending = amount - paid;
+  const otherLine =
+    INVOICE_LINES.find((l) => l.value !== invoice.line) ?? INVOICE_LINES[0];
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
@@ -2644,6 +2695,15 @@ function InvoiceCard({
               }`}
             >
               {INVOICE_RECIPIENT_LABEL[invoice.recipient]}
+            </span>
+            <span
+              className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold ${
+                invoice.line === "LINEA_2"
+                  ? "bg-slate-800 text-white"
+                  : "bg-amber-100 text-amber-800"
+              }`}
+            >
+              {invoice.line === "LINEA_2" ? "L2" : "L1"}
             </span>
             {invoice.recipientName && (
               <span className="text-[11px] text-slate-500 truncate">
@@ -2679,13 +2739,29 @@ function InvoiceCard({
             onRefresh={onRefresh}
             cashBoxes={cashBoxes}
           />
-          <button
-            type="button"
-            onClick={onRemove}
-            className="text-[10px] text-rose-600 hover:text-rose-800 inline-flex items-center gap-1"
-          >
-            <Trash2 className="h-3 w-3" /> Eliminar factura
-          </button>
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={onRemove}
+              className="text-[10px] text-rose-600 hover:text-rose-800 inline-flex items-center gap-1"
+            >
+              <Trash2 className="h-3 w-3" /> Eliminar factura
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const res = await fetch(`/api/repair-invoices/${invoice.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ line: otherLine.value }),
+                });
+                if (res.ok) await onRefresh();
+              }}
+              className="text-[10px] text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline"
+            >
+              Pasar a {otherLine.label} ({otherLine.hint.toLowerCase()})
+            </button>
+          </div>
         </div>
       )}
     </div>

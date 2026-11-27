@@ -21,6 +21,7 @@
 
 import { NextResponse } from "next/server";
 import { FINANCE_ROLES, getServerSession } from "@/lib/auth-utils";
+import { netOfIva } from "@/lib/invoice-line";
 import {
   type InsuranceKey,
   KPI_GROUPS,
@@ -262,6 +263,8 @@ export async function GET(request: Request) {
   // ─── CAJA / FINANZAS (restricted) ─────────────────────────
   let cajaSeries: {
     facturacion: MonthlySeries;
+    facturacionL1: MonthlySeries;
+    facturacionL2: MonthlySeries;
     ingresos: MonthlySeries;
     egresos: MonthlySeries;
     pendientes: MonthlySeries;
@@ -275,25 +278,21 @@ export async function GET(request: Request) {
 
   if (canSeeRestricted) {
     const [invoices, payments, egresos, allInvoices] = await Promise.all([
-      // Facturación = RepairInvoice.amount emitidas en el mes
+      // Facturación = RepairInvoice emitidas en el mes, sin IVA, por línea.
       prisma.repairInvoice.findMany({
         where: { issuedAt: { gte: startOfYear, lt: startOfNextYear } },
-        select: { issuedAt: true, amount: true },
+        select: { issuedAt: true, amount: true, line: true },
       }),
-      // Ingresos = pagos oficiales (excluye Caja 2)
+      // Ingresos = cobros del mes de ambas líneas, sin IVA. La línea de la
+      // factura reemplaza al viejo filtro "excluir Caja 2".
       prisma.repairInvoicePayment.findMany({
-        where: {
-          paidAt: { gte: startOfYear, lt: startOfNextYear },
-          OR: [
-            { cashBoxId: null },
-            { cashBox: { key: { not: "caja_2" } } },
-          ],
-        },
+        where: { paidAt: { gte: startOfYear, lt: startOfNextYear } },
         select: {
           paidAt: true,
           amount: true,
           invoice: {
             select: {
+              line: true,
               repair: {
                 select: {
                   insuranceCompany: true,
@@ -335,8 +334,13 @@ export async function GET(request: Request) {
     ]);
 
     const facturacion: NumberSeries = zeros12();
+    const facturacionL1: NumberSeries = zeros12();
+    const facturacionL2: NumberSeries = zeros12();
     for (const inv of invoices) {
-      facturacion[monthIndexOf(inv.issuedAt)] += Number(inv.amount);
+      const m = monthIndexOf(inv.issuedAt);
+      const net = netOfIva(Number(inv.amount), inv.line);
+      facturacion[m] += net;
+      (inv.line === "LINEA_1" ? facturacionL1 : facturacionL2)[m] += net;
     }
 
     const ingresos: NumberSeries = zeros12();
@@ -350,7 +354,7 @@ export async function GET(request: Request) {
     };
     for (const p of payments) {
       const m = monthIndexOf(p.paidAt);
-      const amt = Number(p.amount);
+      const amt = netOfIva(Number(p.amount), p.invoice.line);
       ingresos[m] += amt;
       const lead = p.invoice.repair.lead;
       let bucket: InsuranceKey;
@@ -396,6 +400,8 @@ export async function GET(request: Request) {
 
     cajaSeries = {
       facturacion,
+      facturacionL1,
+      facturacionL2,
       ingresos,
       egresos: egresosSeries,
       pendientes,
@@ -463,6 +469,8 @@ export async function GET(request: Request) {
 
   if (cajaSeries) {
     seriesByKey["caja.facturacion"] = cajaSeries.facturacion;
+    seriesByKey["caja.facturacion_l1"] = cajaSeries.facturacionL1;
+    seriesByKey["caja.facturacion_l2"] = cajaSeries.facturacionL2;
     seriesByKey["caja.ingresos"] = cajaSeries.ingresos;
     seriesByKey["caja.egresos"] = cajaSeries.egresos;
     seriesByKey["caja.pendientes"] = cajaSeries.pendientes;

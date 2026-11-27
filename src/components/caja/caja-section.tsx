@@ -244,7 +244,7 @@ export default function CajaSection() {
             value={totals ? ARS.format(totals.monthCollections) : "—"}
             hint={
               totals
-                ? `Facturado: ${ARS.format(totals.monthBilling)}`
+                ? `Facturado sin IVA: ${ARS.format(totals.monthBilling)}`
                 : undefined
             }
           />

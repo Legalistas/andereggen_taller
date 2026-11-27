@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { getServerSession, verifyAuth } from "@/lib/auth-utils";
+import { INVOICE_LINES } from "@/lib/invoice-line";
 import { prisma } from "@/lib/prisma";
-import type { InvoiceRecipient } from "../../../../../../generated/prisma/client";
+import type {
+  InvoiceLine,
+  InvoiceRecipient,
+} from "../../../../../../generated/prisma/client";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -33,7 +37,7 @@ export async function GET(request: Request, ctx: RouteContext) {
 
 /**
  * POST /api/repairs/[id]/invoices — crea una factura.
- * Body: { number, issuedAt, recipient?, recipientName?, amount, notes? }
+ * Body: { number, issuedAt, recipient?, line?, recipientName?, amount, notes? }
  */
 export async function POST(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
@@ -57,9 +61,12 @@ export async function POST(request: Request, ctx: RouteContext) {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { number, issuedAt, recipient, recipientName, amount, notes } =
+  const { number, issuedAt, recipient, line, recipientName, amount, notes } =
     body as Record<string, unknown>;
 
+  if (line !== undefined && !INVOICE_LINES.some((l) => l.value === line)) {
+    return NextResponse.json({ error: "Línea inválida" }, { status: 400 });
+  }
   if (!number || typeof number !== "string" || !number.trim()) {
     return NextResponse.json(
       { error: "Nº de factura es obligatorio" },
@@ -97,6 +104,7 @@ export async function POST(request: Request, ctx: RouteContext) {
       number: number.trim(),
       issuedAt: issuedDate,
       recipient: rec,
+      ...(line !== undefined && { line: line as InvoiceLine }),
       recipientName:
         typeof recipientName === "string" && recipientName.trim()
           ? recipientName.trim()

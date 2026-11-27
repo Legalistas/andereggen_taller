@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-utils";
+import { INVOICE_LINES } from "@/lib/invoice-line";
 import { prisma } from "@/lib/prisma";
-import type { InvoiceRecipient } from "../../../../../generated/prisma/client";
+import type {
+  InvoiceLine,
+  InvoiceRecipient,
+} from "../../../../../generated/prisma/client";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -9,7 +13,7 @@ const VALID_RECIPIENTS: InvoiceRecipient[] = ["CLIENTE", "SEGURO", "OTRO"];
 
 /**
  * PATCH /api/repair-invoices/[id] — edita campos de una factura existente.
- * Acepta subset de: number, issuedAt, recipient, recipientName, amount, notes.
+ * Acepta subset de: number, issuedAt, recipient, line, recipientName, amount, notes.
  */
 export async function PATCH(request: Request, ctx: RouteContext) {
   const authError = await verifyAuth(request);
@@ -29,8 +33,12 @@ export async function PATCH(request: Request, ctx: RouteContext) {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { number, issuedAt, recipient, recipientName, amount, notes } =
+  const { number, issuedAt, recipient, line, recipientName, amount, notes } =
     body as Record<string, unknown>;
+
+  if (line !== undefined && !INVOICE_LINES.some((l) => l.value === line)) {
+    return NextResponse.json({ error: "Línea inválida" }, { status: 400 });
+  }
 
   let parsedIssuedAt: Date | undefined;
   if (issuedAt !== undefined) {
@@ -81,6 +89,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
             : null,
       }),
       ...(parsedAmount !== undefined && { amount: parsedAmount }),
+      ...(line !== undefined && { line: line as InvoiceLine }),
       ...(notes !== undefined && {
         notes:
           typeof notes === "string" && notes.trim() ? notes.trim() : null,

@@ -73,7 +73,22 @@ const CAJA_METRICS: KpiMetric[] = [
   {
     key: "caja.facturacion",
     label: "Facturación del mes",
-    description: "Total facturado (RepairInvoice) del mes.",
+    description:
+      "Facturado en el mes, sin IVA: Línea 1 (sin el 21%) + Línea 2.",
+    type: "currency",
+    source: "auto",
+  },
+  {
+    key: "caja.facturacion_l1",
+    label: "· Línea 1 (sin IVA)",
+    description: "Facturas oficiales del mes, descontado el 21% de IVA.",
+    type: "currency",
+    source: "auto",
+  },
+  {
+    key: "caja.facturacion_l2",
+    label: "· Línea 2",
+    description: "Cobros en efectivo / monotributo del mes (sin IVA).",
     type: "currency",
     source: "auto",
   },
@@ -81,7 +96,7 @@ const CAJA_METRICS: KpiMetric[] = [
     key: "caja.ingresos",
     label: "Ingresos del mes",
     description:
-      "Total efectivamente cobrado — excluye Caja 2 (línea negra).",
+      "Total cobrado en el mes, sin IVA (Línea 1 sin el 21% + Línea 2).",
     type: "currency",
     source: "auto",
   },

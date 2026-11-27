@@ -1763,6 +1763,16 @@ enum InvoiceRecipient {
   OTRO
 }
 
+/**
+ * LINEA_1 = factura oficial (A/B): el importe se carga con IVA incluido.
+ * LINEA_2 = cobro en efectivo o por monotributo: sin IVA.
+ * Para análisis se usa el importe sin IVA (ver lib/invoice-line.ts).
+ */
+enum InvoiceLine {
+  LINEA_1
+  LINEA_2
+}
+
 model RepairInvoice {
   id            String           @id @default(uuid())
   repairId      String
@@ -1773,6 +1783,7 @@ model RepairInvoice {
   number        String
   issuedAt      DateTime
   recipient     InvoiceRecipient @default(CLIENTE)
+  line          InvoiceLine      @default(LINEA_1)
   /**
    * Nombre legible del destinatario — la compañía de seguro o nombre del cliente.
    */

@@ -20,6 +20,7 @@
 
 import { NextResponse } from "next/server";
 import { cajaScope } from "@/lib/caja-scope";
+import { netOfIva } from "@/lib/invoice-line";
 import { prisma } from "@/lib/prisma";
 
 function parseMonth(monthParam: string | null): {
@@ -74,7 +75,7 @@ export async function GET(request: Request) {
     movementsAll, // saldo histórico por caja (manual)
     movementsBefore, // movs manuales ANTES del mes → saldo inicial
     movementsMonth, // por caja + tipo
-    officialPaymentsMonth, // facturación del mes = cobros a cajas oficiales
+    invoicesMonth, // facturación del mes = facturas emitidas, sin IVA
     pendingCollections, // cobros pendientes (histórico)
     avgDaysPost,
     monthPaymentsByInsurance,
@@ -124,21 +125,11 @@ export async function GET(request: Request) {
       where: { paidAt: { gte: startOfMonth, lt: startOfNextMonth } },
       _sum: { amount: true },
     }),
-    // spec 4.4 v2 · Facturación del mes = suma de los COBROS registrados
-    // en el mes que hayan ido a una caja "oficial" (todas excepto Caja 2).
-    // Caja 2 es la "línea negra" — efectivo interno que NO se factura, por
-    // eso no debe sumar a este KPI aunque el usuario haya cargado el cobro
-    // en el módulo. Los cobros sin caja asignada (histórico) se cuentan
-    // para no perder facturado viejo.
-    prisma.repairInvoicePayment.aggregate({
-      where: {
-        paidAt: { gte: startOfMonth, lt: startOfNextMonth },
-        OR: [
-          { cashBoxId: null },
-          { cashBox: { key: { not: "caja_2" } } },
-        ],
-      },
-      _sum: { amount: true },
+    // Facturación del mes = facturas emitidas en el mes, sin IVA (Línea 1
+    // sin el 21% + Línea 2). Misma definición que el KPI "Facturación".
+    prisma.repairInvoice.findMany({
+      where: { issuedAt: { gte: startOfMonth, lt: startOfNextMonth } },
+      select: { amount: true, line: true },
     }),
     // Cobros pendientes = suma de saldos (invoice.amount − Σ payments) de
     // facturas emitidas cuyo saldo actual es > 0. Filtramos donde el repair
@@ -319,7 +310,10 @@ export async function GET(request: Request) {
     0,
   );
   const monthEgresos = boxesOut.reduce((a, b) => a + b.month.egresos, 0);
-  const monthBilling = Number(officialPaymentsMonth._sum.amount ?? 0);
+  const monthBilling = invoicesMonth.reduce(
+    (a, i) => a + netOfIva(Number(i.amount), i.line),
+    0,
+  );
 
   // ── Serie mensual de cobros (últimos 6 meses, completando meses vacíos)
   const MONTH_LABELS = [
