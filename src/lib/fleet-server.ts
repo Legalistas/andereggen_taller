@@ -15,7 +15,8 @@ import { BUCKET, s3 } from "@/lib/minio";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "../../generated/prisma/client";
 
-type Ctx = { params: Promise<Record<string, string>> };
+// En rutas sin segmento dinámico Next pasa `params: undefined`.
+type Ctx = { params?: Promise<Record<string, string>> };
 
 /** Auth de rol interno + traducción de errores de input y de Prisma a HTTP. */
 export function fleetHandler(
@@ -25,7 +26,7 @@ export function fleetHandler(
     const authError = await verifyAuth(req);
     if (authError) return authError;
     try {
-      return await fn(req, (await ctx.params).id ?? "");
+      return await fn(req, (await ctx.params)?.id ?? "");
     } catch (e) {
       if (e instanceof FleetInputError)
         return NextResponse.json({ error: e.message }, { status: 400 });
