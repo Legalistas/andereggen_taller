@@ -3,6 +3,7 @@
 import {
   Car,
   Check,
+  ChevronDown,
   ChevronsUpDown,
   FileText,
   Mail,
@@ -68,6 +69,7 @@ import {
   isCustomSubdetail,
   makeCustomSubdetailKey,
   SUBDETAILS,
+  subdetailLabel,
 } from "@/lib/budget-catalog";
 import {
   type InsuranceCompanyLite,
@@ -1346,6 +1348,18 @@ function ConceptBlock({
         ? "bg-purple-500/10 text-purple-700"
         : "bg-emerald-500/10 text-emerald-700";
 
+  const descriptive = concept.type === "DESCRIPTIVO";
+  // Al reabrir un presupuesto, los descriptivos que ya tienen tildes arrancan contraídos.
+  const [collapsed, setCollapsed] = useState(
+    () => descriptive && concept.subdetails.length > 0,
+  );
+  const summary = [
+    ...concept.subdetails.map((k) => subdetailLabel(concept.category, k)),
+    concept.additionalDetail.trim(),
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
@@ -1362,12 +1376,37 @@ function ConceptBlock({
                 {concept.type}
               </span>
             </div>
-            {def.hint && (
-              <p className="text-xs text-muted-foreground mt-0.5">{def.hint}</p>
+            {descriptive && collapsed ? (
+              <p className="text-sm mt-0.5">
+                {summary || (
+                  <span className="text-muted-foreground">
+                    Sin subdetalles seleccionados
+                  </span>
+                )}
+              </p>
+            ) : (
+              def.hint && (
+                <p className="text-xs text-muted-foreground mt-0.5">{def.hint}</p>
+              )
             )}
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
+          {descriptive && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 text-xs"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-expanded={!collapsed}
+            >
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${collapsed ? "" : "rotate-180"}`}
+              />
+              {collapsed ? "Editar" : "Contraer"}
+            </Button>
+          )}
           {concept.type !== "DESCRIPTIVO" && (
             <div className="text-right">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -1388,7 +1427,7 @@ function ConceptBlock({
         </div>
       </div>
 
-      {concept.type === "DESCRIPTIVO" && (
+      {descriptive && !collapsed && (
         <DescriptiveFields concept={concept} onChange={onChange} />
       )}
       {concept.type === "UNIDADES" && (
